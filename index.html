@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kennko Coffee — Bold Coffee, Playful Sips</title>
+    <meta
+      name="description"
+      content="Kennko Coffee is a bold, playful cafe in SM Butuan serving premium coffee, non-coffee favorites, and signature specialty drinks."
+    />
+    <style>
+      :root {
+        --blue: #0055ff;
+        --blue-dark: #003fc0;
+        --white: #ffffff;
+        --amber: #ffb830;
+        --text: #0d1b3d;
+        --muted: #e8efff;
+        --card: rgba(255, 255, 255, 0.92);
+        --shadow: 0 24px 60px rgba(0, 40, 130, 0.18);
+        --radius-xl: 32px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        font-family: Inter, ui-rounded, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        background: linear-gradient(180deg, #f6f9ff 0%, #ffffff 40%, #edf4ff 100%);
+      }
+
+      img { max-width: 100%; display: block; }
+      a { color: inherit; text-decoration: none; }
+
+      .container {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        backdrop-filter: blur(16px);
+        background: rgba(255, 255, 255, 0.82);
+        border-bottom: 1px solid rgba(0, 85, 255, 0.1);
+      }
+
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 0;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .brand img {
+        width: 48px;
+        height: 48px;
+        object-fit: contain;
+        border-radius: 14px;
+        background: var(--white);
+        padding: 6px;
+        box-shadow: 0 8px 20px rgba(0, 85, 255, 0.14);
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        font-size: 0.95rem;
+        font-weight: 700;
+      }
+
+      .nav-links a:hover { color: var(--blue); }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 32px 0 24px;
+      }
+
+      .hero-shell {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 28px;
+        align-items: stretch;
+        background: radial-gradient(circle at top left, #2c74ff 0%, var(--blue) 42%, var(--blue-dark) 100%);
+        color: var(--white);
+        border-radius: 36px;
+        padding: 28px;
+        box-shadow: var(--shadow);
+      }
+
+      .hero-copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 14px 6px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: fit-content;
+        background: rgba(255,255,255,0.14);
+        border: 1px solid rgba(255,255,255,0.18);
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      h1, h2, h3 { margin: 0; line-height: 0.96; text-transform: uppercase; }
+
+      h1 {
+        margin-top: 18px;
+        font-size: clamp(3rem, 7vw, 5.8rem);
+        font-weight: 900;
+        letter-spacing: -0.04em;
+      }
+
+      .hero-copy p {
+        margin: 18px 0 0;
+        font-size: 1.08rem;
+        line-height: 1.65;
+        max-width: 56ch;
+        color: rgba(255,255,255,0.92);
+      }
+
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 28px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 52px;
+        padding: 0 22px;
+        border-radius: 999px;
+        font-weight: 800;
+        font-size: 0.98rem;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+      }
+
+      .btn:hover { transform: translateY(-2px); }
+
+      .btn-primary {
+        background: var(--amber);
+        color: #271600;
+        box-shadow: 0 12px 26px rgba(255, 184, 48, 0.35);
+      }
+
+      .btn-secondary {
+        background: rgba(255,255,255,0.12);
+        border: 1px solid rgba(255,255,255,0.18);
+        color: var(--white);
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .hero-card,
+      .section-card,
+      .menu-card,
+      .perk-card,
+      .contact-card {
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        background: var(--card);
+        box-shadow: 0 18px 38px rgba(0, 44, 120, 0.12);
+      }
+
+      .hero-card img { width: 100%; height: 100%; object-fit: cover; }
+      .hero-card.tall { grid-row: span 2; min-height: 420px; }
+      .hero-card.short { min-height: 203px; }
+
+      main section { padding: 28px 0; }
+
+      .section-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+
+      .section-head h2 {
+        font-size: clamp(2rem, 4vw, 3.4rem);
+        letter-spacing: -0.03em;
+      }
+
+      .section-head p {
+        max-width: 54ch;
+        margin: 0;
+        color: rgba(13, 27, 61, 0.72);
+        line-height: 1.65;
+        font-weight: 500;
+      }
+
+      .about-grid,
+      .menu-grid,
+      .perks-grid,
+      .visit-grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .about-grid {
+        grid-template-columns: 1.05fr 0.95fr;
+      }
+
+      .section-card { padding: 24px; }
+      .section-card.blue {
+        background: linear-gradient(180deg, var(--blue) 0%, var(--blue-dark) 100%);
+        color: var(--white);
+      }
+
+      .kicker {
+        display: inline-flex;
+        font-size: 0.84rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--blue);
+        margin-bottom: 10px;
+      }
+
+      .section-card.blue .kicker { color: rgba(255,255,255,0.8); }
+
+      .section-card p,
+      .section-card li,
+      .contact-card p,
+      .menu-card p,
+      .perk-card p {
+        line-height: 1.65;
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .pill {
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: var(--muted);
+        color: var(--blue);
+        font-weight: 800;
+        font-size: 0.88rem;
+      }
+
+      .section-card.blue .pill {
+        background: rgba(255,255,255,0.12);
+        color: var(--white);
+      }
+
+      .menu-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .menu-card {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+      }
+
+      .menu-card img {
+        width: 100%;
+        height: 240px;
+        object-fit: cover;
+      }
+
+      .menu-card-body { padding: 18px; }
+      .menu-card h3 { font-size: 1.3rem; margin-bottom: 10px; }
+      .menu-list {
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 10px;
+        font-weight: 700;
+      }
+
+      .menu-list li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .menu-list li::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--amber);
+        flex: none;
+      }
+
+      .perks-grid { grid-template-columns: 0.95fr 1.05fr; }
+
+      .perk-card {
+        padding: 22px;
+      }
+
+      .perk-steps {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .step {
+        border-radius: 18px;
+        padding: 16px;
+        background: var(--muted);
+      }
+
+      .step strong {
+        display: block;
+        font-size: 1.6rem;
+        line-height: 1;
+        color: var(--blue);
+        margin-bottom: 8px;
+      }
+
+      .visit-grid { grid-template-columns: 1.05fr 0.95fr; }
+
+      .contact-stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .contact-card { padding: 22px; }
+      .contact-card h3 { font-size: 1.15rem; margin-bottom: 10px; }
+
+      .contact-link {
+        display: inline-flex;
+        margin-top: 8px;
+        font-weight: 800;
+        color: var(--blue);
+      }
+
+      .banner {
+        margin-top: 8px;
+        border-radius: 26px;
+        overflow: hidden;
+        box-shadow: var(--shadow);
+      }
+
+      footer {
+        padding: 18px 0 44px;
+      }
+
+      .footer-shell {
+        background: linear-gradient(180deg, #0f48bf 0%, var(--blue) 100%);
+        color: var(--white);
+        border-radius: 28px;
+        padding: 22px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .footer-shell p {
+        margin: 0;
+        line-height: 1.6;
+        color: rgba(255,255,255,0.86);
+      }
+
+      @media (max-width: 920px) {
+        .hero-shell,
+        .about-grid,
+        .menu-grid,
+        .perks-grid,
+        .visit-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section-head {
+          align-items: start;
+          flex-direction: column;
+        }
+
+        .hero-card.tall { min-height: 320px; }
+        .hero-card.short { min-height: 220px; }
+      }
+
+      @media (max-width: 640px) {
+        .nav-inner,
+        .nav-links {
+          flex-wrap: wrap;
+        }
+
+        .nav-links {
+          gap: 12px;
+          font-size: 0.86rem;
+        }
+
+        .hero-shell { padding: 18px; border-radius: 28px; }
+        h1 { font-size: clamp(2.45rem, 16vw, 4rem); }
+        .hero-grid { grid-template-columns: 1fr; }
+        .hero-card.tall,
+        .hero-card.short { min-height: 220px; }
+        .perk-steps { grid-template-columns: 1fr; }
+        .section-card,
+        .perk-card,
+        .contact-card { padding: 18px; }
+        .btn { width: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="brand" href="#top" aria-label="Kennko Coffee home">
+          <img src="brand/assets/KENNKO.png" alt="Kennko Coffee logo" />
+          <span>KENNKO COFFEE</span>
+        </a>
+
+        <nav class="nav-links" aria-label="Primary navigation">
+          <a href="#about">About</a>
+          <a href="#menu">Menu</a>
+          <a href="#perks">Perks</a>
+          <a href="#visit">Visit</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="container hero-shell">
+          <div class="hero-copy">
+            <span class="eyebrow">SM Butuan • Premium coffee & playful drinks</span>
+            <h1>Bold coffee.<br />Fun sips.<br />Good energy.</h1>
+            <p>
+              Kennko Coffee brings premium coffee, signature non-coffee favorites, and crowd-pleasing specialty drinks to SM Butuan — all wrapped in a fun, youthful vibe that feels easy to love.
+            </p>
+            <div class="cta-row">
+              <a class="btn btn-primary" href="https://www.facebook.com/kennco.cafebxu" target="_blank" rel="noreferrer">Message on Facebook</a>
+              <a class="btn btn-secondary" href="#visit">Visit the Cafe</a>
+            </div>
+          </div>
+
+          <div class="hero-grid">
+            <div class="hero-card tall">
+              <img src="brand/assets/kennco people.jpg" alt="People enjoying Kennko Coffee" />
+            </div>
+            <div class="hero-card short">
+              <img src="brand/assets/egg coffee kennco.jpg" alt="Kennko egg coffee" />
+            </div>
+            <div class="hero-card short">
+              <img src="brand/assets/strawberry cloud soda kennco.jpg" alt="Kennko strawberry cloud soda" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="about">
+        <div class="container">
+          <div class="section-head">
+            <h2>Built for coffee runs, catch-ups, and cravings.</h2>
+            <p>
+              Founded in 2023, Kennko Coffee is all about serving premium drinks in a bold, approachable space — whether you want your daily latte, a creamy specialty favorite, or something sweet and refreshing.
+            </p>
+          </div>
+
+          <div class="about-grid">
+            <article class="section-card blue">
+              <span class="kicker">Why people come back</span>
+              <p>
+                The menu keeps things exciting: familiar coffee classics, non-coffee comfort picks, and standout specialty drinks that feel fun without trying too hard.
+              </p>
+              <div class="pill-row">
+                <span class="pill">Premium coffee</span>
+                <span class="pill">Non-coffee favorites</span>
+                <span class="pill">Specialty series</span>
+                <span class="pill">Youthful atmosphere</span>
+              </div>
+            </article>
+
+            <article class="section-card">
+              <span class="kicker">Cafe personality</span>
+              <p>
+                Bold. Playful. Friendly. Kennko’s look leans bright, upbeat, and easy to remember — the kind of spot that works for quick mall coffee breaks, casual hangs, and repeat visits.
+              </p>
+              <div class="pill-row">
+                <span class="pill">Founded in 2023</span>
+                <span class="pill">SM Butuan</span>
+                <span class="pill">Fun and approachable</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="menu">
+        <div class="container">
+          <div class="section-head">
+            <h2>Menu highlights</h2>
+            <p>
+              From classic espresso-based drinks to creamy cloud favorites and refreshing fruit-forward picks, there’s something here for every mood.
+            </p>
+          </div>
+
+          <div class="menu-grid">
+            <article class="menu-card">
+              <img src="brand/assets/egg coffee kennco.jpg" alt="Premium coffee from Kennko" />
+              <div class="menu-card-body">
+                <h3>Premium Coffee</h3>
+                <p>Rich, smooth, and made for everyday coffee drinkers.</p>
+                <ul class="menu-list">
+                  <li>Americano</li>
+                  <li>Coffee Latte</li>
+                  <li>Spanish Latte</li>
+                  <li>Vanilla Latte</li>
+                  <li>White Choco Mocha</li>
+                  <li>Caramel Macchiato</li>
+                  <li>Vietnamese Coffee</li>
+                  <li>Egg Coffee</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="menu-card">
+              <img src="brand/assets/vanilla milk cloud foam kennko.jpg" alt="Kennko signature drink" />
+              <div class="menu-card-body">
+                <h3>Specialty Series</h3>
+                <p>Playful signatures with creamy, indulgent twists.</p>
+                <ul class="menu-list">
+                  <li>Coconut Series</li>
+                  <li>Salted Caramel Oat Latte</li>
+                  <li>Sea Salt Caramel Oat Latte</li>
+                  <li>Vanilla Milk Cloud Foam</li>
+                  <li>Strawberry Cloud Soda</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="menu-card">
+              <img src="brand/assets/KENNKO_nEW MENU.png" alt="Kennko menu board" />
+              <div class="menu-card-body">
+                <h3>Non-Coffee Favorites</h3>
+                <p>Comforting and refreshing picks beyond espresso.</p>
+                <ul class="menu-list">
+                  <li>Signature Choco</li>
+                  <li>Matcha Latte</li>
+                  <li>Strawberry Milk</li>
+                  <li>Berry Matcha</li>
+                  <li>Hot options available</li>
+                </ul>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="perks">
+        <div class="container">
+          <div class="section-head">
+            <h2>Perks that make repeat visits sweeter.</h2>
+            <p>
+              Kennko’s loyalty card keeps things simple: collect stamps, get rewarded, and turn your regular drink run into extra value.
+            </p>
+          </div>
+
+          <div class="perks-grid">
+            <article class="perk-card">
+              <span class="kicker">Loyalty card</span>
+              <h3>Collect stamps. Unlock rewards.</h3>
+              <p>
+                Grab a perks card, keep coming back, and earn little wins along the way. It’s a small extra that makes your coffee routine more fun.
+              </p>
+              <div class="perk-steps">
+                <div class="step">
+                  <strong>4</strong>
+                  Collect four stamps and get a free upsize.
+                </div>
+                <div class="step">
+                  <strong>8</strong>
+                  Collect eight stamps and get a free drink.
+                </div>
+              </div>
+            </article>
+
+            <article class="hero-card">
+              <img src="brand/assets/kennko perks card.jpg" alt="Kennko perks card" />
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="visit">
+        <div class="container">
+          <div class="section-head">
+            <h2>See you at Kennko.</h2>
+            <p>
+              Drop by for your next coffee break, sweet fix, or quick catch-up. You’ll find Kennko at SM Butuan, ready with drinks that hit the spot.
+            </p>
+          </div>
+
+          <div class="visit-grid">
+            <article class="section-card blue">
+              <span class="kicker">Visit us</span>
+              <h3 style="font-size:2rem; margin-bottom: 12px;">SM Butuan, Ground Floor</h3>
+              <p>Butuan City, Philippines 8600</p>
+              <div class="pill-row">
+                <span class="pill">0930 599 2729</span>
+                <span class="pill">Founded by Kenn Baliling</span>
+                <span class="pill">Since 2023</span>
+              </div>
+              <div class="cta-row">
+                <a class="btn btn-primary" href="tel:09305992729">Call Kennko</a>
+                <a class="btn btn-secondary" href="https://www.instagram.com/kennko.bxu/" target="_blank" rel="noreferrer">View Instagram</a>
+              </div>
+            </article>
+
+            <div class="contact-stack">
+              <article class="contact-card">
+                <h3>Facebook</h3>
+                <p>Message the cafe for updates, inquiries, and promos.</p>
+                <a class="contact-link" href="https://www.facebook.com/kennco.cafebxu" target="_blank" rel="noreferrer">facebook.com/kennco.cafebxu</a>
+              </article>
+
+              <article class="contact-card">
+                <h3>Instagram</h3>
+                <p>See drink shots, brand updates, and what’s new in-store.</p>
+                <a class="contact-link" href="https://www.instagram.com/kennko.bxu/" target="_blank" rel="noreferrer">@kennko.bxu</a>
+              </article>
+
+              <article class="contact-card">
+                <h3>Need the full menu?</h3>
+                <p>Check the visual menu in-store or message the page directly for current offerings and availability.</p>
+              </article>
+            </div>
+          </div>
+
+          <div class="banner">
+            <img src="brand/assets/KENNCO BANNER_2.png" alt="Kennko banner graphic" />
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="container footer-shell">
+        <div>
+          <strong style="display:block; font-size:1.1rem; margin-bottom:6px;">KENNKO COFFEE</strong>
+          <p>Premium coffee and playful drinks in SM Butuan.</p>
+        </div>
+        <p>© 2026 Kennko Coffee. Brewed with bold flavor and good energy.</p>
+      </div>
+    </footer>
+  </body>
+</html>
