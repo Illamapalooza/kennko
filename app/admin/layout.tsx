@@ -33,6 +33,7 @@ export default async function AdminLayout({
       <header className="admin-topbar">
         <strong>Kennko Admin</strong>
         <nav className="admin-nav">
+          <Link href="/admin/orders">Orders</Link>
           <Link href="/admin/menu">Menu</Link>
           {staff.role === 'owner' ? <Link href="/admin/staff">Staff</Link> : null}
         </nav>
