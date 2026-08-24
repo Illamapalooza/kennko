@@ -20,8 +20,10 @@ management.
 
 ## 2. Goals
 
-1. A customer can browse the live menu, build an order, pay by GCash, and
-   submit proof of payment.
+1. A guest customer -- no account, no signup -- can browse the live menu, build
+   an order, choose **pickup or delivery**, pay by GCash, and submit proof of
+   payment. Name, email, and phone are always required; a delivery address is
+   required for delivery and not asked for on pickup.
 2. Staff are notified of every new order by email and in the admin.
 3. Staff verify the GCash payment against a submitted reference number and
    receipt screenshot before any drink is made.
@@ -35,7 +37,7 @@ management.
 
 ## 3. Non-goals
 
-- **Delivery.** Pickup only. No addresses, service areas, fees, or dispatch.
+- **Rider dispatch and tracking.** Delivery is offered, but the system does not assign riders, track them, or show the customer a live map. Staff hand the order to whoever is delivering and mark it out for delivery.
 - **A real payment gateway.** No merchant onboarding, webhooks, refunds, or
   card handling. Payment is a static GCash QR settled out-of-band; the system
   records a *claim* of payment and a human verifies it.
@@ -63,6 +65,11 @@ review:
 | Data / auth / files | Supabase (Postgres, Auth, Storage) | One service for all three; generous free tier |
 | Email | Resend | Simple transactional API, good deliverability |
 | Sequencing | Address + Maps shipped separately, first | Already done and deployable independently |
+| Fulfilment | Customer chooses pickup or delivery | Both are real ways people buy from Kennko |
+| Guest checkout | No customer accounts, ever | Nobody signs up to buy one latte |
+| Always required | Name, email, phone | Email carries the confirmation; phone is how staff or a rider reaches them |
+| Required for delivery only | Street address and barangay | Asking a pickup customer where they live is friction for no benefit |
+| Delivery area and fee | A `delivery_zones` table keyed by barangay | Kenn sets which barangays are served and what each costs, without a developer |
 | Visual identity | Existing electric blue `#0055FF` brand | The current site and `BRIEF.md` are canonical; the navy/serif menu graphic is **not** a design reference |
 | `brand/Kennko Menu.png` | Data source only | Supplies item names, categories, sizes, prices, and modifiers — nothing about how the site should look |
 | GCash QR | Placeholder image until the real one is supplied | Unblocks building the flow; ordering stays disabled publicly until swapped |
@@ -182,14 +189,28 @@ create table modifiers (
   sort_order    int not null default 0
 );
 
+create type fulfilment_method as enum ('pickup', 'delivery');
+
 create type order_status as enum (
   'awaiting_verification',  -- submitted, payment claimed, unchecked
   'confirmed',              -- staff verified payment
   'preparing',
-  'ready',                  -- ready for pickup
-  'completed',              -- handed over
+  'ready',                  -- pickup: waiting at the counter
+  'out_for_delivery',       -- delivery: handed to whoever is delivering
+  'completed',              -- collected or delivered
   'rejected',               -- payment could not be verified
   'cancelled'               -- staff cancelled after confirming
+);
+
+-- Which barangays Kennko delivers to, and what each costs. A barangay absent
+-- from this table (or inactive) is outside the service area, so the order form
+-- refuses it rather than taking money for a delivery nobody will make.
+create table delivery_zones (
+  id         uuid primary key default gen_random_uuid(),
+  barangay   text not null unique,
+  fee_centavos int not null check (fee_centavos >= 0),
+  is_active  boolean not null default true,
+  sort_order int not null default 0
 );
 
 create table orders (
@@ -198,8 +219,16 @@ create table orders (
   customer_name      text not null,
   customer_phone     text not null,
   customer_email     text not null,          -- required: confirmation target
-  pickup_at          timestamptz not null,
+  fulfilment         fulfilment_method not null,
+  -- Delivery only. Enforced by the CHECK below rather than by the form alone,
+  -- so a crafted request cannot create a delivery order going nowhere.
+  delivery_address   text,
+  delivery_barangay  text,
+  delivery_zone_id   uuid references delivery_zones(id),
+  fulfil_at          timestamptz not null,   -- pickup time, or delivery window start
   status             order_status not null default 'awaiting_verification',
+  subtotal_centavos  int not null check (subtotal_centavos >= 0),
+  delivery_fee_centavos int not null default 0 check (delivery_fee_centavos >= 0),
   total_centavos     int not null check (total_centavos >= 0),
   gcash_reference    text not null,
   payment_proof_path text not null,          -- Supabase Storage object path
@@ -208,6 +237,25 @@ create table orders (
   verified_by        uuid references staff(id),
   verified_at        timestamptz,
   created_at         timestamptz not null default now()
+);
+
+-- A delivery order without an address is meaningless; a pickup order with one
+-- is a sign the form is confused. Both are rejected at the database.
+alter table orders add constraint orders_delivery_needs_address check (
+  (fulfilment = 'delivery'
+     and delivery_address is not null
+     and delivery_barangay is not null
+     and delivery_zone_id is not null)
+  or
+  (fulfilment = 'pickup'
+     and delivery_address is null
+     and delivery_barangay is null
+     and delivery_zone_id is null
+     and delivery_fee_centavos = 0)
+);
+
+alter table orders add constraint orders_total_is_subtotal_plus_fee check (
+  total_centavos = subtotal_centavos + delivery_fee_centavos
 );
 
 create index orders_status_created_idx on orders (status, created_at desc);
@@ -254,28 +302,34 @@ a nullable soft reference for reporting, and survives item deletion via
    any modifiers from the three groups. Line total is
    `(size price + sum of modifier prices) × quantity`. Running total in
    centavos, formatted to ₱.
-3. **Checkout** — name, phone, email, pickup time, optional note. All required
-   except the note. Pickup time is constrained to opening hours (§12 open
-   question) and a minimum lead time.
-4. **Pay** — the GCash QR image is displayed with the exact total to send.
+3. **Fulfilment** — pickup or delivery. Choosing delivery reveals the address
+   fields and a barangay picker limited to active `delivery_zones`; the fee for
+   the chosen barangay is shown before the customer commits, never revealed
+   after payment.
+4. **Checkout** — name, phone, email, time, optional note. Name, phone, and
+   email are always required. Street address and barangay are required for
+   delivery and not shown for pickup. The time is constrained to opening hours
+   and a minimum lead time.
+5. **Pay** — the GCash QR image is displayed with the exact total to send.
    Until the real QR is supplied this is a clearly-labelled placeholder image at
    `public/gcash-qr-placeholder.png`, marked "SAMPLE — NOT A REAL QR" so it can
    never be mistaken for a live payment target. Swapping it is a one-file change
    and is a precondition of enabling ordering publicly.
-5. **Prove** — customer enters the GCash reference number and uploads the
+6. **Prove** — customer enters the GCash reference number and uploads the
    receipt screenshot.
-6. **Submit** — `POST /api/orders` validates, writes `orders` + `order_items`
+7. **Submit** — `POST /api/orders` validates, writes `orders` + `order_items`
    in a transaction, stores the upload, and returns the `order_code`.
-7. **Confirmation screen** — shows the code and states plainly that the order
+8. **Confirmation screen** — shows the code and states plainly that the order
    is *not yet confirmed* and that an email follows once payment is checked.
    This wording matters; customers must not read submission as confirmation.
-8. **Staff email** fires via Resend to all active staff.
-9. **Staff verifies** in admin → customer confirmation email fires.
+9. **Staff email** fires via Resend to all active staff.
+10. **Staff verifies** in admin → customer confirmation email fires.
 
 ### Server-side validation
 
-The client total is never trusted. `POST /api/orders` recomputes the total from
-current `menu_items` rows and rejects with `409 PRICE_CHANGED` if it disagrees
+The client total is never trusted. `POST /api/orders` recomputes the subtotal
+from current `menu_items` rows, adds the delivery fee looked up from
+`delivery_zones`, and rejects with `409 PRICE_CHANGED` if the result disagrees
 with the submitted total, prompting the customer to re-check the cart. This
 prevents both tampering and the genuine race where the owner edits a price
 mid-checkout.
@@ -286,7 +340,10 @@ Also enforced server-side:
 - Every chosen modifier exists, is available, and single-select groups received
   at most one selection.
 - `quantity` between 1 and 20 per line.
-- `pickup_at` is in the future and within opening hours.
+- `fulfil_at` is in the future and within opening hours.
+- For delivery: the barangay matches an active `delivery_zones` row, and the
+  fee used is that row's fee — never a value supplied by the client.
+- For pickup: no address fields are accepted, and the delivery fee is zero.
 - Upload is `image/jpeg|png|webp|heic`, ≤ 8 MB, verified by magic bytes and not
   by the client-supplied MIME type or extension.
 
