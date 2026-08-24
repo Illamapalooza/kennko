@@ -5,30 +5,33 @@ Kennko Coffee is a cafe located inside SM Butuan City, Philippines. Founded in 2
 
 ## Menu
 
-### Premium Coffee
-- Americano
-- Coffee Latte
-- Spanish Latte
-- Vanilla Latte
-- White Choco Mocha
-- Caramel Macchiato
-- Vietnamese Coffee
-- Egg Coffee
+Live prices are in Supabase and edited from the admin, not duplicated here.
+Source of truth for the item list is `Kennko Menu.png`. Sizes are M / L / XL,
+with HOT priced separately. ★ marks a bestseller.
 
-*We also serve hot.*
+### Premium Classics
+Americano · Café Latte · Vanilla Latte · Hazelnut Latte · ★ Spanish Latte ·
+★ White Café Mocha · Dark Café Mocha · ★ Caramel Macchiato
 
-### Non-Coffee Drinks
-- Signature Choco
-- Matcha Latte
-- Strawberry Milk
-- Berry Matcha
+### Barista's Choice
+Vietnamese Coffee · ★ Egg Coffee · Coconut Coffee · ★ Sea Salt Caramel Oat ·
+Honey Oat Latte
 
-### Specialty Series
-- Coconut Series
-- Salted Caramel Oat Latte
-- Sea Salt Caramel Oat Latte
-- Vanilla Milk Cloud Foam
-- Strawberry Cloud Soda
+### Sweet Sips
+★ Strawberry Milk · ★ Strawberry Matcha · ★ Signature Choco · ★ Choco-Coconut ·
+Vanilla Milk
+
+*Strawberry Milk, Strawberry Matcha, and Choco-Coconut are iced only.*
+
+### Matcha Series
+★ Matcha · Matcha Coco · Dirty Matcha · ★ Hojicha
+
+*Hojicha is not offered in XL.*
+
+### Modifiers
+- **Add-ons** (choose any): Espresso Shots, Milk, Sugar Syrup, Milk Syrup, Flavor Sauce
+- **Milk of Choice** (choose one): Oat Milk, Soy Milk
+- **Cream Supreme** (choose one): Salty Vanilla Cream, Choco Cream, Matcha Cream, Coconut Cream
 
 ### Perks Card
 Loyalty program — collect stamps, get free upsize at 4 stamps and free drink at 8 stamps.
