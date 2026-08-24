@@ -6,7 +6,7 @@
     <title>Kennko Coffee — Bold Coffee, Playful Sips</title>
     <meta
       name="description"
-      content="Kennko Coffee is a bold, playful cafe in SM Butuan serving premium coffee, non-coffee favorites, and signature specialty drinks."
+      content="Kennko Coffee is a bold, playful cafe on CT. Montalban St., Villa Kananga, Butuan City serving premium coffee, non-coffee favorites, and signature specialty drinks."
     />
     <style>
       :root {
@@ -395,6 +395,53 @@
         color: rgba(255,255,255,0.86);
       }
 
+      .map-card {
+        margin-top: 18px;
+        border-radius: 28px;
+        overflow: hidden;
+        border: 2px solid rgba(0, 85, 255, 0.12);
+        background: var(--white);
+        box-shadow: 0 18px 40px rgba(0, 85, 255, 0.10);
+      }
+
+      .map-frame {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 7;
+        background: rgba(0, 85, 255, 0.06);
+      }
+
+      .map-frame iframe {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        display: block;
+      }
+
+      .map-foot {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 18px 22px;
+      }
+
+      .map-foot p {
+        margin: 0;
+        font-weight: 700;
+        color: var(--blue);
+      }
+
+      .map-foot span {
+        display: block;
+        font-weight: 500;
+        color: #4a5568;
+        font-size: 0.92rem;
+      }
+
       @media (max-width: 920px) {
         .hero-shell,
         .about-grid,
@@ -411,6 +458,7 @@
 
         .hero-card.tall { min-height: 320px; }
         .hero-card.short { min-height: 220px; }
+        .map-frame { aspect-ratio: 4 / 3; }
       }
 
       @media (max-width: 640px) {
@@ -430,6 +478,10 @@
         .hero-card.tall,
         .hero-card.short { min-height: 220px; }
         .perk-steps { grid-template-columns: 1fr; }
+        .map-card { border-radius: 22px; }
+        .map-frame { aspect-ratio: 1 / 1; }
+        .map-foot { padding: 16px; justify-content: stretch; }
+        .map-foot .btn { width: 100%; text-align: center; }
         .section-card,
         .perk-card,
         .contact-card { padding: 18px; }
@@ -458,10 +510,10 @@
       <section class="hero">
         <div class="container hero-shell">
           <div class="hero-copy">
-            <span class="eyebrow">SM Butuan • Premium coffee & playful drinks</span>
+            <span class="eyebrow">Villa Kananga, Butuan City • Premium coffee & playful drinks</span>
             <h1>Bold coffee.<br />Fun sips.<br />Good energy.</h1>
             <p>
-              Kennko Coffee brings premium coffee, signature non-coffee favorites, and crowd-pleasing specialty drinks to SM Butuan — all wrapped in a fun, youthful vibe that feels easy to love.
+              Kennko Coffee brings premium coffee, signature non-coffee favorites, and crowd-pleasing specialty drinks to Villa Kananga — all wrapped in a fun, youthful vibe that feels easy to love.
             </p>
             <div class="cta-row">
               <a class="btn btn-primary" href="https://www.facebook.com/kennco.cafebxu" target="_blank" rel="noreferrer">Message on Facebook</a>
@@ -509,11 +561,11 @@
             <article class="section-card">
               <span class="kicker">Cafe personality</span>
               <p>
-                Bold. Playful. Friendly. Kennko’s look leans bright, upbeat, and easy to remember — the kind of spot that works for quick mall coffee breaks, casual hangs, and repeat visits.
+                Bold. Playful. Friendly. Kennko’s look leans bright, upbeat, and easy to remember — the kind of spot that works for quick coffee breaks, casual hangs, and repeat visits.
               </p>
               <div class="pill-row">
                 <span class="pill">Founded in 2023</span>
-                <span class="pill">SM Butuan</span>
+                <span class="pill">Villa Kananga</span>
                 <span class="pill">Fun and approachable</span>
               </div>
             </article>
@@ -622,14 +674,14 @@
           <div class="section-head">
             <h2>See you at Kennko.</h2>
             <p>
-              Drop by for your next coffee break, sweet fix, or quick catch-up. You’ll find Kennko at SM Butuan, ready with drinks that hit the spot.
+              Drop by for your next coffee break, sweet fix, or quick catch-up. You’ll find Kennko on CT. Montalban St., ready with drinks that hit the spot.
             </p>
           </div>
 
           <div class="visit-grid">
             <article class="section-card blue">
               <span class="kicker">Visit us</span>
-              <h3 style="font-size:2rem; margin-bottom: 12px;">SM Butuan, Ground Floor</h3>
+              <h3 style="font-size:2rem; margin-bottom: 12px;">CT. Montalban St., Villa Kananga</h3>
               <p>Butuan City, Philippines 8600</p>
               <div class="pill-row">
                 <span class="pill">0930 599 2729</span>
@@ -662,6 +714,25 @@
             </div>
           </div>
 
+          <div class="map-card">
+            <div class="map-frame">
+              <iframe
+                title="Kennko Coffee location on Google Maps — CT. Montalban St., Villa Kananga, Butuan City"
+                src="https://www.google.com/maps?q=8.9268972,125.5321737&amp;z=17&amp;hl=en&amp;output=embed"
+                loading="lazy"
+                allowfullscreen
+                referrerpolicy="no-referrer-when-downgrade"
+              ></iframe>
+            </div>
+            <div class="map-foot">
+              <p>
+                CT. Montalban St., Villa Kananga
+                <span>Butuan City, Philippines 8600</span>
+              </p>
+              <a class="btn btn-primary" href="https://maps.app.goo.gl/Nw6txjdRjk5er2f77" target="_blank" rel="noreferrer">Get directions</a>
+            </div>
+          </div>
+
           <div class="banner">
             <img src="brand/assets/KENNCO BANNER_2.png" alt="Kennko banner graphic" />
           </div>
@@ -673,7 +744,7 @@
       <div class="container footer-shell">
         <div>
           <strong style="display:block; font-size:1.1rem; margin-bottom:6px;">KENNKO COFFEE</strong>
-          <p>Premium coffee and playful drinks in SM Butuan.</p>
+          <p>Premium coffee and playful drinks in Villa Kananga, Butuan City.</p>
         </div>
         <p>© 2026 Kennko Coffee. Brewed with bold flavor and good energy.</p>
       </div>

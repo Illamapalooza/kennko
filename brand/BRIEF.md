@@ -51,7 +51,8 @@ Loyalty program — collect stamps, get free upsize at 4 stamps and free drink a
 - Tagline style: short, punchy phrases
 
 ## Location & Contact
-- **Address:** SM Butuan, Ground Floor, Butuan City, Philippines 8600
+- **Address:** CT. Montalban St., Villa Kananga, Butuan City, Philippines 8600
+- **Google Maps:** https://maps.app.goo.gl/Nw6txjdRjk5er2f77 (8.9268972, 125.5321737)
 - **Phone:** 0930 599 2729
 - **Instagram:** https://www.instagram.com/kennko.bxu/
 - **Facebook:** https://www.facebook.com/kennco.cafebxu
