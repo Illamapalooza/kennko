@@ -6,7 +6,22 @@
 
 **Architecture:** Next.js App Router with TypeScript, deployed on Vercel. The existing single-file page becomes server components that reuse its exact CSS custom properties and markup. Supabase Postgres holds categories, items, per-size prices, and modifiers, seeded from the printed menu. Public reads go through the anon key under RLS; nothing writes yet.
 
-**Tech Stack:** Next.js 15 (App Router), TypeScript, Supabase (Postgres + RLS), Vitest, Playwright, Vercel.
+**Tech Stack:** Next.js 16 (App Router), TypeScript, Supabase (Postgres + RLS), Vitest, Vercel.
+
+## Implementation notes (recorded during execution)
+
+- Next scaffolded as **16.3.2**, not 15. `await cookies()` is still correct.
+- `lib/env.ts` exports `getEnv()` rather than a module-level `env` const. A
+  module-scope `readEnv(process.env)` throws on import, breaking every test that
+  imports the module and failing `next build` wherever the vars are absent.
+- Public menu reads use a **cookie-free** client (`lib/supabase/public.ts`).
+  `getServerClient()` is cookie-aware, which opts the route into dynamic
+  rendering and silently disables ISR.
+- Brand assets are normalised to lowercase kebab-case in `public/brand/`; the
+  originals contain spaces and mixed case. macOS is case-insensitive, so
+  case-only renames need a two-step `mv`.
+- The board has **11** starred bestsellers. The spec summary said 9; the seed
+  test caught it.
 
 **Spec:** `docs/superpowers/specs/2026-08-24-kennko-ordering-design.md`
 
