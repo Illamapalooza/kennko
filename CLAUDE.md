@@ -38,6 +38,42 @@ or exposed to the browser.
 - `npm run build` — production build
 - `npm run seed` — seed the menu from `supabase/seed/menu.ts`
 
+## Admin
+
+Routes under `/admin`, signed in with Supabase Auth (email + password, no
+public signup).
+
+| Capability | Barista | Owner |
+|---|:--:|:--:|
+| See the menu, mark items sold out / available | yes | yes |
+| Add, edit, re-price, archive drinks | no | yes |
+| Upload and remove product photos | no | yes |
+| Invite staff, change roles, deactivate accounts | no | yes |
+
+**Authorisation is enforced in Postgres, not just the UI.** `public.is_owner()`
+and `public.is_active_staff()` back the RLS policies, and a `BEFORE UPDATE`
+trigger on `menu_items` rejects any barista change other than `is_available` —
+RLS cannot restrict which columns an update touches, and column `GRANT`s cannot
+either, since both roles share the `authenticated` database role. Never rely on
+a hidden button as a permission check.
+
+**`proxy.ts`, not `middleware.ts`.** `middleware.ts` is deprecated in Next 16.
+The proxy only refreshes the Supabase session cookie, scoped to `/admin/:path*`
+so the public page stays statically cached; the auth guard lives in
+`app/admin/layout.tsx`.
+
+**A `'use server'` module may only export async functions.** Pure helpers live
+beside them in plain modules — `app/admin/menu/format.ts`,
+`app/admin/login/validate.ts`, `app/admin/staff/guards.ts`.
+
+**Storage buckets are deliberately separate.** `menu-images` is public-read /
+owner-write. Plan 3 adds `payment-proofs`, which is fully private. Never merge
+them: making one bucket public to serve menu photos would expose customer
+payment receipts.
+
+Bootstrap the first owner with
+`npm run create-owner -- <email> <password> "<Full Name>"`.
+
 ## Planned Work
 `docs/superpowers/specs/` holds the ordering + admin design spec.
 `docs/superpowers/plans/` holds the implementation plans. Plan 1 (this

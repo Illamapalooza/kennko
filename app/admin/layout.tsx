@@ -16,10 +16,17 @@ export default async function AdminLayout({
   const pathname = (await headers()).get('x-pathname') ?? ''
   const staff = await getCurrentStaff()
 
+  const isLoginRoute = pathname.startsWith('/admin/login')
+
   if (!staff) {
-    if (pathname.startsWith('/admin/login')) return <>{children}</>
+    if (isLoginRoute) return <>{children}</>
     redirect('/admin/login')
   }
+
+  // Someone already signed in has no use for the sign-in form, and rendering
+  // it inside the admin chrome puts a Sign in and a Sign out button on screen
+  // at once.
+  if (isLoginRoute) redirect('/admin/menu')
 
   return (
     <div className="admin-shell">

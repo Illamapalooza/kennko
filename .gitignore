@@ -44,3 +44,6 @@ next-env.d.ts
 
 # keep the documented env template committed
 !.env.local.example
+
+# playwright mcp scratch output
+.playwright-mcp/

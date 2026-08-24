@@ -110,3 +110,56 @@
   }
   .admin-table td > * { margin-right: 8px; }
 }
+
+/* The public .btn-secondary is white-on-translucent-white, designed to sit on
+   the blue hero. On the admin's white surfaces it renders invisible, so the
+   admin restates both button variants against a light background. */
+.admin-main .btn-secondary,
+.admin-cards .btn-secondary,
+.admin-table .btn-secondary {
+  background: var(--white);
+  color: var(--blue);
+  border: 2px solid var(--blue);
+}
+
+.admin-main .btn-secondary:hover,
+.admin-cards .btn-secondary:hover,
+.admin-table .btn-secondary:hover {
+  background: var(--muted);
+}
+
+.admin-main .btn-primary {
+  background: var(--blue);
+  color: var(--white);
+}
+
+/* The topbar sits on blue, so its button keeps the light-on-dark treatment. */
+.admin-topbar .btn-secondary {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--white);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Public headings are hero-scale. Admin headings are UI labels. */
+.admin-main h1 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.admin-main h2 {
+  font-size: 1.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--blue);
+}
+
+.admin-auth-card h1 { font-size: 1.5rem; line-height: 1.2; }
+
+/* Keep actions on one line at desktop rather than wrapping under each other. */
+.admin-table td:last-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
