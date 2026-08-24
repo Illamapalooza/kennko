@@ -63,6 +63,9 @@ review:
 | Data / auth / files | Supabase (Postgres, Auth, Storage) | One service for all three; generous free tier |
 | Email | Resend | Simple transactional API, good deliverability |
 | Sequencing | Address + Maps shipped separately, first | Already done and deployable independently |
+| Visual identity | Existing electric blue `#0055FF` brand | The current site and `BRIEF.md` are canonical; the navy/serif menu graphic is **not** a design reference |
+| `brand/Kennko Menu.png` | Data source only | Supplies item names, categories, sizes, prices, and modifiers — nothing about how the site should look |
+| GCash QR | Placeholder image until the real one is supplied | Unblocks building the flow; ordering stays disabled publicly until swapped |
 
 ## 5. Architecture
 
@@ -255,6 +258,10 @@ a nullable soft reference for reporting, and survives item deletion via
    except the note. Pickup time is constrained to opening hours (§12 open
    question) and a minimum lead time.
 4. **Pay** — the GCash QR image is displayed with the exact total to send.
+   Until the real QR is supplied this is a clearly-labelled placeholder image at
+   `public/gcash-qr-placeholder.png`, marked "SAMPLE — NOT A REAL QR" so it can
+   never be mistaken for a live payment target. Swapping it is a one-file change
+   and is a precondition of enabling ordering publicly.
 5. **Prove** — customer enters the GCash reference number and uploads the
    receipt screenshot.
 6. **Submit** — `POST /api/orders` validates, writes `orders` + `order_items`
@@ -417,41 +424,47 @@ seeding.
   magic bytes and stored under a server-generated path; the client-supplied
   filename never reaches storage.
 
-## 12. Open questions — blockers marked
+## 12. Open questions
 
-Resolved since the first draft: prices, the category structure, hot pricing, and
-the Specialty Series question were all answered by `brand/Kennko Menu.png` (see
-Appendix A).
+No blockers remain for building. Prices, categories, hot pricing, and the
+Specialty Series question were answered by `brand/Kennko Menu.png` (Appendix A).
+Visual identity and the GCash QR were settled by the owner: **keep the existing
+electric blue brand**, and **ship a labelled placeholder QR** until the real one
+arrives.
 
-1. **🔴 BLOCKER — GCash QR.** Need the QR image file and the registered account
-   name, so customers can confirm they are paying the right merchant.
-2. **🔴 BLOCKER — Brand identity mismatch.** `brand/Kennko Menu.png` is navy and
-   cream with a vintage serif and a distressed texture. `BRIEF.md` and the live
-   site are electric blue `#0055FF` with a rounded bubble logo. These are two
-   different brands. Which is current? The ordering flow has to look like the
-   cafe the customer is standing in, and right now I cannot tell which that is.
-3. **🟡 Opening hours.** Needed to constrain pickup times. Also: minimum lead
+Precondition for *enabling ordering publicly* (not for building it):
+
+1. **🔴 Real GCash QR image** and the registered account name. The placeholder
+   must be replaced and the account name shown, so customers can confirm they
+   are paying the right merchant before sending money.
+
+Still worth answering, none blocking:
+
+2. **🟡 Opening hours.** Needed to constrain pickup times. Also: minimum lead
    time (15 min? 30?) and how far ahead an order may be placed (same day only?).
-4. **🟡 Staff emails.** Which addresses receive new-order alerts, and who is the
+   Until answered, the build assumes 9:00–21:00 daily, 20-minute minimum lead,
+   same-day only — all in one config file so changing them is trivial.
+3. **🟡 Staff emails.** Which addresses receive new-order alerts, and who is the
    initial `owner` account.
-5. **🟡 Size labels.** M / L / XL are the printed headers. Confirm these are the
-   words customers use, and whether they map to volumes worth showing (16oz etc).
-6. **🟡 Modifier applicability.** The menu prints Add-ons, Milk of Choice, and
+4. **🟡 Modifier applicability.** The menu prints Add-ons, Milk of Choice, and
    Cream Supreme as one block for the whole menu. Do all three apply to every
    drink — is "oat milk +40" meaningful on an americano, or "Matcha Cream +65"
-   on a matcha? If some pair badly, the model needs a per-item allowlist rather
-   than global groups.
-7. **🟡 Bestseller stars.** Nine items are starred on the printed menu. Should
-   the site surface these as a "Bestsellers" section, or is the star purely
-   in-store decoration?
-8. **🟢 Naming.** The Google listing is "KennCo. Cafe", Facebook is
+   on a matcha? The build assumes all groups apply to all drinks; if some pair
+   badly, the model needs a per-item allowlist.
+5. **🟡 Size labels.** M / L / XL are the printed headers. Confirm these are the
+   words customers use, and whether they map to volumes worth showing (16oz etc).
+6. **🟡 Bestseller stars.** Nine items are starred on the printed menu. The build
+   stores `is_bestseller` and surfaces a "Bestsellers" row on the order page;
+   say so if the star is meant as in-store decoration only.
+7. **🟢 Naming.** The Google listing is "KennCo. Cafe", Facebook is
    `kennco.cafebxu`, the site says "Kennko Coffee". Which is canonical for
-   customer-facing copy and the confirmation emails?
-9. **🟢 Domain.** Current deploy is a `.vercel.app` URL. A custom domain makes
+   customer-facing copy and the confirmation emails? Build uses "Kennko Coffee".
+8. **🟢 Domain.** Current deploy is a `.vercel.app` URL. A custom domain makes
    the confirmation emails far less likely to be treated as phishing.
-10. **🟢 Stale brief.** `BRIEF.md` lists Berry Matcha, Coconut Series, Vanilla
-    Milk Cloud Foam, and Strawberry Cloud Soda, none of which are on the current
-    menu. The brief should be corrected once the menu above is confirmed.
+9. **🟢 Stale brief.** `BRIEF.md` lists Berry Matcha, Coconut Series, Vanilla
+   Milk Cloud Foam, and Strawberry Cloud Soda, none of which are on the current
+   menu, and its category names no longer match. The brief gets corrected from
+   Appendix A during seeding.
 
 ## 13. Responsive requirements
 
@@ -499,8 +512,10 @@ considered done.
 4. Customer ordering behind a feature flag; internal test orders end to end.
 5. Enable ordering publicly once prices and the QR are confirmed correct.
 
-Ordering stays flagged off until open questions 1 and 2 are answered. Shipping
-an order form with ₱0.00 prices would be worse than shipping nothing.
+Ordering stays flagged off until the real GCash QR replaces the placeholder
+(§12, question 1). Everything else can be built, tested, and reviewed behind the
+flag. Shipping an order form that points customers at a sample QR would be worse
+than shipping nothing.
 
 ## 16. Impact on existing project rules
 
@@ -517,6 +532,10 @@ otherwise it actively misleads the next person or agent to open the repo.
 
 Source of truth for seeding. ★ marks a bestseller on the printed menu. `—`
 means that size is not offered. Prices in pesos.
+
+> **This graphic is a data reference, not a design reference.** Its navy/cream
+> vintage treatment is not the brand direction — the site keeps the existing
+> electric blue `#0055FF` identity described in `BRIEF.md`.
 
 ### Premium Classics
 
