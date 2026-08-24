@@ -8,14 +8,16 @@
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "tsx scripts/seed-menu.ts"
+    "seed": "tsx scripts/seed-menu.ts",
+    "create-owner": "tsx scripts/create-owner.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
     "next": "16.3.2",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",
