@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { getMenu } from '@/lib/menu/queries'
 import { getPublicClient } from '@/lib/supabase/public'
+import { getCurrentCustomer } from '@/lib/auth/customer'
 import { OrderClient, type ModifierGroup, type Zone } from './OrderClient'
 import './order.css'
 
@@ -11,6 +12,7 @@ export default async function OrderPage() {
 
   const db = getPublicClient()
   const categories = await getMenu()
+  const customer = await getCurrentCustomer()
 
   const { data: groups } = await db
     .from('modifier_groups')
@@ -49,6 +51,9 @@ export default async function OrderPage() {
         categories={categories}
         modifierGroups={modifierGroups}
         zones={deliveryZones}
+        customer={
+          customer ? { name: customer.name, email: customer.email } : null
+        }
       />
     </div>
   )

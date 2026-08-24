@@ -30,5 +30,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  // Scoped deliberately: the marketing page and the catalog must stay
+  // statically cacheable, so they are not listed here.
+  matcher: ['/admin/:path*', '/orders/:path*', '/account/:path*', '/auth/:path*'],
 }

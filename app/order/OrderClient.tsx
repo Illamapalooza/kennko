@@ -26,10 +26,12 @@ export function OrderClient({
   categories,
   modifierGroups,
   zones,
+  customer,
 }: {
   categories: MenuCategoryWithItems[]
   modifierGroups: ModifierGroup[]
   zones: Zone[]
+  customer: { name: string; email: string } | null
 }) {
   const [lines, setLines] = useState<CartLine[]>([])
   const [hydrated, setHydrated] = useState(false)
@@ -38,7 +40,11 @@ export function OrderClient({
 
   const [fulfilment, setFulfilment] = useState<Fulfilment>('pickup')
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', address: '', barangay: '', fulfilAt: '', note: '',
+    // Prefilled for a signed-in customer, still editable: the account name is
+    // not always the name they want on the cup.
+    name: customer?.name ?? '',
+    email: customer?.email ?? '',
+    phone: '', address: '', barangay: '', fulfilAt: '', note: '',
     gcashReference: '',
   })
   const [proof, setProof] = useState<File | null>(null)
@@ -175,7 +181,12 @@ export function OrderClient({
         <>
           <header className="order-masthead">
             <div className="order-masthead-inner">
-              <span className="order-eyebrow">Pickup or delivery</span>
+              <div className="masthead-top">
+                <span className="order-eyebrow">Pickup or delivery</span>
+                <a className="masthead-link" href={customer ? '/orders' : '/account'}>
+                  {customer ? 'Your orders' : 'Sign in'}
+                </a>
+              </div>
               <h1>The Kennko catalog</h1>
               <p>
                 Every drink, every size, priced the way it is on the board.

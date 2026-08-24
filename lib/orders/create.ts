@@ -22,6 +22,9 @@ export type SubmittedOrder = CheckoutInput & {
   claimedTotalCentavos: number
 }
 
+/** Set by the API route from the session, never from the request body. */
+export type OrderContext = { customerUserId: string | null }
+
 export type OrderSummaryItem = {
   name: string
   size: string
@@ -46,6 +49,7 @@ const PROOF_BUCKET = 'payment-proofs'
 export async function createOrder(
   submitted: SubmittedOrder,
   proof: File,
+  context: OrderContext = { customerUserId: null },
 ): Promise<CreateResult> {
   const problems = validateCheckout(submitted)
   if (problems.length > 0) {
@@ -230,6 +234,7 @@ export async function createOrder(
       gcash_reference: submitted.gcashReference.trim().toUpperCase(),
       payment_proof_path: proofPath,
       customer_note: submitted.note.trim() || null,
+      customer_user_id: context.customerUserId,
     })
     .select('id')
     .single()

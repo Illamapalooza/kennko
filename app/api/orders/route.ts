@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createOrder, type SubmittedOrder } from '@/lib/orders/create'
+import { getCurrentCustomer } from '@/lib/auth/customer'
 import { allowRequest } from '@/lib/orders/rate-limit'
 import { sendEmail, activeStaffEmails } from '@/lib/email/send'
 import { staffAlertSubject, staffAlertBody } from '@/lib/email/templates'
@@ -46,7 +47,12 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const result = await createOrder(submitted, proof)
+  // Taken from the session, never from the payload: a request cannot claim
+  // to belong to somebody else's account.
+  const customer = await getCurrentCustomer()
+  const result = await createOrder(submitted, proof, {
+    customerUserId: customer?.id ?? null,
+  })
 
   if (!result.ok) {
     return NextResponse.json(

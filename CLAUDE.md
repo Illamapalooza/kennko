@@ -104,6 +104,28 @@ real GCash QR replaces `public/gcash-qr-placeholder.png`.
 
 Seed delivery zones with `npm run seed-zones`.
 
+### Customer accounts
+
+Ordering is guest-first: nobody has to sign up. An **optional** account exists
+only so a returning customer can see their history at `/orders`.
+
+- **Google only.** Customers never get a password; staff keep email + password
+  at `/admin/login`. The two are unrelated: a customer is any authenticated
+  user, and admin rights come solely from a row in `staff`.
+- **Claiming guest orders.** An order placed while signed in stores
+  `customer_user_id`. A guest order also appears in history when its email
+  matches the account's **confirmed** address -- the confirmation check is the
+  security boundary, and Google accounts always arrive confirmed.
+- `public.owns_order()` is SECURITY DEFINER for the same reason `is_owner()` is:
+  a policy that reads `auth.users` directly errors for `anon`/`authenticated`
+  rather than evaluating.
+- `safeNextPath()` sanitises every post-sign-in redirect. Never pass a raw
+  `?next` through.
+
+**Google OAuth must be enabled in the Supabase dashboard** with a Google Cloud
+client ID and secret, and the callback `/auth/callback` allow-listed. Without
+it, sign-in fails and the page tells the customer to order as a guest.
+
 ### Email
 
 Resend, configured by `RESEND_API_KEY`. Without the key, sends are logged and

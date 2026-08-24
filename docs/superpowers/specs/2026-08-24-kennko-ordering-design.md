@@ -41,8 +41,10 @@ management.
 - **A real payment gateway.** No merchant onboarding, webhooks, refunds, or
   card handling. Payment is a static GCash QR settled out-of-band; the system
   records a *claim* of payment and a human verifies it.
-- **Customer accounts.** Ordering is guest-only. No signup, login, saved cards,
-  or order history for customers.
+- **Required customer accounts.** Ordering stays guest-first: nobody has to sign
+  up to buy a drink. An optional account exists only so a returning customer can
+  see their own order history at `/orders`. No saved cards, no loyalty, no
+  profile beyond the account itself.
 - **Digitising the Perks card.** The loyalty stamp program stays physical.
 - **Inventory or stock counts.** An item is either available or not, toggled by
   hand.
@@ -66,7 +68,9 @@ review:
 | Email | Resend | Simple transactional API, good deliverability |
 | Sequencing | Address + Maps shipped separately, first | Already done and deployable independently |
 | Fulfilment | Customer chooses pickup or delivery | Both are real ways people buy from Kennko |
-| Guest checkout | No customer accounts, ever | Nobody signs up to buy one latte |
+| Guest checkout | Always available; an account is optional | Nobody should have to sign up to buy one latte |
+| Customer accounts | Optional, for order history only | Returning customers want to see what they ordered; that is the whole feature |
+| Claiming past guest orders | By **confirmed** email address | A guest order placed before signup should appear afterwards, but only once the address is proven to belong to the account |
 | Always required | Name, email, phone | Email carries the confirmation; phone is how staff or a rider reaches them |
 | Required for delivery only | Street address and barangay | Asking a pickup customer where they live is friction for no benefit |
 | Delivery area and fee | A `delivery_zones` table keyed by barangay | Kenn sets which barangays are served and what each costs, without a developer |
