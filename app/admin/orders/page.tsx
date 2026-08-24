@@ -2,6 +2,7 @@ import { requireStaff } from '@/lib/auth/session'
 import { getServerClient } from '@/lib/supabase/server'
 import { OrderCard, type AdminOrder } from '@/components/admin/OrderCard'
 import { duplicateReferences, type OrderStatus, type Fulfilment } from './status'
+import { iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +15,7 @@ type Row = {
   customer_note: string | null
   order_items: {
     name_snapshot: string; size: string; quantity: number
+    ice_level: string | null; ice_serve: string | null; item_note: string | null
     order_item_modifiers: { name_snapshot: string }[]
   }[]
 }
@@ -35,7 +37,7 @@ export default async function AdminOrdersPage() {
        customer_email, delivery_address, delivery_barangay, fulfil_at,
        subtotal_centavos, delivery_fee_centavos, total_centavos,
        gcash_reference, payment_proof_path, customer_note,
-       order_items ( name_snapshot, size, quantity,
+       order_items ( name_snapshot, size, quantity, ice_level, ice_serve, item_note,
                      order_item_modifiers ( name_snapshot ) )`,
     )
     .order('created_at', { ascending: false })
@@ -66,6 +68,11 @@ export default async function AdminOrdersPage() {
         size: i.size,
         quantity: i.quantity,
         modifiers: (i.order_item_modifiers ?? []).map((m) => m.name_snapshot),
+        ice: iceSummary(
+          i.ice_level as IceLevel | null,
+          i.ice_serve as IceServe | null,
+        ),
+        note: i.item_note,
       })),
     }))
     .sort((a, b) => RANK[a.status] - RANK[b.status])

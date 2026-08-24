@@ -5,6 +5,10 @@ import { formatPesos } from '@/lib/money'
 import { lineTotal, cartSubtotal } from '@/lib/cart/total'
 import { validateCheckout } from '@/lib/orders/validate'
 import type { CartLine, Fulfilment } from '@/lib/cart/types'
+import { DrinkCard } from '@/components/order/DrinkCard'
+import { CustomiseSheet, type SheetResult } from '@/components/order/CustomiseSheet'
+import { iceSummary } from '@/lib/cart/ice'
+import { SIZE_VOLUMES } from '@/lib/menu/sizes'
 import type { MenuCategoryWithItems, MenuItemWithPrices, DrinkSize } from '@/lib/menu/types'
 
 export type ModifierGroup = {
@@ -28,7 +32,8 @@ export function OrderClient({
   zones: Zone[]
 }) {
   const [lines, setLines] = useState<CartLine[]>([])
-  const [editing, setEditing] = useState<MenuItemWithPrices | null>(null)
+  const [hydrated, setHydrated] = useState(false)
+  const [editing, setEditing] = useState<{ item: MenuItemWithPrices; size: DrinkSize } | null>(null)
   const [step, setStep] = useState<'menu' | 'checkout' | 'pay' | 'done'>('menu')
 
   const [fulfilment, setFulfilment] = useState<Fulfilment>('pickup')
@@ -48,16 +53,22 @@ export function OrderClient({
       if (saved) setLines(JSON.parse(saved) as CartLine[])
     } catch {
       // Corrupt or unavailable storage is not worth failing the page over.
+    } finally {
+      setHydrated(true)
     }
   }, [])
 
   useEffect(() => {
+    // Guarded on `hydrated`: without it this effect fires on mount with the
+    // initial empty state -- before the load above has been applied -- and
+    // overwrites the saved cart with [], losing the order it exists to protect.
+    if (!hydrated) return
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(lines))
     } catch {
       // Private browsing can throw on write; the cart just won't persist.
     }
-  }, [lines])
+  }, [lines, hydrated])
 
   const subtotal = useMemo(() => cartSubtotal(lines), [lines])
   const zone = zones.find((z) => z.barangay === form.barangay)
@@ -66,12 +77,12 @@ export function OrderClient({
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }))
 
-  function addLine(item: MenuItemWithPrices, size: DrinkSize, modIds: string[], qty: number) {
-    const price = item.prices.find((p) => p.size === size)
+  function addLine(item: MenuItemWithPrices, result: SheetResult) {
+    const price = item.prices.find((p) => p.size === result.size)
     if (!price) return
     const mods = modifierGroups
       .flatMap((g) => g.modifiers)
-      .filter((m) => modIds.includes(m.id))
+      .filter((m) => result.modIds.includes(m.id))
 
     setLines((current) => [
       ...current,
@@ -79,10 +90,13 @@ export function OrderClient({
         lineId: crypto.randomUUID(),
         menuItemId: item.id,
         name: item.name,
-        size,
+        size: result.size,
         basePriceCentavos: price.priceCentavos,
         modifiers: mods,
-        quantity: qty,
+        quantity: result.quantity,
+        iceLevel: result.iceLevel,
+        iceServe: result.iceServe,
+        note: result.note,
       },
     ])
     setEditing(null)
@@ -114,6 +128,7 @@ export function OrderClient({
       lines: lines.map((l) => ({
         menuItemId: l.menuItemId, size: l.size, quantity: l.quantity,
         modifierIds: l.modifiers.map((m) => m.id),
+        iceLevel: l.iceLevel, iceServe: l.iceServe, note: l.note,
       })),
     }))
     body.set('proof', proofFile)
@@ -137,6 +152,7 @@ export function OrderClient({
 
   if (step === 'done' && orderCode) {
     return (
+      <div className="order-main">
       <div className="order-card">
         <h1>Order {orderCode}</h1>
         <p className="order-note">
@@ -149,6 +165,7 @@ export function OrderClient({
           <a href={`/order/${orderCode}`}>/order/{orderCode}</a>.
         </p>
       </div>
+      </div>
     )
   }
 
@@ -156,36 +173,43 @@ export function OrderClient({
     <>
       {step === 'menu' ? (
         <>
-          <h1>Order from Kennko</h1>
-          <p>Pick your drinks, then choose pickup or delivery.</p>
+          <header className="order-masthead">
+            <div className="order-masthead-inner">
+              <span className="order-eyebrow">Pickup or delivery</span>
+              <h1>The Kennko catalog</h1>
+              <p>
+                Every drink, every size, priced the way it is on the board.
+                Tap a size to start your order.
+              </p>
+            </div>
+          </header>
 
-          {categories.map((category) => (
-            <section key={category.id}>
-              <h2>{category.name}</h2>
-              {category.items.map((item) => (
-                <button
-                  key={item.id}
-                  className="order-item"
-                  disabled={!item.isAvailable || item.prices.length === 0}
-                  onClick={() => setEditing(item)}
-                >
-                  <span className="order-item-name">
-                    {item.name}
-                    {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
-                  </span>
-                  <span className="order-item-price">
-                    {!item.isAvailable
-                      ? 'Sold out'
-                      : `from ${formatPesos(Math.min(...item.prices.map((p) => p.priceCentavos)))}`}
-                  </span>
-                </button>
-              ))}
-            </section>
-          ))}
+          <div className="order-main">
+            {categories.map((category) => (
+              <section className="order-cat" key={category.id}>
+                <div className="order-cat-head">
+                  <h2>{category.name}</h2>
+                  <span className="order-cat-count">{category.items.length} drinks</span>
+                </div>
+
+                <div className="drink-grid">
+                  {category.items.map((item) => (
+                    <DrinkCard
+                      key={item.id}
+                      item={item}
+                      imageUrl={null}
+                      onPick={(picked, size) => setEditing({ item: picked, size })}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         </>
       ) : null}
 
       {step === 'checkout' ? (
+        <div className="order-main">
         <CheckoutStep
           lines={lines} subtotal={subtotal} fee={fee} total={total}
           fulfilment={fulfilment} setFulfilment={setFulfilment}
@@ -194,19 +218,23 @@ export function OrderClient({
           onNext={() => setStep('pay')}
           onRemove={(id) => setLines((c) => c.filter((l) => l.lineId !== id))}
         />
+        </div>
       ) : null}
 
       {step === 'pay' ? (
+        <div className="order-main">
         <PayStep
           total={total} form={form} set={set} errors={errors}
           proof={proof} setProof={setProof} submitting={submitting}
           onBack={() => setStep('checkout')} onSubmit={submit}
         />
+        </div>
       ) : null}
 
       {editing ? (
-        <ItemSheet
-          item={editing}
+        <CustomiseSheet
+          item={editing.item}
+          initialSize={editing.size}
           groups={modifierGroups}
           onCancel={() => setEditing(null)}
           onAdd={addLine}
@@ -216,97 +244,14 @@ export function OrderClient({
       {lines.length > 0 && step === 'menu' ? (
         <div className="order-cart-bar">
           <span>
-            {lines.reduce((n, l) => n + l.quantity, 0)} item(s) · {formatPesos(subtotal)}
+            {lines.reduce((n, l) => n + l.quantity, 0)} drink
+            {lines.reduce((n, l) => n + l.quantity, 0) === 1 ? '' : 's'} ·{' '}
+            <strong>{formatPesos(subtotal)}</strong>
           </span>
-          <button className="btn btn-secondary" onClick={() => setStep('checkout')}>
-            Review order
-          </button>
+          <button onClick={() => setStep('checkout')}>Review order</button>
         </div>
       ) : null}
     </>
-  )
-}
-
-function ItemSheet({
-  item, groups, onCancel, onAdd,
-}: {
-  item: MenuItemWithPrices
-  groups: ModifierGroup[]
-  onCancel: () => void
-  onAdd: (item: MenuItemWithPrices, size: DrinkSize, modIds: string[], qty: number) => void
-}) {
-  const [size, setSize] = useState<DrinkSize>(item.prices[0]?.size ?? 'M')
-  const [modIds, setModIds] = useState<string[]>([])
-  const [qty, setQty] = useState(1)
-
-  const base = item.prices.find((p) => p.size === size)?.priceCentavos ?? 0
-  const mods = groups.flatMap((g) => g.modifiers).filter((m) => modIds.includes(m.id))
-  const preview = lineTotal({ basePriceCentavos: base, modifiers: mods, quantity: qty })
-
-  function toggle(group: ModifierGroup, id: string) {
-    setModIds((current) => {
-      if (current.includes(id)) return current.filter((x) => x !== id)
-      if (group.isMultiSelect) return [...current, id]
-      const others = group.modifiers.map((m) => m.id)
-      return [...current.filter((x) => !others.includes(x)), id]
-    })
-  }
-
-  return (
-    <div className="order-sheet" role="dialog" aria-label={`Add ${item.name}`}>
-      <div className="order-sheet-card">
-        <h2>{item.name}</h2>
-
-        <div className="order-choice">
-          {item.prices.map((p) => (
-            <button
-              key={p.size}
-              aria-pressed={size === p.size}
-              onClick={() => setSize(p.size)}
-            >
-              {p.size} · {formatPesos(p.priceCentavos)}
-            </button>
-          ))}
-        </div>
-
-        {groups.map((group) => (
-          <div key={group.id}>
-            <h2>
-              {group.name} {group.isMultiSelect ? '(choose any)' : '(choose one)'}
-            </h2>
-            <div className="order-choice">
-              {group.modifiers.map((m) => (
-                <button
-                  key={m.id}
-                  aria-pressed={modIds.includes(m.id)}
-                  onClick={() => toggle(group, m.id)}
-                >
-                  {m.name} +{formatPesos(m.priceCentavos)}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-
-        <label className="order-field">
-          <span>Quantity</span>
-          <input
-            type="number" min={1} max={20} value={qty}
-            onChange={(e) => setQty(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
-          />
-        </label>
-
-        <div className="order-choice">
-          <button onClick={onCancel}>Cancel</button>
-          <button
-            aria-pressed
-            onClick={() => onAdd(item, size, modIds, qty)}
-          >
-            Add · {formatPesos(preview)}
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -324,108 +269,168 @@ function CheckoutStep({
   errors: string[]
   onBack: () => void; onNext: () => void; onRemove: (lineId: string) => void
 }) {
+  const count = lines.reduce((n, l) => n + l.quantity, 0)
+  const zoneChosen = Boolean(form.barangay)
+
   return (
-    <>
-      <h1>Your order</h1>
+    <div className="checkout">
+      <div className="checkout-head">
+        <button type="button" className="link-back" onClick={onBack}>
+          ← Back to the catalog
+        </button>
+        <h1>Your order</h1>
+        <p className="checkout-sub">
+          {count} drink{count === 1 ? '' : 's'} · review, then pay with GCash.
+        </p>
+      </div>
 
-      <div className="order-card">
-        {lines.map((line) => (
-          <div className="order-total" key={line.lineId}>
-            <span>
-              {line.quantity}× {line.name} ({line.size})
-              {line.modifiers.length > 0
-                ? ` + ${line.modifiers.map((m) => m.name).join(', ')}`
-                : ''}
-            </span>
-            <span>
-              {formatPesos(lineTotal(line))}{' '}
-              <button className="btn btn-secondary" onClick={() => onRemove(line.lineId)}>
-                Remove
+      <div className="checkout-grid">
+        <div className="checkout-col">
+          <section className="panel">
+            <h2 className="panel-title">How do you want it?</h2>
+            <div className="chips chips-stacked">
+              <button
+                type="button"
+                aria-pressed={fulfilment === 'pickup'}
+                onClick={() => { setFulfilment('pickup'); set({ address: '', barangay: '' }) }}
+              >
+                <span>Pick it up</span>
+                <small>CT. Montalban St., Villa Kananga · no extra charge</small>
               </button>
-            </span>
-          </div>
-        ))}
-      </div>
+              <button
+                type="button"
+                aria-pressed={fulfilment === 'delivery'}
+                onClick={() => setFulfilment('delivery')}
+              >
+                <span>Deliver to me</span>
+                <small>Fee depends on your barangay</small>
+              </button>
+            </div>
+          </section>
 
-      <h2>How do you want it?</h2>
-      <div className="order-choice">
-        <button aria-pressed={fulfilment === 'pickup'} onClick={() => { setFulfilment('pickup'); set({ address: '', barangay: '' }) }}>
-          Pick up
-        </button>
-        <button aria-pressed={fulfilment === 'delivery'} onClick={() => setFulfilment('delivery')}>
-          Deliver
-        </button>
-      </div>
-
-      <div className="order-card">
-        <label className="order-field">
-          <span>Name</span>
-          <input value={form.name} onChange={(e) => set({ name: e.target.value })} required />
-        </label>
-        <label className="order-field">
-          <span>Email — your confirmation goes here</span>
-          <input type="email" value={form.email} onChange={(e) => set({ email: e.target.value })} required />
-        </label>
-        <label className="order-field">
-          <span>Mobile number</span>
-          <input inputMode="tel" placeholder="0912 345 6789" value={form.phone}
-                 onChange={(e) => set({ phone: e.target.value })} required />
-        </label>
-
-        {fulfilment === 'delivery' ? (
-          <>
+          <section className="panel">
+            <h2 className="panel-title">Who is this for?</h2>
             <label className="order-field">
-              <span>Delivery address</span>
-              <input value={form.address} onChange={(e) => set({ address: e.target.value })} required />
+              <span>Name</span>
+              <input value={form.name} onChange={(e) => set({ name: e.target.value })}
+                     autoComplete="name" required />
             </label>
             <label className="order-field">
-              <span>Barangay</span>
-              <select value={form.barangay} onChange={(e) => set({ barangay: e.target.value })} required>
-                <option value="">Choose…</option>
-                {zones.map((z) => (
-                  <option key={z.barangay} value={z.barangay}>
-                    {z.barangay} — {formatPesos(z.feeCentavos)} delivery
-                  </option>
-                ))}
-              </select>
+              <span>Email</span>
+              <input type="email" value={form.email} autoComplete="email"
+                     onChange={(e) => set({ email: e.target.value })} required />
+              <small className="field-hint">Your confirmation goes here.</small>
             </label>
-          </>
-        ) : null}
+            <label className="order-field">
+              <span>Mobile number</span>
+              <input inputMode="tel" autoComplete="tel" placeholder="0912 345 6789"
+                     value={form.phone} onChange={(e) => set({ phone: e.target.value })} required />
+              <small className="field-hint">
+                {fulfilment === 'delivery'
+                  ? 'The rider calls this number.'
+                  : 'We call if there is a problem with your order.'}
+              </small>
+            </label>
+          </section>
 
-        <label className="order-field">
-          <span>{fulfilment === 'delivery' ? 'Deliver at' : 'Pick up at'}</span>
-          <input type="datetime-local" value={form.fulfilAt}
-                 onChange={(e) => set({ fulfilAt: e.target.value })} required />
-        </label>
+          {fulfilment === 'delivery' ? (
+            <section className="panel">
+              <h2 className="panel-title">Where are we taking it?</h2>
+              <label className="order-field">
+                <span>Street address</span>
+                <input value={form.address} autoComplete="street-address"
+                       onChange={(e) => set({ address: e.target.value })} required />
+              </label>
+              <label className="order-field">
+                <span>Barangay</span>
+                <select value={form.barangay}
+                        onChange={(e) => set({ barangay: e.target.value })} required>
+                  <option value="">Choose your barangay…</option>
+                  {zones.map((z) => (
+                    <option key={z.barangay} value={z.barangay}>
+                      {z.barangay} — {formatPesos(z.feeCentavos)}
+                    </option>
+                  ))}
+                </select>
+                <small className="field-hint">
+                  Not listed? Kennko does not deliver there yet — pick up instead.
+                </small>
+              </label>
+            </section>
+          ) : null}
 
-        <label className="order-field">
-          <span>Note (optional)</span>
-          <textarea value={form.note} onChange={(e) => set({ note: e.target.value })} />
-        </label>
-      </div>
-
-      <div className="order-card">
-        <div className="order-total"><span>Subtotal</span><span>{formatPesos(subtotal)}</span></div>
-        {fulfilment === 'delivery' ? (
-          <div className="order-total">
-            <span>Delivery{form.barangay ? ` to ${form.barangay}` : ''}</span>
-            <span>{form.barangay ? formatPesos(fee) : 'Choose a barangay'}</span>
-          </div>
-        ) : null}
-        <div className="order-total grand"><span>Total</span><span>{formatPesos(total)}</span></div>
-      </div>
-
-      {errors.length > 0 ? (
-        <div className="order-error" role="alert">
-          {errors.map((e) => <div key={e}>{e}</div>)}
+          <section className="panel">
+            <h2 className="panel-title">
+              {fulfilment === 'delivery' ? 'When should it arrive?' : 'When are you collecting?'}
+            </h2>
+            <label className="order-field">
+              <span>Date and time</span>
+              <input type="datetime-local" value={form.fulfilAt}
+                     onChange={(e) => set({ fulfilAt: e.target.value })} required />
+            </label>
+            <label className="order-field">
+              <span>Anything else about the order? (optional)</span>
+              <textarea value={form.note} rows={2}
+                        placeholder="Ring the gate, leave with the guard…"
+                        onChange={(e) => set({ note: e.target.value })} />
+            </label>
+          </section>
         </div>
-      ) : null}
 
-      <div className="order-choice">
-        <button onClick={onBack}>Back to menu</button>
-        <button aria-pressed onClick={onNext}>Continue to payment</button>
+        <aside className="checkout-rail">
+          <section className="panel panel-summary">
+            <h2 className="panel-title">Order summary</h2>
+
+            <ul className="summary-lines">
+              {lines.map((line) => (
+                <li key={line.lineId}>
+                  <div className="summary-qty">{line.quantity}×</div>
+                  <div className="summary-detail">
+                    <strong>{line.name}</strong>
+                    <span>{line.size} · {SIZE_VOLUMES[line.size]}</span>
+                    {line.modifiers.length > 0 ? (
+                      <span>{line.modifiers.map((m) => m.name).join(', ')}</span>
+                    ) : null}
+                    {iceSummary(line.iceLevel, line.iceServe) ? (
+                      <span>{iceSummary(line.iceLevel, line.iceServe)}</span>
+                    ) : null}
+                    {line.note ? <em>“{line.note}”</em> : null}
+                  </div>
+                  <div className="summary-money">
+                    {formatPesos(lineTotal(line))}
+                    <button type="button" onClick={() => onRemove(line.lineId)}
+                            aria-label={`Remove ${line.name}`}>
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="order-total"><span>Subtotal</span><span>{formatPesos(subtotal)}</span></div>
+            {fulfilment === 'delivery' ? (
+              <div className="order-total">
+                <span>Delivery{zoneChosen ? ` · ${form.barangay}` : ''}</span>
+                <span>{zoneChosen ? formatPesos(fee) : '—'}</span>
+              </div>
+            ) : null}
+            <div className="order-total grand">
+              <span>Total</span><span>{formatPesos(total)}</span>
+            </div>
+
+            {errors.length > 0 ? (
+              <div className="order-error" role="alert">
+                {errors.map((e) => <div key={e}>{e}</div>)}
+              </div>
+            ) : null}
+
+            <button type="button" className="sheet-add" onClick={onNext}>
+              Continue to payment
+            </button>
+          </section>
+        </aside>
       </div>
-    </>
+    </div>
   )
 }
 

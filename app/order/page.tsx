@@ -45,13 +45,11 @@ export default async function OrderPage() {
 
   return (
     <div className="order-shell">
-      <div className="order-main">
-        <OrderClient
-          categories={categories}
-          modifierGroups={modifierGroups}
-          zones={deliveryZones}
-        />
-      </div>
+      <OrderClient
+        categories={categories}
+        modifierGroups={modifierGroups}
+        zones={deliveryZones}
+      />
     </div>
   )
 }

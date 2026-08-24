@@ -1,4 +1,5 @@
 import type { DrinkSize } from '@/lib/menu/types'
+import type { IceLevel, IceServe } from './ice'
 
 export type CartModifier = {
   id: string
@@ -14,6 +15,9 @@ export type CartLine = {
   basePriceCentavos: number
   modifiers: CartModifier[]
   quantity: number
+  iceLevel: IceLevel | null
+  iceServe: IceServe | null
+  note: string
 }
 
 export type Fulfilment = 'pickup' | 'delivery'

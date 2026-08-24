@@ -181,3 +181,17 @@
 @media (min-width: 1400px) {
   .admin-order-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* Ice is a preparation instruction, so it reads at the same weight as the
+   drink name rather than as an afterthought. */
+.order-ice { color: var(--blue); }
+
+/* A per-drink note is an instruction for the cup in hand, so it is set apart
+   from the line rather than run into it. */
+.order-item-note {
+  margin: 2px 0 6px 14px;
+  padding-left: 10px;
+  border-left: 3px solid var(--amber);
+  font-style: italic;
+  color: #7a4b00;
+}

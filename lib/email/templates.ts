@@ -7,11 +7,20 @@ export type OrderEmailData = {
   fulfilAt: string
   totalCentavos: number
   deliveryAddress?: string | null
-  items: { name: string; size: string; quantity: number }[]
+  items: {
+    name: string; size: string; quantity: number
+    ice?: string | null; note?: string | null
+  }[]
 }
 
 function itemLines(items: OrderEmailData['items']): string {
-  return items.map((i) => `  ${i.quantity}x ${i.name} (${i.size})`).join('\n')
+  return items
+    .map((i) => {
+      const ice = i.ice ? ` -- ${i.ice}` : ''
+      const note = i.note ? `\n      NOTE: ${i.note}` : ''
+      return `  ${i.quantity}x ${i.name} (${i.size})${ice}${note}`
+    })
+    .join('\n')
 }
 
 export function staffAlertSubject(data: OrderEmailData): string {

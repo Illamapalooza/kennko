@@ -43,6 +43,7 @@ export default async function OrderStatusPage({
             <div className="order-total" key={`${item.name}-${index}`}>
               <span>
                 {item.quantity}× {item.name} ({item.size})
+                {item.ice ? ` · ${item.ice}` : ''}
               </span>
             </div>
           ))}

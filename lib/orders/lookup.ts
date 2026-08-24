@@ -1,5 +1,6 @@
 import 'server-only'
 import { getAdminClient } from '@/lib/supabase/admin'
+import { iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 
 export type PublicOrder = {
   orderCode: string
@@ -8,7 +9,7 @@ export type PublicOrder = {
   fulfilAt: string
   totalCentavos: number
   deliveryAddress: string | null
-  items: { name: string; size: string; quantity: number }[]
+  items: { name: string; size: string; quantity: number; ice: string | null }[]
 }
 
 /**
@@ -22,7 +23,7 @@ export async function lookupOrder(code: string): Promise<PublicOrder | null> {
   const { data } = await db
     .from('orders')
     .select(
-      'order_code, status, fulfilment, fulfil_at, total_centavos, delivery_address, order_items ( name_snapshot, size, quantity )',
+      'order_code, status, fulfilment, fulfil_at, total_centavos, delivery_address, order_items ( name_snapshot, size, quantity, ice_level, ice_serve )',
     )
     .eq('order_code', code.toUpperCase())
     .maybeSingle()
@@ -37,10 +38,14 @@ export async function lookupOrder(code: string): Promise<PublicOrder | null> {
     totalCentavos: data.total_centavos,
     deliveryAddress: data.delivery_address,
     items: (data.order_items ?? []).map(
-      (i: { name_snapshot: string; size: string; quantity: number }) => ({
+      (i: {
+        name_snapshot: string; size: string; quantity: number
+        ice_level: IceLevel | null; ice_serve: IceServe | null
+      }) => ({
         name: i.name_snapshot,
         size: i.size,
         quantity: i.quantity,
+        ice: iceSummary(i.ice_level, i.ice_serve),
       }),
     ),
   }

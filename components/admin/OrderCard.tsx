@@ -22,7 +22,10 @@ export type AdminOrder = {
   gcashReference: string
   paymentProofPath: string
   customerNote: string | null
-  items: { name: string; size: string; quantity: number; modifiers: string[] }[]
+  items: {
+    name: string; size: string; quantity: number
+    modifiers: string[]; ice: string | null; note: string | null
+  }[]
 }
 
 export function OrderCard({
@@ -73,6 +76,10 @@ export function OrderCard({
           <div key={`${item.name}-${i}`}>
             {item.quantity}× {item.name} ({item.size})
             {item.modifiers.length > 0 ? ` + ${item.modifiers.join(', ')}` : ''}
+            {item.ice ? <strong className="order-ice"> · {item.ice}</strong> : null}
+            {item.note ? (
+              <div className="order-item-note">“{item.note}”</div>
+            ) : null}
           </div>
         ))}
       </div>

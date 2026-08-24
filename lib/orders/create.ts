@@ -3,6 +3,7 @@ import { getAdminClient } from '@/lib/supabase/admin'
 import { validateImage } from '@/lib/images/validate'
 import { validateCheckout, type CheckoutInput } from './validate'
 import { lineTotal, generateOrderCode } from '@/lib/cart/total'
+import { normaliseIce, iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 import type { DrinkSize } from '@/lib/menu/types'
 
 export type SubmittedLine = {
@@ -10,6 +11,9 @@ export type SubmittedLine = {
   size: DrinkSize
   quantity: number
   modifierIds: string[]
+  iceLevel: IceLevel | null
+  iceServe: IceServe | null
+  note?: string
 }
 
 export type SubmittedOrder = CheckoutInput & {
@@ -18,7 +22,13 @@ export type SubmittedOrder = CheckoutInput & {
   claimedTotalCentavos: number
 }
 
-export type OrderSummaryItem = { name: string; size: string; quantity: number }
+export type OrderSummaryItem = {
+  name: string
+  size: string
+  quantity: number
+  ice: string | null
+  note: string | null
+}
 
 export type CreateResult =
   | {
@@ -81,6 +91,7 @@ export async function createOrder(
     basePrice: number
     mods: { id: string; name: string; priceCentavos: number }[]
     total: number
+    ice: { level: IceLevel | null; serve: IceServe | null }
   }[] = []
 
   for (const line of submitted.lines) {
@@ -138,12 +149,17 @@ export async function createOrder(
       }
     }
 
+    // Normalised server-side too: a crafted request cannot attach an ice
+    // instruction to a hot drink, and the CHECK constraint backs this up.
+    const ice = normaliseIce(line.size, line.iceLevel, line.iceServe)
+
     priced.push({
       line,
       name: item.name,
       basePrice: price.price_centavos,
       mods: resolvedMods,
       total,
+      ice,
     })
   }
 
@@ -240,6 +256,9 @@ export async function createOrder(
         base_price_centavos: entry.basePrice,
         quantity: entry.line.quantity,
         line_total_centavos: entry.total,
+        ice_level: entry.ice.level,
+        ice_serve: entry.ice.serve,
+        item_note: entry.line.note?.trim().slice(0, 200) || null,
       })
       .select('id')
       .single()
@@ -274,6 +293,8 @@ export async function createOrder(
       name: p.name,
       size: p.line.size,
       quantity: p.line.quantity,
+      ice: iceSummary(p.ice.level, p.ice.serve),
+      note: p.line.note?.trim().slice(0, 200) || null,
     })),
     subtotalCentavos: subtotal,
     deliveryFeeCentavos: feeCentavos,
