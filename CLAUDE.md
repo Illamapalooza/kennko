@@ -104,6 +104,17 @@ real GCash QR replaces `public/gcash-qr-placeholder.png`.
 
 Seed delivery zones with `npm run seed-zones`.
 
+### Email
+
+Resend, configured by `RESEND_API_KEY`. Without the key, sends are logged and
+the request continues -- a missing key must never lose a paid order. The same
+applies when Resend rejects a send: it is logged, the order still saves.
+
+**Until a domain is verified at resend.com/domains, the account can only deliver
+to the Resend account owner's own address.** Staff alerts to any other address
+return 403. Verify a domain and set `ORDER_EMAIL_FROM` to an address on it
+before going live, or staff will silently never be alerted to a real order.
+
 ## Planned Work
 `docs/superpowers/specs/` holds the ordering + admin design spec.
 `docs/superpowers/plans/` holds the implementation plans. Plan 1 (this
