@@ -5,6 +5,7 @@ import { validateCheckout, type CheckoutInput } from './validate'
 import { lineTotal, generateOrderCode } from '@/lib/cart/total'
 import { normaliseIce, iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 import { ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
+import { verifyPin } from '@/lib/delivery/verify'
 import type { DrinkSize } from '@/lib/menu/types'
 
 export type SubmittedLine = {
@@ -21,6 +22,7 @@ export type SubmittedOrder = CheckoutInput & {
   lines: SubmittedLine[]
   note: string
   claimedTotalCentavos: number
+  pin?: { lat: number; lng: number; accuracyM: number | null } | null
 }
 
 /** Set by the API route from the session, never from the request body. */
@@ -173,6 +175,8 @@ export async function createOrder(
   // ---- Delivery fee comes from the zone row, never from the request. ----
   let feeCentavos = 0
   let zoneId: string | null = null
+  let distanceKm: number | null = null
+  let pin: { lat: number; lng: number; accuracyM: number | null } | null = null
 
   if (submitted.fulfilment === 'delivery') {
     const { data: zone } = await db
@@ -190,8 +194,6 @@ export async function createOrder(
       }
     }
 
-    // Computed from the zone's own coordinates, never from the request: a
-    // client cannot claim to be nearer than it is.
     if (zone.fee_override_centavos !== null) {
       feeCentavos = zone.fee_override_centavos
     } else if (zone.latitude === null || zone.longitude === null) {
@@ -205,11 +207,27 @@ export async function createOrder(
         ],
       }
     } else {
-      const km = ridingDistanceKm({
-        lat: Number(zone.latitude),
-        lng: Number(zone.longitude),
-      })
-      feeCentavos = deliveryFeeCentavos(km, zone.is_home)
+      const centre = { lat: Number(zone.latitude), lng: Number(zone.longitude) }
+
+      // The pin is client-supplied and sets the price, so it is only trusted
+      // when it agrees with the barangay -- which is not client-supplied. A
+      // rejected pin falls back to the barangay centre rather than failing the
+      // order, except when the customer is plainly claiming the wrong place.
+      const check = verifyPin(submitted.pin ?? null, centre)
+
+      if (!check.ok && check.reason === 'inconsistent') {
+        return {
+          ok: false,
+          status: 409,
+          code: 'PIN_MISMATCH',
+          errors: [check.message],
+        }
+      }
+
+      const target = check.ok ? check.pin : centre
+      distanceKm = ridingDistanceKm(target)
+      feeCentavos = deliveryFeeCentavos(distanceKm, zone.is_home)
+      if (check.ok) pin = { ...check.pin, accuracyM: submitted.pin?.accuracyM ?? null }
     }
 
     zoneId = zone.id
@@ -258,6 +276,10 @@ export async function createOrder(
       payment_proof_path: proofPath,
       customer_note: submitted.note.trim() || null,
       customer_user_id: context.customerUserId,
+      delivery_lat: pin?.lat ?? null,
+      delivery_lng: pin?.lng ?? null,
+      delivery_accuracy_m: pin?.accuracyM ?? null,
+      delivery_distance_km: distanceKm !== null ? Number(distanceKm.toFixed(2)) : null,
     })
     .select('id')
     .single()

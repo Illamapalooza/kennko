@@ -10,6 +10,8 @@ type Row = {
   id: string; order_code: string; status: OrderStatus; fulfilment: Fulfilment
   customer_name: string; customer_phone: string; customer_email: string
   delivery_address: string | null; delivery_barangay: string | null
+  delivery_lat: string | null; delivery_lng: string | null
+  delivery_distance_km: string | null
   fulfil_at: string; subtotal_centavos: number; delivery_fee_centavos: number
   total_centavos: number; gcash_reference: string; payment_proof_path: string
   customer_note: string | null
@@ -34,7 +36,8 @@ export default async function AdminOrdersPage() {
     .from('orders')
     .select(
       `id, order_code, status, fulfilment, customer_name, customer_phone,
-       customer_email, delivery_address, delivery_barangay, fulfil_at,
+       customer_email, delivery_address, delivery_barangay,
+       delivery_lat, delivery_lng, delivery_distance_km, fulfil_at,
        subtotal_centavos, delivery_fee_centavos, total_centavos,
        gcash_reference, payment_proof_path, customer_note,
        order_items ( name_snapshot, size, quantity, ice_level, ice_serve, item_note,
@@ -56,6 +59,10 @@ export default async function AdminOrdersPage() {
       customerEmail: r.customer_email,
       deliveryAddress: r.delivery_address,
       deliveryBarangay: r.delivery_barangay,
+      deliveryLat: r.delivery_lat === null ? null : Number(r.delivery_lat),
+      deliveryLng: r.delivery_lng === null ? null : Number(r.delivery_lng),
+      deliveryDistanceKm:
+        r.delivery_distance_km === null ? null : Number(r.delivery_distance_km),
       fulfilAt: r.fulfil_at,
       subtotalCentavos: r.subtotal_centavos,
       deliveryFeeCentavos: r.delivery_fee_centavos,

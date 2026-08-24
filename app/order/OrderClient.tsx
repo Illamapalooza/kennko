@@ -9,7 +9,8 @@ import { DrinkCard } from '@/components/order/DrinkCard'
 import { CustomiseSheet, type SheetResult } from '@/components/order/CustomiseSheet'
 import { iceSummary } from '@/lib/cart/ice'
 import { SIZE_VOLUMES } from '@/lib/menu/sizes'
-import { describeFee } from '@/lib/delivery/distance'
+import { describeFee, ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
+import { LocationPin, type SharedPin } from '@/components/order/LocationPin'
 import type { MenuCategoryWithItems, MenuItemWithPrices, DrinkSize } from '@/lib/menu/types'
 
 export type ModifierGroup = {
@@ -54,6 +55,7 @@ export function OrderClient({
     gcashReference: '',
   })
   const [proof, setProof] = useState<File | null>(null)
+  const [pin, setPin] = useState<SharedPin | null>(null)
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [orderCode, setOrderCode] = useState<string | null>(null)
@@ -84,7 +86,19 @@ export function OrderClient({
 
   const subtotal = useMemo(() => cartSubtotal(lines), [lines])
   const zone = zones.find((z) => z.barangay === form.barangay)
-  const fee = fulfilment === 'delivery' ? (zone?.feeCentavos ?? 0) : 0
+
+  // Quoted with the same functions the server charges with. When a pin is
+  // shared the distance comes from it; otherwise from the barangay centre.
+  const deliveryKm =
+    zone && pin && !zone.isHome ? ridingDistanceKm(pin) : (zone?.distanceKm ?? 0)
+  const fee =
+    fulfilment === 'delivery' && zone
+      ? zone.isHome
+        ? 0
+        : pin
+          ? deliveryFeeCentavos(deliveryKm, false)
+          : zone.feeCentavos
+      : 0
   const total = subtotal + fee
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }))
@@ -137,6 +151,7 @@ export function OrderClient({
       fulfilAt: form.fulfilAt, gcashReference: form.gcashReference,
       note: form.note,
       claimedTotalCentavos: total,
+      pin: fulfilment === 'delivery' ? pin : null,
       lines: lines.map((l) => ({
         menuItemId: l.menuItemId, size: l.size, quantity: l.quantity,
         modifierIds: l.modifiers.map((m) => m.id),
@@ -231,6 +246,7 @@ export function OrderClient({
           lines={lines} subtotal={subtotal} fee={fee} total={total}
           fulfilment={fulfilment} setFulfilment={setFulfilment}
           zones={zones} form={form} set={set} errors={errors}
+          pin={pin} setPin={setPin} deliveryKm={deliveryKm}
           onBack={() => setStep('menu')}
           onNext={() => setStep('pay')}
           onRemove={(id) => setLines((c) => c.filter((l) => l.lineId !== id))}
@@ -274,7 +290,7 @@ export function OrderClient({
 
 function CheckoutStep({
   lines, subtotal, fee, total, fulfilment, setFulfilment, zones, form, set, errors,
-  onBack, onNext, onRemove,
+  pin, setPin, deliveryKm, onBack, onNext, onRemove,
 }: {
   lines: CartLine[]
   subtotal: number; fee: number; total: number
@@ -284,6 +300,9 @@ function CheckoutStep({
   form: Record<string, string>
   set: (patch: Record<string, string>) => void
   errors: string[]
+  pin: SharedPin | null
+  setPin: (pin: SharedPin | null) => void
+  deliveryKm: number
   onBack: () => void; onNext: () => void; onRemove: (lineId: string) => void
 }) {
   const count = lines.reduce((n, l) => n + l.quantity, 0)
@@ -292,7 +311,9 @@ function CheckoutStep({
   const feeBasis = zone
     ? zone.isHome
       ? 'Free — our own barangay'
-      : describeFee(zone.distanceKm, false)
+      : pin
+        ? `${describeFee(deliveryKm, false)} · from your pin`
+        : `${describeFee(zone.distanceKm, false)} · from your barangay`
     : ''
 
   return (
@@ -379,6 +400,8 @@ function CheckoutStep({
                   Not listed? Kennko does not deliver there yet — pick up instead.
                 </small>
               </label>
+
+              <LocationPin pin={pin} onPin={setPin} onClear={() => setPin(null)} />
             </section>
           ) : null}
 

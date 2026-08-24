@@ -15,6 +15,9 @@ export type AdminOrder = {
   customerEmail: string
   deliveryAddress: string | null
   deliveryBarangay: string | null
+  deliveryLat: number | null
+  deliveryLng: number | null
+  deliveryDistanceKm: number | null
   fulfilAt: string
   subtotalCentavos: number
   deliveryFeeCentavos: number
@@ -64,9 +67,30 @@ export function OrderCard({
       <div>
         <strong>{order.fulfilment === 'delivery' ? 'DELIVERY' : 'PICKUP'}</strong>
         {order.fulfilment === 'delivery' ? (
-          <p style={{ margin: '4px 0' }}>
-            {order.deliveryAddress}, {order.deliveryBarangay}
-          </p>
+          <>
+            <p style={{ margin: '4px 0' }}>
+              {order.deliveryAddress}, {order.deliveryBarangay}
+            </p>
+            {order.deliveryLat !== null && order.deliveryLng !== null ? (
+              <p style={{ margin: '4px 0' }}>
+                <a
+                  className="btn btn-secondary"
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${order.deliveryLat},${order.deliveryLng}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Navigate to pin
+                </a>
+                {order.deliveryDistanceKm !== null ? (
+                  <span> · {order.deliveryDistanceKm}km</span>
+                ) : null}
+              </p>
+            ) : (
+              <p className="admin-notice" style={{ margin: '4px 0' }}>
+                No pin shared — call the customer for directions.
+              </p>
+            )}
+          </>
         ) : null}
         <p style={{ margin: '4px 0' }}>{new Date(order.fulfilAt).toLocaleString('en-PH')}</p>
       </div>

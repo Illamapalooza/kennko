@@ -122,6 +122,24 @@ client cannot claim to be nearer than it is.
 wrong fee — verify each against the map before going live. Everyone in a
 barangay pays the same fee, which is predictable to quote and hard to dispute.
 
+### The delivery pin
+
+Customers may share their location with one tap — `navigator.geolocation`, no
+map, no tiles, no dependency, no key. It does two jobs: the rider gets a
+coordinate to navigate to (informal addresses are the norm here), and the fee is
+measured from where they actually are.
+
+**The pin is client-supplied and sets the price, so it is never trusted alone.**
+`verifyPin()` checks it against the chosen barangay, which *is* looked up
+server-side. A pin more than 4km from that barangay's centre is refused with
+`PIN_MISMATCH` — otherwise anyone could pin the cafe and pay no delivery fee.
+This bounds manipulation to within one barangay: exactly the granularity fees
+had before pins existed, so a liar gains nothing.
+
+Degradation is deliberate: a GPS fix looser than 500m, a declined permission, or
+no pin at all all fall back to the barangay centre and the order still goes
+through. Only an inconsistent pin fails the order.
+
 Seed delivery zones with `npm run seed-zones`.
 
 ### Customer accounts

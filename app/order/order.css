@@ -476,3 +476,28 @@
 /* The fee is a rule, not a number pulled from nowhere -- showing the distance
    and bands beside it makes it checkable. */
 .fee-basis { display: block; font-size: .74rem; font-weight: 600; color: var(--ink-soft); }
+
+/* ── Location pin ── */
+.pin-box {
+  border: 2px dashed rgba(0, 85, 255, .28); border-radius: 14px;
+  padding: 14px; margin-bottom: 12px; background: #f8faff;
+}
+.pin-btn {
+  width: 100%; min-height: 46px; border-radius: 999px;
+  border: 2px solid var(--blue); background: var(--white); color: var(--blue);
+  font: inherit; font-weight: 800; cursor: pointer;
+}
+.pin-btn:hover:not([disabled]) { background: var(--blue); color: var(--white); }
+.pin-btn[disabled] { opacity: .6; cursor: progress; }
+.pin-hint { margin: 8px 0 0; font-size: .78rem; color: var(--ink-soft); font-weight: 600; }
+.pin-note { margin: 8px 0 0; font-size: .78rem; color: #7a4b00; font-weight: 600; }
+
+.pin-ok { display: grid; gap: 4px; }
+.pin-ok strong { color: #14663a; }
+.pin-ok span { font-size: .8rem; color: var(--ink-soft); }
+.pin-actions { display: flex; gap: 8px; margin-top: 6px; }
+.pin-actions button {
+  min-height: 40px; padding: 0 14px; border-radius: 999px;
+  border: 2px solid rgba(0,85,255,.25); background: var(--white);
+  font: inherit; font-weight: 700; font-size: .82rem; color: var(--blue); cursor: pointer;
+}
