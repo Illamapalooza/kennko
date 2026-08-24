@@ -1,7 +1,7 @@
 # Kennko Coffee — Brand Brief
 
 ## About
-Kennko Coffee is a cafe located inside SM Butuan City, Philippines. Founded in 2023 by Kenn Baliling. Known for premium coffee and non-coffee drinks in a fun, approachable atmosphere. The brand is bold, playful, and youthful.
+Kennko Coffee is a cafe on CT. Montalban St., Villa Kananga, Butuan City, Philippines. Founded in 2023 by Kenn Baliling. Known for premium coffee and non-coffee drinks in a fun, approachable atmosphere. The brand is bold, playful, and youthful.
 
 ## Menu
 
