@@ -818,9 +818,9 @@ describe('menu seed data', () => {
     expect(total).toBe(22)
   })
 
-  it('marks 9 bestsellers', () => {
+  it('marks 11 bestsellers', () => {
     const stars = SEED_CATEGORIES.flatMap((c) => c.items).filter((i) => i.isBestseller)
-    expect(stars).toHaveLength(9)
+    expect(stars).toHaveLength(11)
   })
 
   it('prices the cheapest and priciest items correctly', () => {

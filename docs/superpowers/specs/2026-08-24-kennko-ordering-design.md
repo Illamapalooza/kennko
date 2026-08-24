@@ -453,7 +453,7 @@ Still worth answering, none blocking:
    badly, the model needs a per-item allowlist.
 5. **🟡 Size labels.** M / L / XL are the printed headers. Confirm these are the
    words customers use, and whether they map to volumes worth showing (16oz etc).
-6. **🟡 Bestseller stars.** Nine items are starred on the printed menu. The build
+6. **🟡 Bestseller stars.** Eleven items are starred on the printed menu. The build
    stores `is_bestseller` and surfaces a "Bestsellers" row on the order page;
    say so if the star is meant as in-store decoration only.
 7. **🟢 Naming.** The Google listing is "KennCo. Cafe", Facebook is
@@ -595,4 +595,4 @@ means that size is not offered. Prices in pesos.
 | Cream Supreme | Matcha Cream | +65 | single |
 | Cream Supreme | Coconut Cream | +50 | single |
 
-**Totals:** 4 categories, 22 drinks, 9 bestsellers, 11 modifiers in 3 groups.
+**Totals:** 4 categories, 22 drinks, 11 bestsellers, 11 modifiers in 3 groups.
