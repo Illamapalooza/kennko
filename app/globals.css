@@ -508,3 +508,16 @@ footer {
   color: var(--amber);
   font-weight: 700;
 }
+
+/* Ordering entry points. The nav link is set apart from the section anchors
+   beside it, because it leaves the page rather than scrolling within it. */
+.nav-order {
+  background: var(--amber);
+  color: var(--text) !important;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-weight: 800;
+}
+.nav-order:hover { background: #ffc65c; }
+
+.menu-cta { display: flex; justify-content: center; margin-top: 26px; }

@@ -1,4 +1,6 @@
 export function Hero() {
+  const orderingOn = process.env.NEXT_PUBLIC_ORDERING_ENABLED === 'true'
+
   return (
     <section className="hero">
       <div className="container hero-shell">
@@ -19,8 +21,13 @@ export function Hero() {
             a fun, youthful vibe that feels easy to love.
           </p>
           <div className="cta-row">
+            {orderingOn ? (
+              <a className="btn btn-primary" href="/order">
+                Order now
+              </a>
+            ) : null}
             <a
-              className="btn btn-primary"
+              className={orderingOn ? 'btn btn-secondary' : 'btn btn-primary'}
               href="https://www.facebook.com/kennco.cafebxu"
               target="_blank"
               rel="noreferrer"

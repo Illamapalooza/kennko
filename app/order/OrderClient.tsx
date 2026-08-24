@@ -28,6 +28,18 @@ export type Zone = {
 }
 
 const STORAGE_KEY = 'kennko-cart-v1'
+const CHECKOUT_KEY = 'kennko-checkout-v1'
+
+type Step = 'menu' | 'checkout' | 'pay' | 'done'
+const STEPS: Step[] = ['menu', 'checkout', 'pay', 'done']
+
+function readStepFromUrl(): { step: Step; code: string | null } {
+  if (typeof window === 'undefined') return { step: 'menu', code: null }
+  const params = new URLSearchParams(window.location.search)
+  const raw = params.get('step')
+  const step = STEPS.includes(raw as Step) ? (raw as Step) : 'menu'
+  return { step, code: params.get('code') }
+}
 
 export function OrderClient({
   categories,
@@ -43,7 +55,7 @@ export function OrderClient({
   const [lines, setLines] = useState<CartLine[]>([])
   const [hydrated, setHydrated] = useState(false)
   const [editing, setEditing] = useState<{ item: MenuItemWithPrices; size: DrinkSize } | null>(null)
-  const [step, setStep] = useState<'menu' | 'checkout' | 'pay' | 'done'>('menu')
+  const [step, setStepState] = useState<Step>('menu')
 
   const [fulfilment, setFulfilment] = useState<Fulfilment>('pickup')
   const [form, setForm] = useState({
@@ -62,14 +74,46 @@ export function OrderClient({
 
   // Cart survives a refresh mid-order.
   useEffect(() => {
+    let restored: CartLine[] = []
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
-      if (saved) setLines(JSON.parse(saved) as CartLine[])
+      if (saved) {
+        restored = JSON.parse(saved) as CartLine[]
+        setLines(restored)
+      }
+
+      // Checkout details survive a refresh too -- retyping an address after an
+      // accidental reload is the fastest way to lose an order.
+      const savedCheckout = localStorage.getItem(CHECKOUT_KEY)
+      if (savedCheckout) {
+        const parsed = JSON.parse(savedCheckout) as {
+          form?: Record<string, string>
+          fulfilment?: Fulfilment
+          pin?: SharedPin | null
+        }
+        if (parsed.form) setForm((f) => ({ ...f, ...parsed.form }))
+        if (parsed.fulfilment) setFulfilment(parsed.fulfilment)
+        if (parsed.pin) setPin(parsed.pin)
+      }
     } catch {
       // Corrupt or unavailable storage is not worth failing the page over.
-    } finally {
-      setHydrated(true)
     }
+
+    // The step lives in the URL, so a refresh or a back button lands where the
+    // customer was rather than dumping them at the top of the menu.
+    const { step: urlStep, code } = readStepFromUrl()
+    if (urlStep === 'done' && code) {
+      setOrderCode(code)
+      setStepState('done')
+    } else if (urlStep !== 'menu' && restored.length === 0) {
+      // Nothing to check out; do not strand them on an empty form.
+      setStepState('menu')
+      window.history.replaceState(null, '', '/order')
+    } else {
+      setStepState(urlStep)
+    }
+
+    setHydrated(true)
   }, [])
 
   useEffect(() => {
@@ -83,6 +127,37 @@ export function OrderClient({
       // Private browsing can throw on write; the cart just won't persist.
     }
   }, [lines, hydrated])
+
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      localStorage.setItem(CHECKOUT_KEY, JSON.stringify({ form, fulfilment, pin }))
+    } catch {
+      // Same as the cart: persistence is a convenience, never a requirement.
+    }
+  }, [form, fulfilment, pin, hydrated])
+
+  // Browser back and forward move between steps, not out of the order.
+  useEffect(() => {
+    function onPop() {
+      const { step: urlStep, code } = readStepFromUrl()
+      if (code) setOrderCode(code)
+      setStepState(urlStep)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  function setStep(next: Step, code?: string) {
+    setStepState(next)
+    const query =
+      next === 'menu'
+        ? ''
+        : next === 'done' && code
+          ? `?step=done&code=${encodeURIComponent(code)}`
+          : `?step=${next}`
+    window.history.pushState(null, '', `/order${query}`)
+  }
 
   const subtotal = useMemo(() => cartSubtotal(lines), [lines])
   const zone = zones.find((z) => z.barangay === form.barangay)
@@ -169,7 +244,9 @@ export function OrderClient({
       }
       setOrderCode(result.orderCode)
       setLines([])
-      setStep('done')
+      // The order is placed; the saved checkout details are no longer wanted.
+      try { localStorage.removeItem(CHECKOUT_KEY) } catch { /* ignore */ }
+      setStep('done', result.orderCode)
     } catch {
       setErrors(['Could not reach the server. Check your connection and try again.'])
     } finally {
@@ -180,18 +257,17 @@ export function OrderClient({
   if (step === 'done' && orderCode) {
     return (
       <div className="order-main">
-      <div className="order-card">
-        <h1>Order {orderCode}</h1>
-        <p className="order-note">
-          <strong>Your order is not confirmed yet.</strong> A barista still has to
-          check your GCash payment. You will get a confirmation email once they do
-          — please do not come in or expect delivery before that.
-        </p>
-        <p>
-          Keep this code: <strong>{orderCode}</strong>. You can check it any time at{' '}
-          <a href={`/order/${orderCode}`}>/order/{orderCode}</a>.
-        </p>
-      </div>
+        <DoneStep
+          orderCode={orderCode}
+          signedIn={Boolean(customer)}
+          onOrderAgain={() => {
+            setOrderCode(null)
+            setProof(null)
+            setPin(null)
+            setForm((f) => ({ ...f, gcashReference: '', note: '', fulfilAt: '' }))
+            setStep('menu')
+          }}
+        />
       </div>
     )
   }
@@ -538,5 +614,69 @@ function PayStep({
         </button>
       </div>
     </>
+  )
+}
+
+function DoneStep({
+  orderCode,
+  signedIn,
+  onOrderAgain,
+}: {
+  orderCode: string
+  signedIn: boolean
+  onOrderAgain: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(orderCode)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard is blocked in some contexts; the code is on screen anyway.
+    }
+  }
+
+  return (
+    <div className="done">
+      <div className="done-mark" aria-hidden="true">✓</div>
+      <h1>Order received</h1>
+      <p className="done-sub">Keep this code — it is how you and the cafe find your order.</p>
+
+      <div className="done-code">
+        <strong>{orderCode}</strong>
+        <button type="button" onClick={copy}>
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+
+      <p className="order-note">
+        <strong>Not confirmed yet.</strong> A barista still has to check your GCash
+        payment against the app. You will get a confirmation email once they do —
+        please do not travel here or expect delivery before that.
+      </p>
+
+      <div className="done-actions">
+        <a className="sheet-add" href={`/order/${orderCode}`}>
+          Track this order
+        </a>
+        <button type="button" className="done-secondary" onClick={onOrderAgain}>
+          Order something else
+        </button>
+      </div>
+
+      <div className="done-links">
+        {signedIn ? (
+          <a href="/orders">See all your orders</a>
+        ) : (
+          <span>
+            <a href="/account">Sign in with Google</a> to find this order later
+            without the code.
+          </span>
+        )}
+        <a href="/">Back to the Kennko site</a>
+      </div>
+    </div>
   )
 }

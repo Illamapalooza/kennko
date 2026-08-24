@@ -501,3 +501,56 @@
   border: 2px solid rgba(0,85,255,.25); background: var(--white);
   font: inherit; font-weight: 700; font-size: .82rem; color: var(--blue); cursor: pointer;
 }
+
+/* ── Confirmation ──────────────────────────────────────────────────────────
+   The end of the flow is not a dead end: the code is copyable, the order is
+   trackable, and there is a way back to the menu and the site.             */
+.done {
+  max-width: 520px; margin: 0 auto; padding: 32px 16px;
+  background: var(--white); border-radius: 24px; margin-top: 24px;
+  text-align: center;
+}
+.done-mark {
+  width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 999px;
+  background: #e6f6ec; color: #14663a;
+  display: grid; place-items: center; font-size: 1.6rem; font-weight: 800;
+}
+.done h1 { font-size: 1.6rem; letter-spacing: -.02em; margin: 0 0 6px; }
+.done-sub { margin: 0 0 18px; color: var(--ink-soft); font-weight: 600; }
+
+.done-code {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: var(--muted); border-radius: 14px; padding: 14px; margin-bottom: 18px;
+}
+.done-code strong {
+  font-size: 1.5rem; letter-spacing: .06em; color: var(--blue); font-weight: 800;
+}
+.done-code button {
+  min-height: 40px; padding: 0 14px; border-radius: 999px;
+  border: 2px solid var(--blue); background: var(--white); color: var(--blue);
+  font: inherit; font-weight: 700; font-size: .82rem; cursor: pointer;
+}
+
+.done .order-note { text-align: left; }
+
+.done-actions { display: grid; gap: 10px; margin: 18px 0 16px; }
+.done-actions .sheet-add {
+  display: inline-flex; align-items: center; justify-content: center;
+  text-decoration: none; padding: 12px 20px;
+}
+.done-secondary {
+  min-height: 48px; border-radius: 999px; cursor: pointer;
+  border: 2px solid var(--blue); background: var(--white); color: var(--blue);
+  font: inherit; font-weight: 800;
+}
+.done-secondary:hover { background: var(--muted); }
+
+.done-links {
+  display: grid; gap: 8px; padding-top: 14px;
+  border-top: 1px dotted var(--hair); font-size: .86rem; color: var(--ink-soft);
+}
+.done-links a { color: var(--blue); font-weight: 700; }
+
+@media (min-width: 641px) {
+  .done-actions { grid-template-columns: 1fr 1fr; }
+}

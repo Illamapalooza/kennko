@@ -25,6 +25,8 @@ function startingPrice(item: MenuItemWithPrices): string {
 }
 
 export function MenuSection({ categories }: { categories: MenuCategoryWithItems[] }) {
+  const orderingOn = process.env.NEXT_PUBLIC_ORDERING_ENABLED === 'true'
+
   return (
     <section id="menu">
       <div className="container">
@@ -71,6 +73,14 @@ export function MenuSection({ categories }: { categories: MenuCategoryWithItems[
             </article>
           ))}
         </div>
+
+        {orderingOn ? (
+          <div className="menu-cta">
+            <a className="btn btn-primary" href="/order">
+              Order for pickup or delivery
+            </a>
+          </div>
+        ) : null}
       </div>
     </section>
   )
