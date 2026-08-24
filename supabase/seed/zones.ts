@@ -1,26 +1,34 @@
-export type SeedZone = { barangay: string; feeCentavos: number }
+export type SeedZone = {
+  barangay: string
+  /** APPROXIMATE barangay centre — verify against the map before going live. */
+  lat: number
+  lng: number
+  isHome?: boolean
+}
 
 /**
- * Butuan City barangays, tiered by rough distance from Villa Kananga.
- * Starter values -- the owner adjusts them in /admin/zones. A barangay absent
- * from this list is outside the service area until Kenn adds it.
+ * Butuan City barangays Kennko delivers to, with approximate centres. Fees are
+ * NOT stored: they are computed from these coordinates by the P20-per-4km rule
+ * in lib/delivery/distance.ts, so changing the rule reprices everywhere at once.
+ *
+ * The coordinates are estimates. A wrong one charges the wrong fee, so verify
+ * each against the map before relying on it.
+ *
+ * A barangay absent from this list is outside the service area.
  */
 export const SEED_ZONES: SeedZone[] = [
-  // Nearby
-  { barangay: 'Villa Kananga', feeCentavos: 3000 },
-  { barangay: 'Baan Km. 3', feeCentavos: 3000 },
-  { barangay: 'Golden Ribbon', feeCentavos: 3000 },
-  { barangay: 'Obrero', feeCentavos: 3000 },
-  // Mid
-  { barangay: 'Doongan', feeCentavos: 5000 },
-  { barangay: 'Libertad', feeCentavos: 5000 },
-  { barangay: 'J.P. Rizal', feeCentavos: 5000 },
-  { barangay: 'Holy Redeemer', feeCentavos: 5000 },
-  { barangay: 'Imadejas', feeCentavos: 5000 },
-  { barangay: 'Bayanihan', feeCentavos: 5000 },
-  // Farther
-  { barangay: 'Ampayon', feeCentavos: 8000 },
-  { barangay: 'Buhangin', feeCentavos: 8000 },
-  { barangay: 'Bancasi', feeCentavos: 8000 },
-  { barangay: 'Baan Riverside', feeCentavos: 8000 },
+  { barangay: 'Villa Kananga',  lat: 8.926897, lng: 125.532174, isHome: true },
+  { barangay: 'Baan Km. 3',     lat: 8.933,    lng: 125.539 },
+  { barangay: 'Golden Ribbon',  lat: 8.945,    lng: 125.539 },
+  { barangay: 'Obrero',         lat: 8.948,    lng: 125.543 },
+  { barangay: 'Doongan',        lat: 8.956,    lng: 125.548 },
+  { barangay: 'Libertad',       lat: 8.942,    lng: 125.529 },
+  { barangay: 'J.P. Rizal',     lat: 8.949,    lng: 125.541 },
+  { barangay: 'Holy Redeemer',  lat: 8.939,    lng: 125.535 },
+  { barangay: 'Imadejas',       lat: 8.935,    lng: 125.525 },
+  { barangay: 'Bayanihan',      lat: 8.944,    lng: 125.546 },
+  { barangay: 'Ampayon',        lat: 8.957,    lng: 125.601 },
+  { barangay: 'Buhangin',       lat: 8.964,    lng: 125.560 },
+  { barangay: 'Bancasi',        lat: 8.9515,   lng: 125.4779 },
+  { barangay: 'Baan Riverside', lat: 8.940,    lng: 125.545 },
 ]

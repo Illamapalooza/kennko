@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { getMenu } from '@/lib/menu/queries'
 import { getPublicClient } from '@/lib/supabase/public'
 import { getCurrentCustomer } from '@/lib/auth/customer'
+import { ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
 import { OrderClient, type ModifierGroup, type Zone } from './OrderClient'
 import './order.css'
 
@@ -21,7 +22,7 @@ export default async function OrderPage() {
 
   const { data: zones } = await db
     .from('delivery_zones')
-    .select('barangay, fee_centavos')
+    .select('barangay, is_home, latitude, longitude, fee_override_centavos')
     .eq('is_active', true)
     .order('sort_order')
 
@@ -38,11 +39,26 @@ export default async function OrderPage() {
       .map((m) => ({ id: m.id, name: m.name, priceCentavos: m.price_centavos })),
   }))
 
+  // Quoted with the same function the server charges with, so the price shown
+  // before payment is the price recomputed after it.
   const deliveryZones: Zone[] = (zones ?? []).map(
-    (z: { barangay: string; fee_centavos: number }) => ({
-      barangay: z.barangay,
-      feeCentavos: z.fee_centavos,
-    }),
+    (z: {
+      barangay: string; is_home: boolean
+      latitude: string | null; longitude: string | null
+      fee_override_centavos: number | null
+    }) => {
+      const km =
+        z.latitude !== null && z.longitude !== null
+          ? ridingDistanceKm({ lat: Number(z.latitude), lng: Number(z.longitude) })
+          : 0
+      return {
+        barangay: z.barangay,
+        isHome: z.is_home,
+        distanceKm: km,
+        feeCentavos:
+          z.fee_override_centavos ?? deliveryFeeCentavos(km, z.is_home),
+      }
+    },
   )
 
   return (

@@ -102,6 +102,26 @@ Order status flow differs by fulfilment: pickup runs
 Ordering is gated by `NEXT_PUBLIC_ORDERING_ENABLED`. It stays `false` until the
 real GCash QR replaces `public/gcash-qr-placeholder.png`.
 
+### Delivery pricing
+
+**No maps API, and no cost.** The site's location map is a keyless
+`google.com/maps?...&output=embed` iframe, which is not metered. Delivery fees
+are computed, not looked up:
+
+- Free inside **Villa Kananga** (the cafe's own barangay, `is_home`).
+- Otherwise **₱20 per started 4km band**, measured from the cafe pin to the
+  barangay centre with the haversine formula in `lib/delivery/distance.ts`.
+- Straight-line distance is multiplied by `ROAD_FACTOR` (1.3), because riders
+  follow streets. Without it every fee is systematically under-charged.
+- A zone can be pinned to a fixed price with `fee_override_centavos`.
+
+The fee is always recomputed server-side from the zone's own coordinates, so a
+client cannot claim to be nearer than it is.
+
+**The seeded coordinates are approximate estimates.** A wrong one charges the
+wrong fee — verify each against the map before going live. Everyone in a
+barangay pays the same fee, which is predictable to quote and hard to dispute.
+
 Seed delivery zones with `npm run seed-zones`.
 
 ### Customer accounts

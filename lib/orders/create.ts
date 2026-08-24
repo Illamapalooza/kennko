@@ -4,6 +4,7 @@ import { validateImage } from '@/lib/images/validate'
 import { validateCheckout, type CheckoutInput } from './validate'
 import { lineTotal, generateOrderCode } from '@/lib/cart/total'
 import { normaliseIce, iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
+import { ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
 import type { DrinkSize } from '@/lib/menu/types'
 
 export type SubmittedLine = {
@@ -176,7 +177,7 @@ export async function createOrder(
   if (submitted.fulfilment === 'delivery') {
     const { data: zone } = await db
       .from('delivery_zones')
-      .select('id, fee_centavos, is_active')
+      .select('id, is_active, is_home, latitude, longitude, fee_override_centavos')
       .eq('barangay', submitted.barangay.trim())
       .maybeSingle()
 
@@ -188,7 +189,29 @@ export async function createOrder(
         errors: [`Sorry, Kennko does not deliver to ${submitted.barangay} yet.`],
       }
     }
-    feeCentavos = zone.fee_centavos
+
+    // Computed from the zone's own coordinates, never from the request: a
+    // client cannot claim to be nearer than it is.
+    if (zone.fee_override_centavos !== null) {
+      feeCentavos = zone.fee_override_centavos
+    } else if (zone.latitude === null || zone.longitude === null) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'ZONE_NOT_LOCATED',
+        errors: [
+          `We cannot work out the delivery fee for ${submitted.barangay} yet. ` +
+            'Please choose pickup, or message the cafe.',
+        ],
+      }
+    } else {
+      const km = ridingDistanceKm({
+        lat: Number(zone.latitude),
+        lng: Number(zone.longitude),
+      })
+      feeCentavos = deliveryFeeCentavos(km, zone.is_home)
+    }
+
     zoneId = zone.id
   }
 

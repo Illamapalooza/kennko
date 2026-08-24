@@ -12,7 +12,12 @@ const db = createClient(url, serviceKey, { auth: { persistSession: false } })
 async function main() {
   const rows = SEED_ZONES.map((zone, index) => ({
     barangay: zone.barangay,
-    fee_centavos: zone.feeCentavos,
+    latitude: zone.lat,
+    longitude: zone.lng,
+    is_home: zone.isHome ?? false,
+    // Legacy column, kept nullable for older rows; the fee is computed from
+    // coordinates at order time, not read from here.
+    fee_centavos: 0,
     sort_order: index,
     is_active: true,
   }))

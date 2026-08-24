@@ -9,6 +9,7 @@ import { DrinkCard } from '@/components/order/DrinkCard'
 import { CustomiseSheet, type SheetResult } from '@/components/order/CustomiseSheet'
 import { iceSummary } from '@/lib/cart/ice'
 import { SIZE_VOLUMES } from '@/lib/menu/sizes'
+import { describeFee } from '@/lib/delivery/distance'
 import type { MenuCategoryWithItems, MenuItemWithPrices, DrinkSize } from '@/lib/menu/types'
 
 export type ModifierGroup = {
@@ -18,7 +19,12 @@ export type ModifierGroup = {
   modifiers: { id: string; name: string; priceCentavos: number }[]
 }
 
-export type Zone = { barangay: string; feeCentavos: number }
+export type Zone = {
+  barangay: string
+  feeCentavos: number
+  isHome: boolean
+  distanceKm: number
+}
 
 const STORAGE_KEY = 'kennko-cart-v1'
 
@@ -282,6 +288,12 @@ function CheckoutStep({
 }) {
   const count = lines.reduce((n, l) => n + l.quantity, 0)
   const zoneChosen = Boolean(form.barangay)
+  const zone = zones.find((z) => z.barangay === form.barangay)
+  const feeBasis = zone
+    ? zone.isHome
+      ? 'Free — our own barangay'
+      : describeFee(zone.distanceKm, false)
+    : ''
 
   return (
     <div className="checkout">
@@ -359,7 +371,7 @@ function CheckoutStep({
                   <option value="">Choose your barangay…</option>
                   {zones.map((z) => (
                     <option key={z.barangay} value={z.barangay}>
-                      {z.barangay} — {formatPesos(z.feeCentavos)}
+                      {z.barangay} — {z.isHome ? 'free' : formatPesos(z.feeCentavos)}
                     </option>
                   ))}
                 </select>
@@ -421,7 +433,12 @@ function CheckoutStep({
             <div className="order-total"><span>Subtotal</span><span>{formatPesos(subtotal)}</span></div>
             {fulfilment === 'delivery' ? (
               <div className="order-total">
-                <span>Delivery{zoneChosen ? ` · ${form.barangay}` : ''}</span>
+                <span>
+                  Delivery{zoneChosen ? ` · ${form.barangay}` : ''}
+                  {zoneChosen ? (
+                    <small className="fee-basis">{feeBasis}</small>
+                  ) : null}
+                </span>
                 <span>{zoneChosen ? formatPesos(fee) : '—'}</span>
               </div>
             ) : null}
