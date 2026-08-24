@@ -74,10 +74,40 @@ payment receipts.
 Bootstrap the first owner with
 `npm run create-owner -- <email> <password> "<Full Name>"`.
 
+## Ordering
+
+Guest checkout at `/order` -- no customer accounts. Customers choose **pickup or
+delivery**; name, email, and phone are always required, and a street address
+plus barangay are required for delivery only.
+
+**The client total is never trusted.** `POST /api/orders` reprices every line
+from `menu_items`, takes the delivery fee from the `delivery_zones` row for the
+chosen barangay, and returns `409 PRICE_CHANGED` on a mismatch. A barangay with
+no active zone is refused with `OUTSIDE_SERVICE_AREA`.
+
+**Payment is GCash on a static QR, verified by a human.** Nothing in this system
+talks to GCash. The customer submits a reference number and a receipt
+screenshot; a staff member checks it in the GCash app and confirms. The customer
+confirmation email sends only on that confirmation -- never on submission. The
+admin flags any reference already used by another live order.
+
+**`payment-proofs` is a PRIVATE bucket**, separate from public `menu-images`.
+Staff read receipts through 300-second signed URLs. Never make it public: a
+receipt carries the customer's name and GCash details.
+
+Order status flow differs by fulfilment: pickup runs
+`confirmed -> preparing -> ready -> completed`; delivery runs
+`confirmed -> preparing -> out_for_delivery -> completed`.
+
+Ordering is gated by `NEXT_PUBLIC_ORDERING_ENABLED`. It stays `false` until the
+real GCash QR replaces `public/gcash-qr-placeholder.png`.
+
+Seed delivery zones with `npm run seed-zones`.
+
 ## Planned Work
 `docs/superpowers/specs/` holds the ordering + admin design spec.
 `docs/superpowers/plans/` holds the implementation plans. Plan 1 (this
-foundation) is done; Plans 2 (admin) and 3 (ordering) are not yet written.
+foundation), 2 (admin), and 3 (ordering) are all complete.
 
 ## Deploying
 Vercel auto-deploys on push to `main`.

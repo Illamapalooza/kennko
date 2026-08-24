@@ -500,3 +500,11 @@ footer {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* Bestseller marker. Amber is the brand's accent, reserved for highlights like
+   this and the perks badges -- it is the only warm colour in the palette, so a
+   star in it reads as "special" without another rule. */
+.star {
+  color: var(--amber);
+  font-weight: 700;
+}

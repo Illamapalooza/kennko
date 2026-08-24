@@ -42,7 +42,7 @@ export default async function AdminMenuPage({
               <article className="section-card" key={item.id}>
                 <strong>
                   {item.name}
-                  {item.isBestseller ? ' ★' : ''}
+                  {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
                 </strong>
                 <p>{priceRange(item.prices)}</p>
                 <p>{item.isAvailable ? 'Available' : 'Sold out'}</p>
@@ -66,7 +66,7 @@ export default async function AdminMenuPage({
                 <tr key={item.id}>
                   <td>
                     {item.name}
-                    {item.isBestseller ? ' ★' : ''}
+                    {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
                   </td>
                   <td>{priceRange(item.prices)}</td>
                   <td>{item.isAvailable ? 'Available' : 'Sold out'}</td>

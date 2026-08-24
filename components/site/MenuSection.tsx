@@ -59,7 +59,7 @@ export function MenuSection({ categories }: { categories: MenuCategoryWithItems[
                     >
                       <span>
                         {item.name}
-                        {item.isBestseller ? ' ★' : ''}
+                        {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
                       </span>
                       <span className="menu-price">
                         {item.isAvailable ? startingPrice(item) : 'Sold out'}

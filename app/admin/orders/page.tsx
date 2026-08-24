@@ -91,7 +91,7 @@ export default async function AdminOrdersPage() {
             </p>
           ) : null}
 
-          <div className="admin-cards">
+          <div className="admin-order-list">
             {orders.map((order) => (
               <OrderCard
                 key={order.id}

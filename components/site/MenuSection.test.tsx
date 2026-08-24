@@ -54,9 +54,18 @@ describe('MenuSection', () => {
     expect(within(americano).getByText('₱80')).toBeDefined()
   })
 
-  it('stars bestsellers', () => {
+  it('stars bestsellers, and marks the star up so it can be coloured', () => {
     render(<MenuSection categories={categories} />)
-    expect(screen.getByText(/Spanish Latte ★/)).toBeDefined()
+    const row = screen.getByText('Spanish Latte').closest('li')!
+    const star = row.querySelector('.star')
+    expect(star).not.toBeNull()
+    expect(star!.textContent).toContain('★')
+  })
+
+  it('does not star a non-bestseller', () => {
+    render(<MenuSection categories={categories} />)
+    const row = screen.getByText('Americano').closest('li')!
+    expect(row.querySelector('.star')).toBeNull()
   })
 
   it('greys out unavailable items instead of hiding them', () => {

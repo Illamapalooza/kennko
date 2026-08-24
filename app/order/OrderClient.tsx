@@ -171,7 +171,7 @@ export function OrderClient({
                 >
                   <span className="order-item-name">
                     {item.name}
-                    {item.isBestseller ? ' ★' : ''}
+                    {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
                   </span>
                   <span className="order-item-price">
                     {!item.isAvailable

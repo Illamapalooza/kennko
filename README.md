@@ -11,6 +11,7 @@ npm install
 cp .env.local.example .env.local   # fill in your Supabase credentials
 npx supabase db push               # apply the schema
 npm run seed                       # load the menu (needs the service-role key)
+npm run seed-zones                 # load delivery zones
 npm run create-owner -- you@example.com '<password>' "Your Name"
 npm run dev
 ```
@@ -24,6 +25,7 @@ npm run dev
 | `npm run build` | Production build |
 | `npm run seed` | Seed the menu from `supabase/seed/menu.ts` |
 | `npm run create-owner` | Create the first admin owner account |
+| `npm run seed-zones` | Seed delivery barangays and fees |
 
 ## Docs
 

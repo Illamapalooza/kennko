@@ -163,3 +163,21 @@
   gap: 10px;
   flex-wrap: wrap;
 }
+
+/* Orders render as cards at every width -- an order carries too much detail
+   (items, modifiers, address, receipt, actions) to fit a table row. This is a
+   separate class from .admin-cards, which is deliberately hidden at desktop so
+   the menu page can swap to .admin-table. */
+.admin-order-list {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 921px) {
+  .admin-order-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1400px) {
+  .admin-order-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
