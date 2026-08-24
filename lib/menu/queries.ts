@@ -1,4 +1,4 @@
-import { getServerClient } from '@/lib/supabase/server'
+import { getPublicClient } from '@/lib/supabase/public'
 import type { DrinkSize, MenuCategoryWithItems } from './types'
 
 const SIZE_ORDER: DrinkSize[] = ['M', 'L', 'XL', 'HOT']
@@ -51,7 +51,7 @@ export function mapMenuRows(rows: CategoryRow[]): MenuCategoryWithItems[] {
 }
 
 export async function getMenu(): Promise<MenuCategoryWithItems[]> {
-  const db = await getServerClient()
+  const db = getPublicClient()
 
   const { data, error } = await db
     .from('menu_categories')
