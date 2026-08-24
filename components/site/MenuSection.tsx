@@ -1,4 +1,30 @@
-export function MenuSection() {
+import { formatPesos } from '@/lib/money'
+import type { MenuCategoryWithItems, MenuItemWithPrices } from '@/lib/menu/types'
+
+const CATEGORY_IMAGES: Record<string, string> = {
+  'Premium Classics': '/brand/egg-coffee.jpg',
+  "Barista's Choice": '/brand/sea-salt-caramel-oat-latte.jpg',
+  'Sweet Sips': '/brand/strawberry-cloud-soda.jpg',
+  'Matcha Series': '/brand/coconut-series.jpg',
+}
+
+const CATEGORY_BLURBS: Record<string, string> = {
+  'Premium Classics': 'Rich, smooth, and made for everyday coffee drinkers.',
+  "Barista's Choice": 'House specialities the baristas are proudest of.',
+  'Sweet Sips': 'Comforting and refreshing picks beyond espresso.',
+  'Matcha Series': 'Stone-ground matcha, from classic to dirty.',
+}
+
+function startingPrice(item: MenuItemWithPrices): string {
+  if (item.prices.length === 0) return ''
+  const cheapest = item.prices.reduce(
+    (min, price) => (price.priceCentavos < min ? price.priceCentavos : min),
+    Number.POSITIVE_INFINITY,
+  )
+  return formatPesos(cheapest)
+}
+
+export function MenuSection({ categories }: { categories: MenuCategoryWithItems[] }) {
   return (
     <section id="menu">
       <div className="container">
@@ -12,56 +38,38 @@ export function MenuSection() {
         </div>
 
         <div className="menu-grid">
-          <article className="menu-card">
-            <img src="/brand/egg-coffee.jpg" alt="Premium coffee from Kennko" />
-            <div className="menu-card-body">
-              <h3>Premium Coffee</h3>
-              <p>Rich, smooth, and made for everyday coffee drinkers.</p>
-              <ul className="menu-list">
-                <li>Americano</li>
-                <li>Coffee Latte</li>
-                <li>Spanish Latte</li>
-                <li>Vanilla Latte</li>
-                <li>White Choco Mocha</li>
-                <li>Caramel Macchiato</li>
-                <li>Vietnamese Coffee</li>
-                <li>Egg Coffee</li>
-              </ul>
-            </div>
-          </article>
-
-          <article className="menu-card">
-            <img
-              src="/brand/vanilla-milk-cloud-foam-kennko.jpg"
-              alt="Kennko signature drink"
-            />
-            <div className="menu-card-body">
-              <h3>Specialty Series</h3>
-              <p>Playful signatures with creamy, indulgent twists.</p>
-              <ul className="menu-list">
-                <li>Coconut Series</li>
-                <li>Salted Caramel Oat Latte</li>
-                <li>Sea Salt Caramel Oat Latte</li>
-                <li>Vanilla Milk Cloud Foam</li>
-                <li>Strawberry Cloud Soda</li>
-              </ul>
-            </div>
-          </article>
-
-          <article className="menu-card">
-            <img src="/brand/kennko_new-menu.png" alt="Kennko menu board" />
-            <div className="menu-card-body">
-              <h3>Non-Coffee Favorites</h3>
-              <p>Comforting and refreshing picks beyond espresso.</p>
-              <ul className="menu-list">
-                <li>Signature Choco</li>
-                <li>Matcha Latte</li>
-                <li>Strawberry Milk</li>
-                <li>Berry Matcha</li>
-                <li>Hot options available</li>
-              </ul>
-            </div>
-          </article>
+          {categories.map((category) => (
+            <article className="menu-card" key={category.id}>
+              {CATEGORY_IMAGES[category.name] ? (
+                <img
+                  src={CATEGORY_IMAGES[category.name]}
+                  alt={`${category.name} from Kennko`}
+                />
+              ) : null}
+              <div className="menu-card-body">
+                <h3>{category.name}</h3>
+                {CATEGORY_BLURBS[category.name] ? (
+                  <p>{CATEGORY_BLURBS[category.name]}</p>
+                ) : null}
+                <ul className="menu-list">
+                  {category.items.map((item) => (
+                    <li
+                      key={item.id}
+                      className={item.isAvailable ? undefined : 'is-unavailable'}
+                    >
+                      <span>
+                        {item.name}
+                        {item.isBestseller ? ' ★' : ''}
+                      </span>
+                      <span className="menu-price">
+                        {item.isAvailable ? startingPrice(item) : 'Sold out'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </article>
+          ))}
         </div>
       </div>
     </section>

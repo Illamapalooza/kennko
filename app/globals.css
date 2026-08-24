@@ -476,3 +476,27 @@ footer {
   .contact-card { padding: 18px; }
   .btn { width: 100%; }
 }
+
+.menu-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.menu-price {
+  font-weight: 700;
+  color: var(--blue);
+  white-space: nowrap;
+}
+
+.menu-list li.is-unavailable {
+  opacity: 0.45;
+}
+
+.menu-list li.is-unavailable .menu-price {
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
