@@ -27,8 +27,8 @@ management.
    receipt screenshot before any drink is made.
 4. The customer receives a confirmation email once, and only once, staff
    confirm payment.
-5. The owner can edit the menu — items, prices, availability — without a
-   developer or a redeploy.
+5. The owner can edit the menu — items, prices, availability, and product
+   photos — without a developer or a redeploy.
 6. Every surface works on phone, tablet, and desktop. Baristas will verify
    payments on a phone behind the counter; that is a primary use case, not an
    afterthought.
@@ -89,7 +89,9 @@ review:
       │    Supabase     │    │     Resend      │
       │  Postgres + RLS │    │  staff alert    │
       │  Auth (staff)   │    │  customer conf. │
-      │  Storage (proof)│    │  rejection      │
+      │  Storage:       │    │  rejection      │
+      │   payment-proofs│    │                 │
+      │   menu-images   │    │                 │
       └─────────────────┘    └─────────────────┘
 ```
 
@@ -353,23 +355,67 @@ price shows a warning that it affects future orders only. Deleting an item that
 appears in past orders is blocked; it can only be marked unavailable, which is
 what the owner almost always means anyway.
 
+#### Product images
+
+Each menu item can carry one photo, uploaded from the admin and stored in
+Supabase Storage. `menu_items.image_path` holds the object path; the public URL
+is derived at render time rather than stored, so moving buckets later does not
+require a data migration.
+
+- **Upload** happens inline in the item editor — drag-and-drop or file picker,
+  with a live preview before save. On mobile the picker offers the camera, since
+  photographing a drink at the counter is the realistic way these get taken.
+- **Replacing** an image deletes the previous object in the same transaction as
+  the row update. Orphaned images are storage billed forever for nothing.
+- **Removing** an image clears `image_path` and deletes the object. Items
+  without a photo render a branded placeholder, never a broken image.
+- **Path convention:** `menu/{menu_item_id}/{uuid}.{ext}`. The UUID means a
+  replacement never collides with a CDN-cached predecessor, so a new photo shows
+  up immediately instead of after a cache TTL.
+- **Validation:** `image/jpeg|png|webp`, ≤ 5 MB, minimum 400×400px, verified by
+  magic bytes server-side. HEIC is rejected with a clear message — iPhones
+  produce it by default and a silent failure here would be baffling.
+- **Optimisation:** served through `next/image` with explicit `sizes`, so phones
+  fetch phone-sized images. A 4MB counter photo shipped raw to a phone on mall
+  wifi is the difference between a menu that loads and one that doesn't.
+- **Permission:** owner only, same gate as the rest of menu editing. Baristas can
+  toggle availability but cannot change how an item is presented.
+
+Seed images: `brand/assets/` already contains product photography for egg
+coffee, the coconut series, sea salt caramel oat latte, vanilla milk cloud foam,
+and strawberry cloud soda. The last two name drinks no longer on the menu (§12,
+question 10), so only the photos matching current items get uploaded during
+seeding.
+
 ## 11. Security
 
 - **RLS on every table.** Public (anon key) may `insert` into `orders` and
   `order_items` and `select` only `is_active` menu rows. It may never `select`
   from `orders` — order status lookup goes through a server route that takes the
   `order_code` and returns a narrow projection.
-- **Storage bucket is private.** Payment screenshots are never publicly
-  readable. Staff view them through short-lived signed URLs generated
-  server-side. A receipt screenshot contains a customer's name and GCash
-  details; a public bucket would leak that to anyone who guesses a path.
+- **Two storage buckets with opposite policies**, and the distinction is
+  load-bearing:
+  - `payment-proofs` — **private**. Payment screenshots are never publicly
+    readable. Staff view them through short-lived signed URLs generated
+    server-side. A receipt screenshot carries a customer's name and GCash
+    details; a public bucket would leak that to anyone who guesses a path.
+  - `menu-images` — **public read, owner-only write**. Product photos are
+    marketing assets meant to be seen and CDN-cached.
+
+  A single shared bucket is the mistake to avoid here: making it public to serve
+  menu photos would expose every customer's payment receipt.
+- **Storage write policies are enforced in Postgres**, not just in the upload
+  route. `menu-images` writes require the caller's `staff.role = 'owner'`;
+  `payment-proofs` accepts anonymous inserts but no reads. A leaked anon key
+  must not become an image-hosting service.
 - **Service-role key is server-only**, never bundled. All privileged writes go
   through route handlers or server actions.
 - **Rate limiting** on order submission — per IP, sliding window. Without it the
   upload endpoint is an open file-storage bill.
 - **`order_code` is random**, not sequential, so status lookup cannot be walked.
-- Uploads are validated by magic bytes and stored with a generated path; the
-  client filename never reaches the filesystem.
+- **All uploads** — payment proofs and product images alike — are validated by
+  magic bytes and stored under a server-generated path; the client-supplied
+  filename never reaches storage.
 
 ## 12. Open questions — blockers marked
 
@@ -427,11 +473,15 @@ considered done.
 
 ## 14. Testing strategy
 
-- **Unit** — money formatting, total computation, order code generation,
-  duplicate-reference detection, upload magic-byte validation.
+- **Unit** — money formatting, total computation across size tiers and
+  modifiers, order code generation, duplicate-reference detection, upload
+  magic-byte validation, image dimension and size checks.
 - **Integration** — order submission writes both tables atomically and rolls
   back on failure; price-change race returns `409`; RLS actually denies a
-  barista's price update and an anon `select` on `orders`.
+  barista's price update and an anon `select` on `orders`. Storage policies are
+  tested directly: an anon client must fail to write `menu-images`, a barista
+  client must fail to write `menu-images`, and an anon client must fail to read
+  `payment-proofs`. Replacing a product image deletes the prior object.
 - **E2E (Playwright)** — full customer path browse → cart → checkout → upload →
   submit; staff path login → verify → customer email queued. Run at the phone
   and tablet viewports, not just desktop.
@@ -444,7 +494,8 @@ considered done.
    Nothing changes for visitors; the framework migration is proven in isolation.
 2. Add Supabase, schema, RLS, and seed the menu. Public page now renders from
    the database. Still no ordering.
-3. Admin auth, order queue (empty), menu CRUD. Owner corrects prices here.
+3. Admin auth, order queue (empty), menu CRUD including product image upload.
+   Owner corrects prices and uploads photos here.
 4. Customer ordering behind a feature flag; internal test orders end to end.
 5. Enable ordering publicly once prices and the QR are confirmed correct.
 
