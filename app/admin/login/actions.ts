@@ -3,17 +3,9 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { getServerClient } from '@/lib/supabase/server'
+import { validateCredentials } from './validate'
 
 export type LoginState = { error: string | null }
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-export function validateCredentials(email: string, password: string): string | null {
-  if (!email) return 'Enter your email address.'
-  if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
-  if (!password) return 'Enter your password.'
-  return null
-}
 
 export async function signIn(
   _prevState: LoginState,
