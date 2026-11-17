@@ -3,6 +3,7 @@ import { OrderError } from '@kennko/core'
 import { createStore, type NewOrder } from '../server/store.ts'
 import { builtInMenu, mapWebsiteMenu } from '../server/menu.ts'
 import { reportCsv } from '../server/report.ts'
+import { wallOrders } from '../server/wall-feed.ts'
 
 const menu = builtInMenu(0)
 const latte = menu.categories[0].items.find((i) => i.name === 'Café Latte')!
@@ -109,6 +110,27 @@ describe('till', () => {
     expect(store.openShift()).toBeNull()
     expect(() => store.voidOrder(b.id, 'late', T)).toThrow(/already closed/)
     expect(store.recentShifts()).toHaveLength(1)
+  })
+
+  it('gives the wall drinks and steps, never money', () => {
+    const store = createStore(':memory:')
+    store.startShift(0, T)
+    const a = store.createOrder(menu, order({
+      customerName: 'Ana',
+      lines: [
+        { menuItemId: latte.id, size: 'M', modifierIds: [], quantity: 1, iceLevel: null, iceServe: null, note: '' },
+        { menuItemId: latte.id, size: 'L', modifierIds: [oat.id], quantity: 2, iceLevel: null, iceServe: null, note: '' },
+      ],
+    }), T)
+    const b = store.createOrder(menu, order(), T)
+    store.voidOrder(b.id, 'mistake', T + 5000)
+    const feed = wallOrders([...store.activeOrders(), ...store.recentlyFinished(T)])
+    expect(feed).toEqual([
+      { id: a.id, number: 1, name: 'Ana', items: [{ name: 'Café Latte', qty: 3 }], status: 'queued', createdAt: T, updatedAt: T },
+      { id: b.id, number: 2, name: '', items: [{ name: 'Café Latte', qty: 2 }], status: 'voided', createdAt: T, updatedAt: T + 5000 },
+    ])
+    expect(JSON.stringify(feed)).not.toMatch(/centavos|payment|tendered/i)
+    expect(store.recentlyFinished(T + 6000)).toEqual([])
   })
 
   it('honours sold-out marks', () => {

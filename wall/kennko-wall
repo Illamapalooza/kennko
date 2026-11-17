@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts the Kennko cat cafe wall. Extra flags pass through: --demo, --no-open, --port N
+# Starts the Kennko cat cafe wall. Extra flags pass through: --pos [url], --orders, --no-open, --port N
 cd "$(dirname "$0")" || exit 1
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js is not installed. Get it from https://nodejs.org (version 20 or newer), then run this again."

@@ -204,6 +204,11 @@ export function createStore(file: string) {
       return db.prepare("select * from orders where status in ('queued','preparing','serving') order by id").all().map(toOrder)
     },
 
+    /** Orders finished or voided since the given time, for the wall to play out their ending. */
+    recentlyFinished(since: number): Order[] {
+      return db.prepare("select * from orders where status in ('done','voided') and updated_at >= ? order by id").all(since).map(toOrder)
+    },
+
     ordersForDay(day: string): Order[] {
       return db.prepare('select * from orders where day = ? order by id desc').all(day).map(toOrder)
     },

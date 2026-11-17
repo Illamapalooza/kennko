@@ -12,6 +12,7 @@ import { loadConfig } from './config.ts'
 import { fetchWebsiteMenu, loadMenu, saveMenu } from './menu.ts'
 import { createStore } from './store.ts'
 import { reportCsv } from './report.ts'
+import { WALL_LINGER_MS, wallOrders } from './wall-feed.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = path.resolve(ROOT, '../..')
@@ -48,12 +49,22 @@ const snapshot = () => JSON.stringify({
   version, now: Date.now(), day: manilaDay(Date.now()), active: store.activeOrders(), shift: store.openShift(),
   menuKey: `${baseMenu.updatedAt}:${store.soldOut().sort().join(',')}`,
 })
+// The projector wall follows the till through its own feed: drink names and steps only, so it needs no PIN.
+const wallClients = new Set<http.ServerResponse>()
+const wallSnapshot = () => {
+  const now = Date.now()
+  return JSON.stringify({ now, day: manilaDay(now), orders: wallOrders([...store.activeOrders(), ...store.recentlyFinished(now - WALL_LINGER_MS)]) })
+}
 function broadcast() {
   version += 1
   const frame = `data: ${snapshot()}\n\n`
   for (const res of clients) res.write(frame)
+  const wallFrame = `data: ${wallSnapshot()}\n\n`
+  for (const res of wallClients) res.write(wallFrame)
 }
 setInterval(() => { for (const res of clients) res.write(': keepalive\n\n') }, 20000).unref()
+// Re-sent on a timer too, so a finished order drops off the wall once its cat has had time to leave.
+setInterval(() => { if (wallClients.size) { const frame = `data: ${wallSnapshot()}\n\n`; for (const res of wallClients) res.write(frame) } }, 20000).unref()
 
 // ---------- helpers ----------
 const MIME: Record<string, string> = {
@@ -132,6 +143,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
 
   if (req.method === 'GET' && route === '/api/bootstrap') {
     return json(res, 200, { shop: config.shop, discounts: config.discounts, pinRequired: Boolean(config.staffPin), websiteConfigured: Boolean(config.website.url && config.website.anonKey) })
+  }
+  if (req.method === 'GET' && route === '/api/wall/events') {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
+    res.write(`retry: 2000\n\ndata: ${wallSnapshot()}\n\n`)
+    wallClients.add(res)
+    req.on('close', () => wallClients.delete(res))
+    return
   }
   if (req.method === 'POST' && route === '/api/pin') {
     const body = await readBody(req)

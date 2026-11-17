@@ -26,7 +26,8 @@ Website database and seeding commands run from `apps/web`; see `apps/web/CLAUDE.
 | `npm run dev` / `npm run build` | Website dev server on :3000 / production build |
 | `npm run pos` | Till in development on :4466 |
 | `npm run pos:build`, then `npm run pos:start` | Till as it runs in the shop |
-| `npm run wall` | Wall on :4455 |
+| `npm run wall` | Wall on :4455, running by itself |
+| `npm run wall:pos` | Wall following the till: real orders, queue and ready calls |
 | `npm test` | Every test suite |
 | `npm run typecheck` | Typecheck the website and the till |
 

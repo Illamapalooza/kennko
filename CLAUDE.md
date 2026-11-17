@@ -4,7 +4,8 @@ npm workspaces monorepo for Kennko Coffee (Butuan City).
 
 - `apps/web` — Next.js website, online ordering, admin. Read `apps/web/CLAUDE.md` before working there.
 - `apps/pos` — the shop till (React + a small Node server + local SQLite). Read `apps/pos/README.md`.
-- `wall` — standalone cat cafe scene for the projector (plain Node, no dependencies). Read `wall/README.md`.
+- `wall` — cat cafe scene for the projector (plain Node, no dependencies, imports nothing from the apps). With
+  `--pos` it follows the till over HTTP (`/api/wall/events`). Read `wall/README.md`.
 - `packages/core` — shared money, menu, ice, cart and order rules. Anything both the website and the till must agree on
   goes here, not in an app.
 

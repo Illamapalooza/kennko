@@ -25,6 +25,12 @@ Needs Node.js 24 or newer (it uses Node's built-in SQLite).
 | **Till** | Open with starting cash, cash in and out, sales so far, expected cash, and closing with a count (manager PIN). |
 | **Menu** | Switch a drink off when it runs out. "Update from website" pulls drinks and prices from the website's menu. |
 
+## The projector wall
+
+Start the wall with `npm run wall:pos` and it follows this till: paid orders walk in as cats, and the wall shows the
+queue and calls each order when it is marked Ready. The wall reads `/api/wall/events`, which needs no PIN and carries
+only order numbers, first names, drink names and steps. See `wall/README.md`.
+
 ## Settings
 
 Copy `config.example.json` to `config.json` and edit it. **Change both PINs before real use.**

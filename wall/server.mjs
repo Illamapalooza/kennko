@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Kennko wall: serves the cat cafe scene for the shop projector.
-// Default (ambient): the cafe runs itself as pure visuals. With --orders the counter tablet drives it instead.
-// Plain Node, no dependencies. Usage: node server.mjs [--orders] [--no-open] [--port N]
+// Default (ambient): the cafe runs itself as pure visuals. With --pos the Kennko till drives the cats with real
+// orders. With --orders the counter tablet's order pad drives it instead.
+// Plain Node, no dependencies. Usage: node server.mjs [--pos [url]] [--no-board] [--orders] [--no-open] [--port N]
 import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,6 +11,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { reduce, emptyState, manilaDay, normalize, OrderError } from "./store.mjs";
 import { trackTitle } from "./public/scene/logic.mjs";
+import { followPos, fromPosFeed } from "./pos-link.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, "public");
@@ -18,7 +20,16 @@ const DATA = path.join(ROOT, "data");
 const ORDERS_FILE = path.join(DATA, "orders.json");
 
 const args = process.argv.slice(2);
-const AMBIENT = !args.includes("--orders");
+const posArg = args.indexOf("--pos");
+const posUrlArg = posArg >= 0 && args[posArg + 1] && !args[posArg + 1].startsWith("--") ? args[posArg + 1] : "";
+// Following the till replaces the order pad: orders have one source, never two.
+const POS = posArg >= 0;
+// "Ambient" means no pad and nothing saved here: either the cafe runs itself, or the till owns the orders.
+const AMBIENT = POS || !args.includes("--orders");
+// Following the till shows the order board (queue, now preparing, now serving, the ready call) unless told not to.
+const BOARD = POS && !args.includes("--no-board");
+// What the wall page is told: numbers and the board show whenever real orders are on screen.
+const VISUALS_ONLY = AMBIENT && !BOARD;
 const NO_OPEN = args.includes("--no-open");
 const portArg = args.indexOf("--port");
 
@@ -38,6 +49,7 @@ const config = {
   boardSize: Math.round(num(rawConfig.boardSize, 5, 1, 10)),
   baristas: Math.round(num(rawConfig.baristas, 2, 1, 3)),
 };
+const POS_URL = POS ? posUrlArg || (typeof rawConfig.posUrl === "string" && rawConfig.posUrl) || "http://localhost:4466" : "";
 const menu = readJson(path.join(ROOT, "menu.json"), []);
 const menuNames = new Set(menu.flatMap((c) => (c.items ?? []).map((i) => i.name)));
 if (menuNames.size === 0) console.warn("menu.json is empty or missing: the pad will have no drinks.");
@@ -95,7 +107,12 @@ function dispatch(action) {
   return state;
 }
 
-setInterval(() => { try { dispatch({ type: "tick" }); } catch (err) { console.error(err); } }, 15000).unref();
+// While the till is feeding the wall, the till's word is final: no local clean-up of its orders.
+let posLive = false;
+// The made-up cafe runs when nothing real is driving the wall: always in plain ambient mode, and as a stand-in
+// whenever the till cannot be reached, so the wall never sits empty because of a network hiccup.
+let selfRunning = AMBIENT && !POS;
+setInterval(() => { if (posLive) return; try { dispatch({ type: "tick" }); } catch (err) { console.error(err); } }, 15000).unref();
 setInterval(() => { for (const res of clients) res.write(": keepalive\n\n"); }, 20000).unref();
 
 // ---------- ambient: the cafe runs itself ----------
@@ -111,6 +128,7 @@ if (AMBIENT) {
   let nextArrival = Date.now() + 1500;
   setInterval(() => {
     try {
+      if (!selfRunning) return;
       const now = Date.now();
       // a made-up order that finished a minute ago is forgotten, so an all-day run stays small
       if (state.orders.some((o) => o.status === "done" && now - o.updatedAt > 60000)) {
@@ -130,6 +148,39 @@ if (AMBIENT) {
       }
     } catch (err) { console.error("ambient:", err.message); }
   }, 1500).unref();
+}
+
+// ---------- following the till ----------
+if (POS) {
+  let downSince = 0;
+  let standIn = null;
+  followPos(POS_URL, {
+    onUp: () => {
+      clearTimeout(standIn);
+      if (downSince) console.log("  The till is back. The cats are following real orders again.");
+      downSince = 0;
+    },
+    onFeed: (feed) => {
+      const next = fromPosFeed(feed, config.baristas);
+      if (!next) return;
+      posLive = true;
+      selfRunning = false;
+      state = next;
+      broadcast();
+    },
+    onDown: (why) => {
+      posLive = false;
+      if (downSince) return;
+      downSince = Date.now();
+      console.log(`  Can't reach the till at ${POS_URL} (${why}). Still trying; ${BOARD ? "the wall keeps the last orders it saw" : "the cafe will run itself meanwhile"}.`);
+      // With the board up, made-up orders would put numbers on the wall that no customer holds, so the wall
+      // just keeps the last real orders. Without the board, the cafe runs itself until the till is back.
+      if (BOARD) return;
+      // A short blip should not swap real orders for made-up ones, so wait a little before standing in.
+      standIn = setTimeout(() => { if (!posLive) selfRunning = true; }, 15000);
+      standIn.unref();
+    },
+  });
 }
 
 // ---------- http ----------
@@ -233,7 +284,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" || req.method === "HEAD") {
       if (route === "/api/bootstrap") {
         return json(res, 200, {
-          menu, ambient: AMBIENT, volume: config.volume, boardSize: config.boardSize, pinRequired: Boolean(config.pin),
+          menu, ambient: VISUALS_ONLY, pos: POS, volume: config.volume, boardSize: config.boardSize, pinRequired: Boolean(config.pin),
           padUrls: AMBIENT ? [] : lanAddresses().map((a) => `http://${a}:${config.port}/pad`),
         });
       }
@@ -291,7 +342,8 @@ server.on("error", (err) => {
 server.listen(config.port, "0.0.0.0", () => {
   const wall = `http://localhost:${config.port}/`;
   const pads = lanAddresses().map((a) => `http://${a}:${config.port}/pad`);
-  console.log(`\n  KENNKO WALL  (${AMBIENT ? "visuals only: the cafe runs itself" : "orders mode: the tablet drives the cafe"})`);
+  console.log(`\n  KENNKO WALL  (${POS ? `following the till: real orders drive the cats${BOARD ? " and the order board" : ""}` : AMBIENT ? "visuals only: the cafe runs itself" : "orders mode: the tablet drives the cafe"})`);
+  if (POS) console.log(`  Till:                  ${POS_URL}`);
   console.log(`  Wall (this computer):  ${wall}`);
   if (!AMBIENT) console.log(pads.length ? `  Order pad (tablet):    ${pads.join("   ")}` : "  Order pad: no network found. On this computer use http://localhost:" + config.port + "/pad");
   if (!AMBIENT && config.pin) console.log(`  Pad PIN:               ${config.pin}   (change it in config.json)`);

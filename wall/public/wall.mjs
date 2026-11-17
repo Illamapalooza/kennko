@@ -190,7 +190,9 @@ async function start() {
   scene.setAmbient(boot.ambient);
   fit();
   const hint = $("pad-hint");
-  if (boot.ambient) { /* no pad in visuals-only mode */ } else if (boot.padUrls?.length) {
+  if (boot.ambient) { /* no pad in visuals-only mode */ } else if (boot.pos) {
+    hint.append("Orders come from the till.");
+  } else if (boot.padUrls?.length) {
     hint.append("Order pad for the counter tablet: ", el("b", boot.padUrls[0]));
   } else hint.textContent = "No wifi found. The order pad only works on this computer for now.";
   hint.append(el("br"), "Keys: M mute · N next song · F full screen");
