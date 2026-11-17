@@ -4,6 +4,8 @@ import type { Discount } from '@kennko/core'
 
 export type Config = {
   port: number
+  /** The secure (https) address tablets install the app from. 0 turns it off. */
+  securePort: number
   /** Asked once per device before the till opens. "" turns it off. */
   staffPin: string
   /** Asked for voids, cash out, closing the till and menu sync. */
@@ -18,6 +20,7 @@ export type Config = {
 
 const DEFAULTS: Config = {
   port: 4466,
+  securePort: 4443,
   staffPin: '1234',
   managerPin: '0000',
   shop: {
@@ -49,8 +52,10 @@ export function loadConfig(root: string, repoRoot: string): Config {
   const discounts = Array.isArray(raw.discounts)
     ? raw.discounts.filter((d: any) => d && typeof d.label === 'string' && (d.kind === 'percent' || d.kind === 'amount') && Number.isFinite(d.value) && d.value > 0)
     : DEFAULTS.discounts
+  const securePort = raw.securePort === 0 ? 0 : Number.isInteger(raw.securePort) && raw.securePort > 0 && raw.securePort < 65536 && raw.securePort !== port ? raw.securePort : DEFAULTS.securePort
   return {
     port,
+    securePort,
     staffPin: str(raw.staffPin, DEFAULTS.staffPin),
     managerPin: str(raw.managerPin, DEFAULTS.managerPin),
     shop: {

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { api, setPin } from '../api.ts'
+import { InstallNote } from '../components/InstallNote.tsx'
 import { Keypad } from '../components/Keypad.tsx'
 
 /** The first thing a device sees: the staff PIN, asked once and remembered. */
-export function Gate({ onUnlock }: { onUnlock: () => void }) {
+export function Gate({ onUnlock, secureUrl }: { onUnlock: () => void; secureUrl: string | null }) {
   const [entry, setEntry] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -36,6 +37,7 @@ export function Gate({ onUnlock }: { onUnlock: () => void }) {
           {busy ? 'Checking…' : 'Open the till'}
         </button>
       </div>
+      <InstallNote secureUrl={secureUrl} />
     </div>
   )
 }

@@ -3,12 +3,15 @@
 // Sales are kept in a local database, so the till keeps working when the internet is down.
 // Usage: tsx server/index.ts [--dev] [--port N]
 import http from 'node:http'
+import https from 'node:https'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { OrderError, formatPesos, manilaDay, type Menu } from '@kennko/core'
 import { backupDay } from './backup.ts'
+import { ensureCertificate, tillNames, type Certificate } from './secure.ts'
+import { setupPage } from './setup-page.ts'
 import { loadConfig } from './config.ts'
 import { fetchWebsiteMenu, loadMenu, saveMenu } from './menu.ts'
 import { createStore } from './store.ts'
@@ -158,7 +161,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const now = Date.now()
 
   if (req.method === 'GET' && route === '/api/bootstrap') {
-    return json(res, 200, { shop: config.shop, discounts: config.discounts, pinRequired: Boolean(config.staffPin), websiteConfigured: Boolean(config.website.url && config.website.anonKey) })
+    return json(res, 200, { shop: config.shop, discounts: config.discounts, pinRequired: Boolean(config.staffPin), websiteConfigured: Boolean(config.website.url && config.website.anonKey), secureUrl: secureUrlFor(req) })
   }
   if (req.method === 'GET' && route === '/api/wall/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
@@ -264,8 +267,41 @@ if (!DEV && !fs.existsSync(path.join(DIST, 'index.html'))) {
   process.exit(1)
 }
 
-const server = http.createServer(async (req, res) => {
+// ---------- the secure address ----------
+// Installing the till as an app only works over https, so the till makes its own certificate (see secure.ts).
+// Not in development: Vite's live reload talks over plain ws, which a secure page refuses.
+const LAN = () => Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i!.address)
+let certificate: Certificate | null = null
+let secureProblem = ''
+if (DEV) secureProblem = 'The secure address is off while developing. Use "npm run pos:start".'
+else if (!config.securePort) secureProblem = 'The secure address is turned off in config.json (securePort is 0).'
+else {
+  const made = ensureCertificate(path.join(DATA, 'cert'), tillNames(LAN(), os.hostname()))
+  if ('error' in made) secureProblem = `The till could not make its certificate: ${made.error}.`
+  else certificate = made
+}
+let secureUp = false
+
+/** The https address for whoever is asking, using the same name they reached the till by. */
+function secureUrlFor(req: http.IncomingMessage): string | null {
+  if (!certificate || !secureUp) return null
+  let host = ''
+  try { host = new URL(`http://${req.headers.host}`).hostname.toLowerCase() } catch { /* odd Host header */ }
+  const name = certificate.names.includes(host) ? host : certificate.names.find((n) => /^\d/.test(n) && n !== '127.0.0.1') ?? 'localhost'
+  return `https://${name}:${config.securePort}/`
+}
+
+const handle = async (req: http.IncomingMessage, res: http.ServerResponse) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
+  if (req.method === 'GET' && url.pathname === '/setup') {
+    res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' })
+    return res.end(setupPage(secureUrlFor(req), secureProblem))
+  }
+  if (req.method === 'GET' && url.pathname === '/kennko-pos.crt') {
+    if (!certificate) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('Not found') }
+    res.writeHead(200, { 'content-type': 'application/x-x509-ca-cert', 'content-disposition': 'attachment; filename="kennko-pos.crt"', 'cache-control': 'no-store' })
+    return res.end(fs.readFileSync(certificate.caFile))
+  }
   if (url.pathname.startsWith('/api/')) {
     try {
       await api(req, res, url)
@@ -285,7 +321,18 @@ const server = http.createServer(async (req, res) => {
     return sendFile(res, file, url.pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache')
   }
   sendFile(res, path.join(DIST, 'index.html'), 'no-cache')
-})
+}
+
+const server = http.createServer(handle)
+if (certificate) {
+  const secure = https.createServer({ key: certificate.key, cert: certificate.cert }, handle)
+  secure.on('error', (err: any) => {
+    secureUp = false
+    secureProblem = err.code === 'EADDRINUSE' ? `Port ${config.securePort} is already in use; set another securePort in config.json.` : err.message
+    console.error(`  Secure address: ${secureProblem}`)
+  })
+  secure.listen(config.securePort, '0.0.0.0', () => { secureUp = true })
+}
 
 server.on('error', (err: any) => {
   if (err.code === 'EADDRINUSE') console.error(`Port ${port} is already in use. The till may already be running; otherwise start with --port <number>.`)
@@ -294,11 +341,16 @@ server.on('error', (err: any) => {
 })
 
 server.listen(port, '0.0.0.0', () => {
-  const lan = Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => `http://${i!.address}:${port}/`)
+  const lan = LAN().map((address) => `http://${address}:${port}/`)
   const shift = store.openShift()
   console.log(`\n  KENNKO POS${DEV ? '  (development)' : ''}`)
   console.log(`  This computer:   http://localhost:${port}/`)
   console.log(lan.length ? `  Tablets (wifi):  ${lan.join('   ')}` : '  Tablets: no network found.')
+  if (certificate) {
+    const named = certificate.names.find((n) => n.endsWith('.local'))
+    console.log(`  Install as app:  open ${lan[0] ?? `http://localhost:${port}/`}setup on each tablet, once`)
+    console.log(`  Secure address:  ${[...(named ? [named] : []), ...LAN()].map((n) => `https://${n}:${config.securePort}/`).join('   ') || `https://localhost:${config.securePort}/`}`)
+  } else if (!DEV) console.log(`  Install as app:  not available. ${secureProblem}`)
   console.log(`  Menu:            ${baseMenu.source === 'website' ? 'from the website' : 'built-in'}, ${baseMenu.categories.reduce((n, c) => n + c.items.length, 0)} drinks`)
   console.log(`  Till:            ${shift ? `open, expecting ${formatPesos(store.shiftSummary(shift).expectedCashCentavos)} in the drawer` : 'closed'}`)
   console.log(`  Backup:          ${lastBackup}`)

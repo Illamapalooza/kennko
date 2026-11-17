@@ -101,7 +101,7 @@ export function App() {
       </div>
     )
   }
-  if (!unlocked) return <Gate onUnlock={() => setUnlocked(true)} />
+  if (!unlocked) return <Gate onUnlock={() => setUnlocked(true)} secureUrl={boot.secureUrl} />
 
   return (
     <div className="app">

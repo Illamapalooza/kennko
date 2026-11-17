@@ -5,6 +5,8 @@ export type Bootstrap = {
   discounts: Discount[]
   pinRequired: boolean
   websiteConfigured: boolean
+  /** The https address of this same till, when it is running; installing as an app needs it. */
+  secureUrl: string | null
 }
 
 export type Live = { version: number; now: number; day: string; active: Order[]; shift: Shift | null; menuKey: string }

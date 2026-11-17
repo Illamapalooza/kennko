@@ -1,5 +1,6 @@
 {
   "port": 4466,
+  "securePort": 4443,
   "staffPin": "1234",
   "managerPin": "0000",
   "shop": {
