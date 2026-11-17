@@ -12,6 +12,8 @@ export type Config = {
   discounts: Discount[]
   /** Read-only access to the website's menu. Empty means the built-in menu is used. */
   website: { url: string; anonKey: string }
+  /** A second place for the daily backup, such as a USB stick or a cloud-synced folder. "" keeps one copy only. */
+  backupDir: string
 }
 
 const DEFAULTS: Config = {
@@ -29,6 +31,7 @@ const DEFAULTS: Config = {
     { label: 'Promo 10%', kind: 'percent', value: 10 },
   ],
   website: { url: '', anonKey: '' },
+  backupDir: '',
 }
 
 const str = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallback)
@@ -61,5 +64,6 @@ export function loadConfig(root: string, repoRoot: string): Config {
       url: str(raw.website?.url, process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''),
       anonKey: str(raw.website?.anonKey, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''),
     },
+    backupDir: str(raw.backupDir, DEFAULTS.backupDir).trim(),
   }
 }

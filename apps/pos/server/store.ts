@@ -122,6 +122,8 @@ export function createStore(file: string) {
 
   return {
     close: () => db.close(),
+    /** Writes a complete, consistent copy of the database to a new file. Safe while the till is in use. */
+    snapshot(to: string) { db.prepare('vacuum into ?').run(to) },
     openShift,
     getOrder,
     shiftSummary,

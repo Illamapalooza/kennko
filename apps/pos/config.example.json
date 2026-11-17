@@ -8,6 +8,7 @@
     "phone": "0930 599 2729",
     "receiptFooter": "Thank you! See you again soon."
   },
+  "backupDir": "",
   "discounts": [
     { "label": "Senior / PWD 20%", "kind": "percent", "value": 20 },
     { "label": "Promo 10%", "kind": "percent", "value": 10 }

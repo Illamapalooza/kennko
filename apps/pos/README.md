@@ -42,12 +42,22 @@ Copy `config.example.json` to `config.json` and edit it. **Change both PINs befo
 | `shop` | Name, address, phone and footer printed on receipts. |
 | `discounts` | One-tap discounts. `kind` is `percent` (1 to 100) or `amount` (centavos). |
 | `website` | `{ "url", "anonKey" }` for the menu update. Defaults to the values in `apps/web/.env.local`. |
+| `backupDir` | A second folder for the daily backup, such as a USB stick or a cloud-synced folder. `""` keeps one copy only. |
 
 ## Where things live
 
-- `data/pos.db` is every sale, shift and cash movement. **Back this file up.** It is not in git.
+- `data/pos.db` is every sale, shift and cash movement. It is not in git.
+- `data/backups/pos-YYYY-MM-DD.db` is a full copy of it, one file per day, newest 30 kept. See Backups below.
 - `data/menu.json` is the menu last pulled from the website. Without it the built-in menu (`packages/core/src/seed-menu.ts`, the same list the website seeds) is used.
 - Prices, discounts and order rules come from `packages/core`, shared with the rest of the repo.
+
+## Backups
+
+The till copies its sales database to `data/backups` when it starts, every hour while it runs, and each time the till is closed. Each day has one file, replaced as the day goes on.
+
+That folder is on the same computer as the till, so it does not protect against a lost or broken computer. Set `backupDir` in `config.json` to a USB stick or a cloud-synced folder to get a second copy elsewhere. If that second copy fails, the till keeps working and says so when it starts.
+
+To restore: stop the till, copy the backup you want over `data/pos.db`, delete `data/pos.db-wal` and `data/pos.db-shm` if they exist, and start the till again.
 
 ## Tests
 

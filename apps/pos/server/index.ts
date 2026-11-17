@@ -8,6 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { OrderError, formatPesos, manilaDay, type Menu } from '@kennko/core'
+import { backupDay } from './backup.ts'
 import { loadConfig } from './config.ts'
 import { fetchWebsiteMenu, loadMenu, saveMenu } from './menu.ts'
 import { createStore } from './store.ts'
@@ -28,6 +29,21 @@ const port = portArg >= 0 && Number(args[portArg + 1]) > 0 ? Number(args[portArg
 fs.mkdirSync(DATA, { recursive: true })
 const store = createStore(path.join(DATA, 'pos.db'))
 let baseMenu: Menu = loadMenu(DATA, Date.now())
+
+/** Copies the sales database to data/backups (and to config.backupDir when set). Never throws: a failed backup must not stop a sale. */
+let lastBackup = ''
+function backup(): void {
+  try {
+    const result = backupDay((file) => store.snapshot(file), path.join(DATA, 'backups'), manilaDay(Date.now()), config.backupDir)
+    lastBackup = result.copyError ? `saved here, but the second copy failed (${result.copyError})` : result.copy ? `saved here and to ${config.backupDir}` : 'saved in data/backups'
+    if (result.copyError) console.warn(`  Backup: the copy to ${config.backupDir} failed: ${result.copyError}`)
+  } catch (err: any) {
+    lastBackup = `FAILED (${err.message})`
+    console.error(`  Backup failed: ${err.message}`)
+  }
+}
+backup()
+setInterval(backup, 60 * 60 * 1000).unref()
 
 /** The menu the till sells from: the saved menu with today's sold-out marks applied. */
 function menu(): Menu {
@@ -231,7 +247,9 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (route === '/api/till/close') {
     checkPin(req, body.managerPin, 'manager')
-    return done(store.endShift(body.countedCentavos, body.note, now))
+    const closed = store.endShift(body.countedCentavos, body.note, now)
+    backup()
+    return done(closed)
   }
   return json(res, 404, { error: 'Not found.' })
 }
@@ -283,6 +301,7 @@ server.listen(port, '0.0.0.0', () => {
   console.log(lan.length ? `  Tablets (wifi):  ${lan.join('   ')}` : '  Tablets: no network found.')
   console.log(`  Menu:            ${baseMenu.source === 'website' ? 'from the website' : 'built-in'}, ${baseMenu.categories.reduce((n, c) => n + c.items.length, 0)} drinks`)
   console.log(`  Till:            ${shift ? `open, expecting ${formatPesos(store.shiftSummary(shift).expectedCashCentavos)} in the drawer` : 'closed'}`)
+  console.log(`  Backup:          ${lastBackup}`)
   if (config.staffPin === '1234' || config.managerPin === '0000') console.log('  PINs are still the defaults (staff 1234, manager 0000). Change them in config.json before real use.')
   console.log('  Press Ctrl+C to stop.\n')
 })
