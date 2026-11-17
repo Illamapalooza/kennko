@@ -4,6 +4,11 @@
 A Next.js (App Router, TypeScript) site for Kennko Coffee, deployed on Vercel,
 with menu data in Supabase Postgres.
 
+## POS, wall and the monorepo
+This repo also holds the shop till (`apps/pos`), shared pricing rules (`packages/core`) and the projector wall
+(`wall/`). **Read `docs/HANDOVER-pos.md` before working on any of them**: it has the current state, what Julius
+decided, and what is next.
+
 ## Brand Context
 Read `brand/BRIEF.md` for cafe info, brand guidelines, palette, and copy tone.
 The brand is the electric blue `#0055FF` identity. `brand/Kennko Menu.png` is a

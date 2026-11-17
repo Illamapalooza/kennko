@@ -1,0 +1,15 @@
+{
+  "port": 4466,
+  "staffPin": "1234",
+  "managerPin": "0000",
+  "shop": {
+    "name": "Kennko Coffee",
+    "address": "CT. Montalban St., Villa Kananga, Butuan City",
+    "phone": "0930 599 2729",
+    "receiptFooter": "Thank you! See you again soon."
+  },
+  "discounts": [
+    { "label": "Senior / PWD 20%", "kind": "percent", "value": 20 },
+    { "label": "Promo 10%", "kind": "percent", "value": 10 }
+  ]
+}
