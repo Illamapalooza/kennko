@@ -5,7 +5,14 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "test": "vitest run" },
-  "devDependencies": { "vitest": "^4.1.11" }
+  "exports": {
+    ".": "./src/index.ts",
+    "./seed-menu": "./src/seed-menu.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.11"
+  }
 }

@@ -10,7 +10,7 @@ From the repo root, once: `npm install`
 | When | Command | Opens at |
 |---|---|---|
 | Building or changing it | `npm run pos` | http://localhost:4466 |
-| In the shop | `npm run build -w @kennko/pos`, then `npm start -w @kennko/pos` | the address it prints for tablets |
+| In the shop | `npm run pos:build`, then `npm run pos:start` | the address it prints for tablets |
 
 Needs Node.js 24 or newer (it uses Node's built-in SQLite).
 
@@ -35,14 +35,14 @@ Copy `config.example.json` to `config.json` and edit it. **Change both PINs befo
 | `managerPin` | Asked for voids, cash out, closing the till and updating the menu. |
 | `shop` | Name, address, phone and footer printed on receipts. |
 | `discounts` | One-tap discounts. `kind` is `percent` (1 to 100) or `amount` (centavos). |
-| `website` | `{ "url", "anonKey" }` for the menu update. Defaults to the values in the repo's `.env.local`. |
+| `website` | `{ "url", "anonKey" }` for the menu update. Defaults to the values in `apps/web/.env.local`. |
 
 ## Where things live
 
 - `data/pos.db` is every sale, shift and cash movement. **Back this file up.** It is not in git.
-- `data/menu.json` is the menu last pulled from the website. Without it the built-in menu (the website's seed) is used.
+- `data/menu.json` is the menu last pulled from the website. Without it the built-in menu (`packages/core/src/seed-menu.ts`, the same list the website seeds) is used.
 - Prices, discounts and order rules come from `packages/core`, shared with the rest of the repo.
 
 ## Tests
 
-`npm run pos:test` from the repo root.
+`npm test` from the repo root.

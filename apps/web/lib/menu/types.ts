@@ -1,9 +1,7 @@
-export type DrinkSize = 'M' | 'L' | 'XL' | 'HOT'
+import type { DrinkSize, MenuItemPrice } from '@kennko/core'
 
-export type MenuItemPrice = {
-  size: DrinkSize
-  priceCentavos: number
-}
+// Sizes and prices are shared with the till.
+export type { DrinkSize, MenuItemPrice }
 
 export type MenuItemWithPrices = {
   id: string

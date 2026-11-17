@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { SIZE_ORDER, type DrinkSize, type Menu } from '@kennko/core'
-// The website's seed is the same list the shop's printed menu uses. When the website moves to apps/web, update this path.
-import { SEED_CATEGORIES, SEED_MODIFIER_GROUPS } from '../../../supabase/seed/menu.ts'
+// The same list the website's seeder loads, so the till and the website start from one menu.
+import { SEED_CATEGORIES, SEED_MODIFIER_GROUPS } from '@kennko/core/seed-menu'
 
 const slug = (text: string) => text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 

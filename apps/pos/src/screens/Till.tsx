@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { formatPesos, parsePesos, type Summary } from '@kennko/core'
+import { formatPesos, formatSignedPesos, parsePesos, type Summary } from '@kennko/core'
 import { api, type Live, type TillState } from '../api.ts'
 import { Modal } from '../components/Modal.tsx'
 import { PinPrompt } from '../components/PinPrompt.tsx'
@@ -134,7 +134,7 @@ export function Till({ live, notify }: { live: Live; notify: (message: string) =
                     <td>{formatPesos(sum.netCentavos)}</td>
                     <td>{formatPesos(sum.expectedCashCentavos)}</td>
                     <td>{formatPesos(s.countedCentavos ?? 0)}</td>
-                    <td className={diff < 0 ? 'neg' : diff > 0 ? 'pos' : ''}>{diff === 0 ? 'Exact' : `${diff > 0 ? '+' : ''}${formatPesos(diff)}`}</td>
+                    <td className={diff < 0 ? 'neg' : diff > 0 ? 'pos' : ''}>{diff === 0 ? 'Exact' : formatSignedPesos(diff)}</td>
                   </tr>
                 )
               })}

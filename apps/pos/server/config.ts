@@ -35,7 +35,7 @@ const str = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallb
 
 export function loadConfig(root: string, repoRoot: string): Config {
   // The website's .env.local already holds the Supabase address and public key; reuse it when present.
-  try { process.loadEnvFile(path.join(repoRoot, '.env.local')) } catch { /* no env file: built-in menu */ }
+  try { process.loadEnvFile(path.join(repoRoot, 'apps/web/.env.local')) } catch { /* no env file: built-in menu */ }
 
   let raw: Record<string, any> = {}
   const file = path.join(root, 'config.json')

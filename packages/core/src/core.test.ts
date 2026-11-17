@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  OrderError, cleanDiscount, discountAmount, formatPesos, parsePesos, priceLine, priceLines, quickCash, summarise, totals,
+  OrderError, cleanDiscount, discountAmount, formatPesos, formatSignedPesos, parsePesos, priceLine, priceLines, quickCash, summarise, totals,
   nextStatus, prevStatus, manilaDay, type Menu, type Order, type LineInput,
 } from './index.ts'
 
@@ -23,7 +23,10 @@ describe('money', () => {
   it('formats and parses pesos', () => {
     expect(formatPesos(12500)).toBe('₱125')
     expect(formatPesos(12550)).toBe('₱125.50')
-    expect(formatPesos(-500)).toBe('-₱5')
+    expect(() => formatPesos(-500)).toThrow('must not be negative')
+    expect(formatSignedPesos(-500)).toBe('-₱5')
+    expect(formatSignedPesos(2000)).toBe('+₱20')
+    expect(formatSignedPesos(0)).toBe('₱0')
     expect(parsePesos('1,250.5')).toBe(125050)
     expect(parsePesos('abc')).toBeNull()
     expect(parsePesos('1.234')).toBeNull()

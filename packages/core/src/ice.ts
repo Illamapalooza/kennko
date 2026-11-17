@@ -9,9 +9,9 @@ export const ICE_LEVELS: { value: IceLevel; label: string }[] = [
   { value: 'none', label: 'No ice' },
 ]
 
-export const ICE_SERVES: { value: IceServe; label: string }[] = [
-  { value: 'mixed', label: 'Mixed in' },
-  { value: 'side', label: 'Ice on the side' },
+export const ICE_SERVES: { value: IceServe; label: string; hint: string }[] = [
+  { value: 'mixed', label: 'Mixed in', hint: 'Poured over ice, ready to drink' },
+  { value: 'side', label: 'Ice on the side', hint: 'Keeps it from watering down' },
 ]
 
 /** Hot drinks have no ice to configure. */
@@ -34,6 +34,14 @@ export function normaliseIce(
   const resolvedLevel: IceLevel = level ?? 'regular'
   if (resolvedLevel === 'none') return { level: 'none', serve: null }
   return { level: resolvedLevel, serve: serve ?? 'mixed' }
+}
+
+/** Full wording for a customer-facing summary, e.g. "Less ice, on the side". */
+export function iceSummary(level: IceLevel | null, serve: IceServe | null): string | null {
+  if (!level) return null
+  if (level === 'none') return 'No ice'
+  const amount = level === 'less' ? 'Less ice' : 'Regular ice'
+  return serve === 'side' ? `${amount}, on the side` : amount
 }
 
 /** Short kitchen wording; regular ice mixed in is the default and says nothing. */

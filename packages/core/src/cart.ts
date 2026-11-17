@@ -43,9 +43,17 @@ export type Discount = {
 
 export type Totals = { subtotalCentavos: number; discountCentavos: number; totalCentavos: number }
 
-export function lineTotal(line: { basePriceCentavos: number; modifiers: { priceCentavos: number }[]; quantity: number }): number {
+export type PricedInput = { basePriceCentavos: number; modifiers: { priceCentavos: number }[]; quantity: number }
+
+export function lineTotal(line: PricedInput): number {
+  if (line.quantity < 1) throw new Error('Quantity must be at least 1')
+  if (line.quantity > MAX_QUANTITY) throw new Error(`Quantity cannot be more than ${MAX_QUANTITY}`)
   const modifiers = line.modifiers.reduce((sum, m) => sum + m.priceCentavos, 0)
   return (line.basePriceCentavos + modifiers) * line.quantity
+}
+
+export function cartSubtotal(lines: PricedInput[]): number {
+  return lines.reduce((sum, line) => sum + lineTotal(line), 0)
 }
 
 /** Prices one line from the menu. Throws OrderError when the menu no longer allows it. */

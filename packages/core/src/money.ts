@@ -1,13 +1,18 @@
 /** Money is always whole centavos. Pesos only appear at the edges (typing and printing). */
 export function formatPesos(centavos: number): string {
   if (!Number.isInteger(centavos)) throw new Error('centavos must be an integer')
-  const sign = centavos < 0 ? '-' : ''
-  const abs = Math.abs(centavos)
-  const hasFraction = abs % 100 !== 0
-  return `${sign}₱${(abs / 100).toLocaleString('en-PH', {
+  if (centavos < 0) throw new Error('centavos must not be negative')
+  const hasFraction = centavos % 100 !== 0
+  return `₱${(centavos / 100).toLocaleString('en-PH', {
     minimumFractionDigits: hasFraction ? 2 : 0,
     maximumFractionDigits: 2,
   })}`
+}
+
+/** For differences that can go either way, like a drawer that is over or short: "+₱20", "-₱5", "₱0". */
+export function formatSignedPesos(centavos: number): string {
+  if (centavos === 0) return formatPesos(0)
+  return `${centavos > 0 ? '+' : '-'}${formatPesos(Math.abs(centavos))}`
 }
 
 /** "150", "150.5", "1,250.75" -> centavos. Returns null for anything that is not a plain peso amount. */

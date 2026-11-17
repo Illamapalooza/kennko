@@ -2,40 +2,15 @@
   "name": "kennko",
   "version": "0.1.0",
   "private": true,
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "seed": "tsx scripts/seed-menu.ts",
-    "create-owner": "tsx scripts/create-owner.ts",
-    "seed-zones": "tsx scripts/seed-zones.ts",
+    "dev": "npm run dev -w @kennko/web",
+    "build": "npm run build -w @kennko/web",
     "pos": "npm run dev -w @kennko/pos",
-    "pos:test": "npm test -w @kennko/core -w @kennko/pos"
-  },
-  "dependencies": {
-    "@supabase/ssr": "^0.12.4",
-    "@supabase/supabase-js": "^2.112.3",
-    "next": "16.3.2",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "server-only": "^0.0.1"
-  },
-  "devDependencies": {
-    "@testing-library/jest-dom": "^7.0.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^6.1.0",
-    "jsdom": "^29.1.1",
-    "tsx": "^4.23.12",
-    "typescript": "^5",
-    "vitest": "^4.1.11"
-  },
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ]
+    "pos:build": "npm run build -w @kennko/pos",
+    "pos:start": "npm start -w @kennko/pos",
+    "wall": "node wall/server.mjs",
+    "test": "npm test --workspaces --if-present && node --test wall/test/*.test.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
 }

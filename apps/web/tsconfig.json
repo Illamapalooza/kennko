@@ -26,7 +26,8 @@
       "@/*": [
         "./*"
       ]
-    }
+    },
+    "allowImportingTsExtensions": true
   },
   "include": [
     "next-env.d.ts",
@@ -37,9 +38,6 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules",
-    "apps",
-    "packages",
-    "wall"
+    "node_modules"
   ]
 }
