@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0055ff">
+<link rel="icon" href="/brand/icon.png">
+<title>Kennko Coffee</title>
+<link rel="stylesheet" href="/wall.css">
+</head>
+<body>
+<header class="bar">
+  <img class="brand" src="/brand/wordmark-white.png" alt="Kennko Coffee">
+  <div id="music" class="music" hidden><span aria-hidden="true">♪</span> <span id="track"></span></div>
+  <div id="link" class="pill" hidden>Reconnecting…</div>
+  <time id="clock" class="clock"></time>
+</header>
+
+<main>
+  <section id="stage" class="stage">
+    <div id="frame" class="frame">
+      <canvas id="scene" width="288" height="152" role="img" aria-label="A cafe run by cats"></canvas>
+      <img class="sign sign-wall" src="/brand/wordmark-blue.png" alt="">
+      <img class="sign sign-counter" src="/brand/wordmark-white.png" alt="">
+      <div id="tags" class="tags" aria-hidden="true"></div>
+      <div id="banner" class="banner" hidden><span>Order</span> <strong id="banner-number"></strong> <em id="banner-name"></em> <span>is ready!</span></div>
+    </div>
+  </section>
+
+  <aside id="board" class="board" aria-live="polite">
+    <section class="col">
+      <h2>Now preparing</h2>
+      <ol id="b-preparing" class="rows"></ol>
+      <p id="m-preparing" class="more"></p>
+    </section>
+    <section class="col serving">
+      <h2>Now serving</h2>
+      <ol id="b-serving" class="rows"></ol>
+      <p id="m-serving" class="more"></p>
+    </section>
+    <section class="col inline">
+      <h2>In line</h2>
+      <p id="b-queued" class="chips"></p>
+    </section>
+    <section id="closed" class="closed" hidden>
+      <h2>Cat nap</h2>
+      <p>Our baristas are resting. See you soon!</p>
+    </section>
+  </aside>
+</main>
+
+<div id="start" class="start">
+  <button type="button" id="open">
+    <img class="start-brand" src="/brand/wordmark-blue.png" alt="Kennko Coffee">
+    <span class="start-go">Tap to open the cafe</span>
+  </button>
+  <p id="pad-hint" class="pad-hint"></p>
+</div>
+
+<script type="module" src="/wall.mjs"></script>
+</body>
+</html>

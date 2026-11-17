@@ -1,0 +1,19 @@
+[
+  { "category": "Premium Classics", "items": [
+    { "name": "Americano" }, { "name": "Café Latte" }, { "name": "Vanilla Latte" }, { "name": "Hazelnut Latte" },
+    { "name": "Spanish Latte", "star": true }, { "name": "White Café Mocha", "star": true },
+    { "name": "Dark Café Mocha" }, { "name": "Caramel Macchiato", "star": true }
+  ] },
+  { "category": "Barista's Choice", "items": [
+    { "name": "Vietnamese Coffee" }, { "name": "Egg Coffee", "star": true }, { "name": "Coconut Coffee" },
+    { "name": "Sea Salt Caramel Oat", "star": true }, { "name": "Honey Oat Latte" }
+  ] },
+  { "category": "Sweet Sips", "items": [
+    { "name": "Strawberry Milk", "star": true }, { "name": "Strawberry Matcha", "star": true },
+    { "name": "Signature Choco", "star": true }, { "name": "Choco-Coconut", "star": true }, { "name": "Vanilla Milk" }
+  ] },
+  { "category": "Matcha Series", "items": [
+    { "name": "Matcha", "star": true }, { "name": "Matcha Coco" }, { "name": "Dirty Matcha" },
+    { "name": "Hojicha", "star": true }
+  ] }
+]

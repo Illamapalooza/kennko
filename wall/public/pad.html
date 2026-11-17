@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0055ff">
+<link rel="icon" href="/brand/icon.png">
+<title>Kennko Pad</title>
+<link rel="stylesheet" href="/pad.css">
+</head>
+<body>
+<header class="top">
+  <h1><img src="/brand/wordmark-white.png" alt="Kennko Coffee"> <span>Pad</span></h1>
+  <span id="link" class="link" hidden>Reconnecting…</span>
+  <div class="shift" aria-label="Baristas on shift">
+    <span class="shift-label">Baristas on shift</span>
+    <button type="button" id="shift-less" aria-label="One fewer barista">−</button>
+    <output id="shift-count">–</output>
+    <button type="button" id="shift-more" aria-label="One more barista">+</button>
+  </div>
+</header>
+
+<main>
+  <section class="builder" aria-labelledby="new-h">
+    <h2 id="new-h">New order <span id="next-number"></span></h2>
+    <label class="name">Name <span class="soft">(optional)</span>
+      <input id="name" type="text" maxlength="16" autocomplete="off" autocapitalize="words" enterkeyhint="done">
+    </label>
+    <div id="tabs" class="tabs" role="tablist"></div>
+    <div id="drinks" class="drinks"></div>
+    <ul id="cart" class="cart" aria-label="Drinks in this order"></ul>
+    <button type="button" id="send" class="send" disabled>Send to wall</button>
+  </section>
+
+  <section class="lanes" aria-label="Orders">
+    <div class="lane"><h2>In line <span id="n-queued" class="count"></span></h2><div id="lane-queued" class="cards"></div></div>
+    <div class="lane"><h2>Preparing <span id="n-preparing" class="count"></span></h2><div id="lane-preparing" class="cards"></div></div>
+    <div class="lane"><h2>Serving <span id="n-serving" class="count"></span></h2><div id="lane-serving" class="cards"></div></div>
+    <div class="lane lane-done"><h2>Just finished</h2><div id="lane-done" class="cards"></div></div>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<div id="sent" class="sent" hidden>
+  <div class="sent-card">
+    <p>Tell the customer</p>
+    <strong id="sent-number"></strong>
+    <button type="button" id="sent-ok">OK</button>
+  </div>
+</div>
+
+<form id="gate" class="gate" hidden>
+  <div class="gate-card">
+    <img class="gate-logo" src="/brand/wordmark-blue.png" alt="Kennko Coffee">
+    <h2>Order pad</h2>
+    <label for="pin">Staff PIN</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="12" required>
+    <p id="gate-error" class="gate-error" role="alert"></p>
+    <button type="submit">Open</button>
+  </div>
+</form>
+
+<script type="module" src="/pad.js"></script>
+</body>
+</html>
