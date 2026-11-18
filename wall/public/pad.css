@@ -1,6 +1,6 @@
 :root {
-  --blue: #0055ff; --blue-d: #0041c4; --blue-l: #e6eeff; --amber: #ffb830; --ink: #1a2340; --soft: #5b6685;
-  --line: #cfdaf5; --red: #d0342c;
+  --blue: #0055ff; --blue-d: #003fc0; --blue-l: #e6eeff; --amber: #ffb830; --ink: #0d1b3d; --soft: #5b6685;
+  --line: #cfdaf5; --red: #d92d3a;
   font-family: "Arial Rounded MT Bold", "Varela Round", "Nunito", ui-rounded, system-ui, sans-serif;
 }
 * { box-sizing: border-box; }

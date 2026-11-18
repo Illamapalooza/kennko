@@ -1,7 +1,7 @@
 .admin-shell {
   min-height: 100vh;
-  background: var(--muted);
-  color: var(--text);
+  background: var(--blue-soft);
+  color: var(--ink);
 }
 
 .admin-topbar {
@@ -125,7 +125,7 @@
 .admin-main .btn-secondary:hover,
 .admin-cards .btn-secondary:hover,
 .admin-table .btn-secondary:hover {
-  background: var(--muted);
+  background: var(--blue-soft);
 }
 
 .admin-main .btn-primary {

@@ -13,6 +13,7 @@
   "dependencies": {
     "@fontsource-variable/nunito": "^5.2.7",
     "@kennko/core": "*",
+    "@kennko/tokens": "*",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tsx": "^4.23.12"

@@ -1,5 +1,5 @@
 :root {
-  --blue: #0055ff; --blue-d: #0041c4; --amber: #ffb830; --ink: #1a2340; --px: 4px;
+  --blue: #0055ff; --blue-d: #003fc0; --amber: #ffb830; --ink: #0d1b3d; --px: 4px;
   font-family: "Arial Rounded MT Bold", "Varela Round", "Nunito", ui-rounded, system-ui, sans-serif;
 }
 * { box-sizing: border-box; }

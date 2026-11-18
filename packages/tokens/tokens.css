@@ -1,0 +1,88 @@
+/*
+ * Kennko design tokens. The one place colours, type, radii, shadows and spacing are defined.
+ * Guidelines: brand/DESIGN.md. Brand source: brand/BRIEF.md.
+ *
+ * Names match what the website and the POS already use, so adopting this file means deleting
+ * each app's own :root block, not renaming every rule.
+ *
+ * The wall (wall/public/*.css) is a zero-dependency script and cannot import this file.
+ * It keeps a copy of the values it needs; change them here first, then there.
+ */
+:root {
+  /* Brand */
+  --blue: #0055ff;        /* primary: backgrounds, buttons, headings, links */
+  --blue-dark: #003fc0;   /* pressed and hover states of blue */
+  --blue-soft: #e8efff;   /* tinted fills: chips, selected rows, quiet buttons */
+  --blue-wash: #f3f6ff;   /* app background behind white cards */
+  --white: #ffffff;
+  --amber: #ffb830;       /* accent, used sparingly: promo badges, bestseller stars, focus ring */
+  --amber-soft: #fff3d6;  /* fill behind an amber badge */
+
+  /* Text and lines */
+  --ink: #0d1b3d;         /* body text on white or wash */
+  --ink-soft: #55628a;    /* secondary text, labels, hints */
+  --line: #d9e3fb;        /* borders and dividers */
+
+  /* Status: for meaning only, never decoration */
+  --red: #d92d3a;         /* errors, voids, cancel, negative amounts */
+  --red-soft: #ffe9eb;
+  --green: #0f9d63;       /* success, available, positive amounts */
+  --green-soft: #e2f7ee;
+
+  /* Type */
+  --font: 'Nunito Variable', 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --weight-body: 600;
+  --weight-strong: 800;
+  --weight-heading: 900;
+
+  --text-xs: 0.75rem;     /* fine print, table captions */
+  --text-sm: 0.85rem;     /* labels, hints, badges */
+  --text-base: 1rem;      /* body */
+  --text-md: 1.15rem;     /* lead text, card titles */
+  --text-lg: 1.5rem;      /* section titles in apps */
+  --text-xl: 2.2rem;      /* page titles in apps */
+  --text-display: clamp(2rem, 4vw, 3.4rem);   /* marketing section headings */
+  --text-hero: clamp(3rem, 7vw, 5.8rem);      /* marketing hero only */
+
+  --leading-tight: 1.1;   /* headings */
+  --leading-body: 1.45;
+  --tracking-heading: 0.02em;
+  --tracking-label: 0.08em;   /* small uppercase labels */
+
+  /* Shape */
+  --radius-sm: 12px;      /* inputs, small tiles */
+  --radius-md: 16px;      /* cards, list rows */
+  --radius-lg: 24px;      /* panels, sheets, large cards */
+  --radius-xl: 32px;      /* marketing hero blocks */
+  --radius-pill: 999px;   /* every button, chip and badge */
+
+  /* Depth */
+  --shadow: 0 10px 30px rgba(0, 50, 150, 0.1);      /* cards and panels */
+  --shadow-lg: 0 24px 60px rgba(0, 40, 130, 0.18);  /* marketing feature cards, modals */
+
+  /* Space: a 4px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 72px;        /* between marketing sections */
+
+  /* Touch */
+  --tap: 44px;            /* smallest tappable size anywhere */
+  --tap-lg: 52px;         /* buttons on shop tablets (POS, pad) */
+
+  /* Motion */
+  --ease: 0.15s ease;
+
+  color-scheme: light;    /* there is no dark theme */
+}
+
+/*
+ * Breakpoints cannot be variables inside @media, so they are fixed by convention:
+ *   920px  below this, multi-column layouts stack (tablet)
+ *   640px  below this, phone layout
+ * Verify at 375, 768, 1024 and 1440px.
+ */

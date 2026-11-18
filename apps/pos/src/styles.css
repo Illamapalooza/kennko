@@ -1,26 +1,6 @@
 /* Kennko POS. Brand: electric blue, white, amber as a sparing accent. Never a dark theme. */
 :root {
-  --blue: #0055ff;
-  --blue-dark: #003fc0;
-  --blue-soft: #e8efff;
-  --blue-wash: #f3f6ff;
-  --white: #ffffff;
-  --amber: #ffb830;
-  --amber-soft: #fff3d6;
-  --ink: #0d1b3d;
-  --ink-soft: #55628a;
-  --line: #d9e3fb;
-  --red: #d92d3a;
-  --red-soft: #ffe9eb;
-  --green: #0f9d63;
-  --green-soft: #e2f7ee;
-  --radius-lg: 24px;
-  --radius-md: 16px;
-  --radius-sm: 12px;
-  --shadow: 0 10px 30px rgba(0, 50, 150, 0.1);
   --rail: 96px;
-  --font: 'Nunito Variable', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  color-scheme: light;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }

@@ -1,23 +1,13 @@
 :root {
-  --blue: #0055ff;
-  --blue-dark: #003fc0;
-  --white: #ffffff;
-  --amber: #ffb830;
-  --text: #0d1b3d;
-  --muted: #e8efff;
   --card: rgba(255, 255, 255, 0.92);
-  --shadow: 0 24px 60px rgba(0, 40, 130, 0.18);
-  --radius-xl: 32px;
-  --radius-lg: 22px;
-  --radius-md: 16px;
 }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
-  font-family: Inter, ui-rounded, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: var(--text);
+  font-family: var(--font-nunito), var(--font);
+  color: var(--ink);
   background: linear-gradient(180deg, #f6f9ff 0%, #ffffff 40%, #edf4ff 100%);
 }
 
@@ -90,7 +80,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--white);
   border-radius: 36px;
   padding: 28px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
 }
 
 .hero-copy {
@@ -258,7 +248,7 @@ main section { padding: 28px 0; }
 .pill {
   padding: 10px 14px;
   border-radius: 999px;
-  background: var(--muted);
+  background: var(--blue-soft);
   color: var(--blue);
   font-weight: 800;
   font-size: 0.88rem;
@@ -327,7 +317,7 @@ main section { padding: 28px 0; }
 .step {
   border-radius: 18px;
   padding: 16px;
-  background: var(--muted);
+  background: var(--blue-soft);
 }
 
 .step strong {
@@ -359,7 +349,7 @@ main section { padding: 28px 0; }
   margin-top: 8px;
   border-radius: 26px;
   overflow: hidden;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
 }
 
 footer {
@@ -513,7 +503,7 @@ footer {
    beside it, because it leaves the page rather than scrolling within it. */
 .nav-order {
   background: var(--amber);
-  color: var(--text) !important;
+  color: var(--ink) !important;
   padding: 8px 16px;
   border-radius: 999px;
   font-weight: 800;
