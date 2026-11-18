@@ -57,7 +57,25 @@ export function needsNewCertificate(certPem: string, caPem: string, names: strin
   }
 }
 
-const openssl = (args: string[]) => execFileSync('openssl', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+// Windows has no openssl of its own, but Git for Windows (needed to fetch the code) brings one.
+const OPENSSL = process.platform === 'win32'
+  ? ['openssl', ...[process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs')]
+      .filter((dir): dir is string => Boolean(dir))
+      .flatMap((dir) => [path.join(dir, 'Git', 'mingw64', 'bin', 'openssl.exe'), path.join(dir, 'Git', 'usr', 'bin', 'openssl.exe')])]
+  : ['openssl']
+let opensslBin: string | null | undefined
+function findOpenssl(): string | null {
+  if (opensslBin !== undefined) return opensslBin
+  for (const candidate of OPENSSL) {
+    try { execFileSync(candidate, ['version'], { stdio: 'ignore' }); return (opensslBin = candidate) } catch { /* try the next one */ }
+  }
+  return (opensslBin = null)
+}
+const openssl = (args: string[]) => {
+  const bin = findOpenssl()
+  if (!bin) throw Object.assign(new Error('openssl not found'), { code: 'ENOENT' })
+  return execFileSync(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+}
 const read = (file: string) => { try { return fs.readFileSync(file, 'utf8') } catch { return '' } }
 
 /**
@@ -101,6 +119,6 @@ export function ensureCertificate(dir: string, names: string[], now = Date.now()
     }
     return { key: read(file('till.key')), cert: read(file('till.crt')), caFile: file('ca.crt'), names, made }
   } catch (err: any) {
-    return { error: err.code === 'ENOENT' ? 'openssl is not installed on this computer' : String(err.stderr || err.message).trim().split('\n').pop() ?? 'unknown error' }
+    return { error: err.code === 'ENOENT' ? 'openssl is not installed on this computer (on Windows, installing Git for Windows provides it)' : String(err.stderr || err.message).trim().split('\n').pop() ?? 'unknown error' }
   }
 }

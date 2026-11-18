@@ -34,7 +34,7 @@ const NO_OPEN = args.includes("--no-open");
 const portArg = args.indexOf("--port");
 
 const readJson = (file, fallback) => {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (err) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "")); } catch (err) {
     if (err.code !== "ENOENT") console.warn(`Could not read ${path.basename(file)} (${err.message}); using defaults.`);
     return fallback;
   }

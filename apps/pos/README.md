@@ -3,6 +3,8 @@
 The till for the shop. It runs on one computer in the shop; tablets open it in a browser over the cafe wifi. Sales are
 kept in a local database on that computer, so the till keeps working when the internet is down.
 
+In the shop it runs on the Windows tablet at the counter: see `deploy/windows/README.md` for the one-time setup.
+
 ## Start it
 
 From the repo root, once: `npm install`

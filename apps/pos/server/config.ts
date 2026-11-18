@@ -45,8 +45,9 @@ export function loadConfig(root: string, repoRoot: string): Config {
 
   let raw: Record<string, any> = {}
   const file = path.join(root, 'config.json')
-  try { raw = JSON.parse(fs.readFileSync(file, 'utf8')) } catch (err: any) {
-    if (err.code !== 'ENOENT') console.warn(`Could not read config.json (${err.message}); using defaults.`)
+  try { raw = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) } catch (err: any) {
+    // A broken file must not quietly fall back to the default PINs.
+    if (err.code !== 'ENOENT') throw new Error(`config.json could not be read (${err.message}). Fix it, or delete it to start with the defaults.`)
   }
   const port = Number.isInteger(raw.port) && raw.port > 0 && raw.port < 65536 ? raw.port : DEFAULTS.port
   const discounts = Array.isArray(raw.discounts)

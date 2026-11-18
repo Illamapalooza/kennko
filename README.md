@@ -19,6 +19,9 @@ cp apps/web/.env.local.example apps/web/.env.local # fill in the Supabase creden
 Website database and seeding commands run from `apps/web`; see `apps/web/CLAUDE.md`. The till is covered in
 `apps/pos/README.md`, the wall in `wall/README.md`.
 
+**Putting it in the shop:** the till and the wall run on the shop's Windows tablet, the wall shows on the projector.
+Step-by-step in `deploy/windows/README.md` (one double-click setup).
+
 ## Commands (repo root)
 
 | Command | Does |
