@@ -31,6 +31,22 @@ Start the wall with `npm run wall:pos` and it follows this till: paid orders wal
 queue and calls each order when it is marked Ready. The wall reads `/api/wall/events`, which needs no PIN and carries
 only order numbers, first names, drink names and steps. See `wall/README.md`.
 
+## Install it as an app
+
+The till is an installable app (a PWA): it gets its own icon on the home screen, opens full screen, keeps the screen on, and opens even when the till computer is unreachable (it then says it can't reach the till and reconnects by itself). Sales are never stored on the tablet; they always live on the till computer.
+
+Browsers only install apps from an https address, so the till also serves on `https://<address>:4443/` with a certificate it makes for itself. Each device has to be told once to trust it:
+
+1. Start the till with `npm run pos:start` (the secure address is off in `npm run pos`, the development mode).
+2. On the tablet, open `http://<till address>:4466/setup` and follow the three steps there.
+
+Things to know:
+
+- **Use one address and keep it.** An installed app belongs to the address it was installed from. Prefer the `.local` name the till prints at startup, or reserve the till computer's IP address in the router. If the address changes, install again from the new one; the tablet does not need to trust the certificate a second time.
+- **The certificate is limited to local networks.** The till's certificate authority can only sign for private addresses, `localhost` and `.local` names, so it cannot be used to pose as a website on the internet. Its key is `data/cert/ca.key`; keep it on the till computer.
+- **Renewal is automatic.** The till's certificate lasts about 13 months and is remade at startup in its last month. The authority tablets trust lasts 10 years.
+- **Updates arrive on the next open.** After `npm run pos:build`, an installed tablet picks up the new screens the next time the app is opened or reloaded.
+
 ## Settings
 
 Copy `config.example.json` to `config.json` and edit it. **Change both PINs before real use.**
@@ -42,12 +58,14 @@ Copy `config.example.json` to `config.json` and edit it. **Change both PINs befo
 | `shop` | Name, address, phone and footer printed on receipts. |
 | `discounts` | One-tap discounts. `kind` is `percent` (1 to 100) or `amount` (centavos). |
 | `website` | `{ "url", "anonKey" }` for the menu update. Defaults to the values in `apps/web/.env.local`. |
+| `securePort` | The https port tablets install the app from. Default `4443`; `0` turns it off. |
 | `backupDir` | A second folder for the daily backup, such as a USB stick or a cloud-synced folder. `""` keeps one copy only. |
 
 ## Where things live
 
 - `data/pos.db` is every sale, shift and cash movement. It is not in git.
 - `data/backups/pos-YYYY-MM-DD.db` is a full copy of it, one file per day, newest 30 kept. See Backups below.
+- `data/cert/` is the till's own certificate and the authority that signs it (see Install it as an app). Not in git.
 - `data/menu.json` is the menu last pulled from the website. Without it the built-in menu (`packages/core/src/seed-menu.ts`, the same list the website seeds) is used.
 - Prices, discounts and order rules come from `packages/core`, shared with the rest of the repo.
 
