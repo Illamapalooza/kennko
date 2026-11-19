@@ -312,3 +312,29 @@
 }
 .overview-order-status { grid-column: 1 / 3; font-size: 0.9rem; }
 .overview-order-total { grid-column: 3; grid-row: 1 / 3; font-weight: 700; }
+
+/* Menu table: rows stack on phones, one dense line from 920px. */
+.menu-toolbar { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+.menu-toolbar input[type='search'] { flex: 1; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius-md); }
+.menu-chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+.menu-chip { padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--white); color: var(--ink); white-space: nowrap; }
+.menu-chip[aria-pressed='true'] { background: var(--blue); color: var(--white); border-color: var(--blue); }
+.menu-toggles { display: flex; gap: var(--space-4); margin: 8px 0 var(--space-3); font-size: 0.9rem; }
+.menu-empty { padding: var(--space-4); background: var(--white); border-radius: var(--radius-md); }
+.menu-category-head { position: sticky; top: 0; z-index: 5; margin: 0; padding: 8px 12px; background: var(--blue-soft); font-size: 1rem; }
+.menu-row { display: grid; gap: 8px; padding: 12px; background: var(--white); border-bottom: 1px solid var(--line); }
+.menu-row.is-archived { opacity: 0.6; }
+.menu-row-name { display: flex; align-items: center; gap: 8px; font-weight: 600; flex-wrap: wrap; }
+.menu-row-tag, .price-cell-sold { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: #fff4e0; color: #7a4b00; }
+.menu-row-prices { display: flex; flex-wrap: wrap; gap: 8px; }
+.price-cell-label { display: grid; gap: 2px; font-size: 0.8rem; }
+.price-cell input { width: 96px; min-height: 44px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-md); }
+.price-cell small { display: block; font-size: 0.75rem; }
+.price-cell-error { color: #b00020; }
+.menu-row-actions { display: flex; align-items: center; gap: 8px; }
+.menu-row-open { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; font-size: 1.4rem; }
+.star-toggle { min-width: 44px; background: none; border: 0; color: var(--blue); font-size: 1.25rem; }
+
+@media (min-width: 921px) {
+  .menu-row { grid-template-columns: minmax(180px, 1fr) auto auto; align-items: start; }
+}

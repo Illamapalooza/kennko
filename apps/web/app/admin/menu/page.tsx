@@ -1,27 +1,14 @@
-import Link from 'next/link'
 import { getCurrentStaff } from '@/lib/auth/session'
 import { getAdminMenu } from './actions'
-import { priceRange } from './format'
-import { filterMenu } from './table'
-import { AvailabilityToggle } from '@/components/admin/AvailabilityToggle'
-
-function shownPrices(prices: { code: string; priceCentavos: number; isArchived: boolean }[]) {
-  return prices.filter((p) => !p.isArchived).map((p) => ({ size: p.code, priceCentavos: p.priceCentavos }))
-}
+import { MenuTable } from '@/components/admin/menu/MenuTable'
 
 export default async function AdminMenuPage({
   searchParams,
 }: {
-  searchParams: Promise<{ denied?: string }>
+  searchParams: Promise<{ denied?: string; filter?: string }>
 }) {
-  const { denied } = await searchParams
-  const staff = await getCurrentStaff()
-  const categories = filterMenu(await getAdminMenu(), {
-    query: '',
-    categoryId: null,
-    showArchived: false,
-    soldOutOnly: false,
-  }).categories
+  const { denied, filter } = await searchParams
+  const [staff, menu] = await Promise.all([getCurrentStaff(), getAdminMenu()])
   const isOwner = staff?.role === 'owner'
 
   return (
@@ -30,71 +17,11 @@ export default async function AdminMenuPage({
 
       {denied === 'owner-only' ? (
         <p className="admin-notice" role="alert">
-          Only the owner can edit menu items and prices. You can still mark items
-          sold out.
+          Only the owner can edit menu items and prices. You can still mark items sold out.
         </p>
       ) : null}
 
-      {isOwner ? (
-        <p>
-          <Link className="btn btn-primary" href="/admin/menu/new">
-            Add a drink
-          </Link>
-        </p>
-      ) : null}
-
-      {categories.map((category) => (
-        <section key={category.id}>
-          <h2>{category.name}</h2>
-
-          <div className="admin-cards">
-            {category.items.map((item) => (
-              <article className="section-card" key={item.id}>
-                <strong>
-                  {item.name}
-                  {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
-                </strong>
-                <p>{priceRange(shownPrices(item.prices))}</p>
-                <p>{item.isAvailable ? 'Available' : 'Sold out'}</p>
-                <AvailabilityToggle itemId={item.id} isAvailable={item.isAvailable} />
-                {isOwner ? <Link href={`/admin/menu/${item.id}`}>Edit</Link> : null}
-              </article>
-            ))}
-          </div>
-
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Price</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {category.items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    {item.name}
-                    {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
-                  </td>
-                  <td>{priceRange(shownPrices(item.prices))}</td>
-                  <td>{item.isAvailable ? 'Available' : 'Sold out'}</td>
-                  <td>
-                    <AvailabilityToggle
-                      itemId={item.id}
-                      isAvailable={item.isAvailable}
-                    />
-                    {isOwner ? (
-                      <Link href={`/admin/menu/${item.id}`}>Edit</Link>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      ))}
+      <MenuTable menu={menu} isOwner={isOwner} initialSoldOut={filter === 'soldout'} />
     </>
   )
 }

@@ -3,11 +3,11 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { getServerClient } from '@/lib/supabase/server'
-import { requireStaff, requireOwner } from '@/lib/auth/session'
+import { requireStaff, requireOwner, getCurrentStaff } from '@/lib/auth/session'
 import { validateImage } from '@/lib/images/validate'
 import { publishMenu } from '@/lib/menu/publish'
 import { drinkGroupLinksFor, type DrinkGroupLinkRow } from './drink-groups'
-import { VARIANT_META, parseVariantPrices, variantCodesFor, type CategoryKind } from './format'
+import { VARIANT_META, parsePriceInput, parseVariantPrices, variantCodesFor, type CategoryKind } from './format'
 import type { AdminMenu, VariantCode } from '@/lib/menu/types'
 
 const IMAGE_BUCKET = 'menu-images'
@@ -282,4 +282,71 @@ export async function removeMenuImage(itemId: string) {
   revalidatePath('/admin/menu')
   revalidatePath('/')
   revalidatePath('/admin', 'layout')
+}
+
+type ActionResult = { ok: true } | { ok: false; message: string }
+
+/** Inline edits are drafts: they revalidate the admin but never publish. */
+export async function updateVariantPrice(
+  itemId: string,
+  code: VariantCode,
+  raw: string,
+): Promise<{ ok: true; priceCentavos: number | null } | { ok: false; message: string }> {
+  const staff = await getCurrentStaff()
+  if (staff?.role !== 'owner') return { ok: false, message: 'Only the owner can change prices.' }
+  if (!(code in VARIANT_META)) return { ok: false, message: 'Unknown size.' }
+
+  let priceCentavos: number | null
+  try {
+    priceCentavos = parsePriceInput(raw)
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : 'Enter a valid price' }
+  }
+
+  const db = await getServerClient()
+  const now = new Date().toISOString()
+
+  if (priceCentavos === null) {
+    // Blank archives the size, so history and a later re-price keep working.
+    const { error } = await db
+      .from('menu_variants')
+      .update({ is_archived: true, updated_at: now })
+      .eq('item_id', itemId)
+      .eq('code', code)
+    if (error) return { ok: false, message: `Could not clear the price: ${error.message}` }
+  } else {
+    const meta = VARIANT_META[code]
+    const { error } = await db.from('menu_variants').upsert(
+      {
+        item_id: itemId,
+        code,
+        label: meta.label,
+        price_centavos: priceCentavos,
+        temperature: meta.temperature,
+        sort_order: meta.sortOrder,
+        is_archived: false,
+        updated_at: now,
+      },
+      { onConflict: 'item_id,code' },
+    )
+    if (error) return { ok: false, message: `Could not save the price: ${error.message}` }
+  }
+
+  revalidatePath('/admin', 'layout')
+  return { ok: true, priceCentavos }
+}
+
+export async function setBestseller(itemId: string, value: boolean): Promise<ActionResult> {
+  const staff = await getCurrentStaff()
+  if (staff?.role !== 'owner') return { ok: false, message: 'Only the owner can change bestsellers.' }
+
+  const db = await getServerClient()
+  const { error } = await db
+    .from('menu_items')
+    .update({ is_bestseller: value, updated_at: new Date().toISOString() })
+    .eq('id', itemId)
+  if (error) return { ok: false, message: `Could not update bestseller: ${error.message}` }
+
+  revalidatePath('/admin', 'layout')
+  return { ok: true }
 }
