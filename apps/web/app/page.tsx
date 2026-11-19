@@ -6,13 +6,23 @@ import { FoodMenu } from '@/components/site/FoodMenu'
 import { Perks } from '@/components/site/Perks'
 import { Visit } from '@/components/site/Visit'
 import { Footer } from '@/components/site/Footer'
-import { getMenu, getFoodMenu } from '@/lib/menu/queries'
+import { fetchMenuSnapshot } from '@/lib/menu/api'
+import { foodFromSnapshot, menuFromSnapshot } from '@/lib/menu/queries'
+import type { MenuSnapshot } from '@kennko/core'
 import './landing.css'
 
 export const revalidate = 60
 
 export default async function HomePage() {
-  const [categories, food] = await Promise.all([getMenu(), getFoodMenu()])
+  // An API outage must not take the landing page down: render empty menu sections instead.
+  let snapshot: MenuSnapshot | null = null
+  try {
+    snapshot = await fetchMenuSnapshot()
+  } catch (err) {
+    console.error('Could not load the menu for the landing page', err)
+  }
+  const categories = menuFromSnapshot(snapshot)
+  const food = foodFromSnapshot(snapshot)
 
   return (
     <div className="landing k-paper-grid">

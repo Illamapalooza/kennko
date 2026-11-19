@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
-import { liveDrinkMenu } from '@kennko/core'
+import Link from 'next/link'
+import { liveDrinkMenu, type MenuSnapshot } from '@kennko/core'
 import { fetchMenuSnapshot } from '@/lib/menu/api'
 import { menuFromSnapshot } from '@/lib/menu/queries'
 import { getPublicClient } from '@/lib/supabase/public'
@@ -14,7 +15,23 @@ export default async function OrderPage() {
   if (process.env.NEXT_PUBLIC_ORDERING_ENABLED !== 'true') notFound()
 
   const db = getPublicClient()
-  const snapshot = await fetchMenuSnapshot()
+  let snapshot: MenuSnapshot | null
+  try {
+    snapshot = await fetchMenuSnapshot()
+  } catch (err) {
+    console.error('Could not load the menu for /order', err)
+    return (
+      <div className="order-shell">
+        <div className="order-card">
+          <h1>The menu can&rsquo;t load right now</h1>
+          <p>Please try again in a minute, or message us on Facebook.</p>
+          <p>
+            <Link href="/">Back to the home page</Link>
+          </p>
+        </div>
+      </div>
+    )
+  }
   const categories = menuFromSnapshot(snapshot)
   const customer = await getCurrentCustomer()
 

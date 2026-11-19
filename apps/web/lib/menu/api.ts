@@ -17,7 +17,10 @@ export async function fetchMenuSnapshot(): Promise<MenuSnapshot | null> {
     return null
   }
 
-  const res = await fetch(`${base.replace(/\/+$/, '')}/v1/menu`, { next: { revalidate: 30 } })
+  const res = await fetch(`${base.replace(/\/+$/, '')}/v1/menu`, {
+    next: { revalidate: 30 },
+    signal: AbortSignal.timeout(5000),
+  })
   if (res.status === 404) {
     const body = (await res.json().catch(() => null)) as { code?: string } | null
     if (body?.code === 'NO_MENU') return null

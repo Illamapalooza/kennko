@@ -27,7 +27,7 @@ export function FoodMenu({ items }: { items: FoodItem[] }) {
           <div className="food-rows">
             {items.map((item) => {
               const image = FOOD_ART[item.name]
-              const titleId = `food-${item.name.toLowerCase()}`
+              const titleId = `food-${item.id}`
               return (
                 <article className="k-sticker-row food-row" key={item.id} aria-labelledby={titleId}>
                   <div className="food-art">
