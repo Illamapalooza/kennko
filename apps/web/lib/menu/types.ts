@@ -34,3 +34,29 @@ export type AdminMenuCategory = {
   kind: 'drink' | 'food'
   items: AdminMenuItem[]
 }
+
+/** One item as the admin menu table sees it, archived and sold-out items included. */
+export type AdminTableItem = {
+  id: string
+  name: string
+  description: string | null
+  imagePath: string | null
+  isBestseller: boolean
+  isAvailable: boolean
+  isArchived: boolean
+  categoryId: string
+  prices: { code: VariantCode; priceCentavos: number; isArchived: boolean }[]
+  optionGroupIds: string[]
+}
+
+export type AdminTableCategory = {
+  id: string
+  name: string
+  kind: 'drink' | 'food'
+  items: AdminTableItem[]
+}
+
+export type AdminMenu = {
+  categories: AdminTableCategory[]
+  optionGroups: { id: string; name: string; minSelect: number; maxSelect: number }[]
+}

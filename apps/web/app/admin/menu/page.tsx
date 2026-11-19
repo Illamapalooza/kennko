@@ -2,7 +2,12 @@ import Link from 'next/link'
 import { getCurrentStaff } from '@/lib/auth/session'
 import { getAdminMenu } from './actions'
 import { priceRange } from './format'
+import { filterMenu } from './table'
 import { AvailabilityToggle } from '@/components/admin/AvailabilityToggle'
+
+function shownPrices(prices: { code: string; priceCentavos: number; isArchived: boolean }[]) {
+  return prices.filter((p) => !p.isArchived).map((p) => ({ size: p.code, priceCentavos: p.priceCentavos }))
+}
 
 export default async function AdminMenuPage({
   searchParams,
@@ -11,7 +16,12 @@ export default async function AdminMenuPage({
 }) {
   const { denied } = await searchParams
   const staff = await getCurrentStaff()
-  const categories = await getAdminMenu()
+  const categories = filterMenu(await getAdminMenu(), {
+    query: '',
+    categoryId: null,
+    showArchived: false,
+    soldOutOnly: false,
+  }).categories
   const isOwner = staff?.role === 'owner'
 
   return (
@@ -44,7 +54,7 @@ export default async function AdminMenuPage({
                   {item.name}
                   {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
                 </strong>
-                <p>{priceRange(item.prices)}</p>
+                <p>{priceRange(shownPrices(item.prices))}</p>
                 <p>{item.isAvailable ? 'Available' : 'Sold out'}</p>
                 <AvailabilityToggle itemId={item.id} isAvailable={item.isAvailable} />
                 {isOwner ? <Link href={`/admin/menu/${item.id}`}>Edit</Link> : null}
@@ -68,7 +78,7 @@ export default async function AdminMenuPage({
                     {item.name}
                     {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
                   </td>
-                  <td>{priceRange(item.prices)}</td>
+                  <td>{priceRange(shownPrices(item.prices))}</td>
                   <td>{item.isAvailable ? 'Available' : 'Sold out'}</td>
                   <td>
                     <AvailabilityToggle

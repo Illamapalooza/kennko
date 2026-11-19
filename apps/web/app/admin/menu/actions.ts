@@ -4,12 +4,11 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { getServerClient } from '@/lib/supabase/server'
 import { requireStaff, requireOwner } from '@/lib/auth/session'
-import { mapMenuRows } from '@/lib/menu/queries'
 import { validateImage } from '@/lib/images/validate'
 import { publishMenu } from '@/lib/menu/publish'
 import { drinkGroupLinksFor, type DrinkGroupLinkRow } from './drink-groups'
 import { VARIANT_META, parseVariantPrices, variantCodesFor, type CategoryKind } from './format'
-import type { AdminMenuCategory, VariantCode } from '@/lib/menu/types'
+import type { AdminMenu, VariantCode } from '@/lib/menu/types'
 
 const IMAGE_BUCKET = 'menu-images'
 
@@ -25,22 +24,75 @@ export async function publishMenuNow(): Promise<{ ok: true; version: number } | 
   return result
 }
 
-export async function getAdminMenu(): Promise<AdminMenuCategory[]> {
+export async function getAdminMenu(): Promise<AdminMenu> {
   await requireStaff()
   const db = await getServerClient()
 
-  const { data, error } = await db
-    .from('menu_categories')
-    .select(
-      `id, name, kind, sort_order,
-       menu_items ( id, name, description, image_path, is_bestseller,
-                    is_available, sort_order,
-                    menu_variants ( code, price_centavos, is_archived ) )`,
-    )
-    .order('sort_order')
+  const [categoriesResult, groupsResult] = await Promise.all([
+    db
+      .from('menu_categories')
+      .select(
+        `id, name, kind, sort_order,
+         menu_items ( id, category_id, name, description, image_path, is_bestseller,
+                      is_available, is_archived, sort_order,
+                      menu_variants ( code, price_centavos, is_archived, sort_order ),
+                      item_option_groups ( group_id ) )`,
+      )
+      .order('sort_order'),
+    db.from('option_groups').select('id, name, min_select, max_select, sort_order').order('sort_order'),
+  ])
 
-  if (error) throw new Error(`Failed to load menu: ${error.message}`)
-  return mapMenuRows((data ?? []) as never)
+  if (categoriesResult.error) throw new Error(`Failed to load menu: ${categoriesResult.error.message}`)
+  if (groupsResult.error) throw new Error(`Failed to load add-on groups: ${groupsResult.error.message}`)
+
+  type Row = {
+    id: string
+    name: string
+    kind: 'drink' | 'food'
+    menu_items: {
+      id: string
+      category_id: string
+      name: string
+      description: string | null
+      image_path: string | null
+      is_bestseller: boolean
+      is_available: boolean
+      is_archived: boolean
+      sort_order: number
+      menu_variants: { code: VariantCode; price_centavos: number; is_archived: boolean; sort_order: number }[]
+      item_option_groups: { group_id: string }[]
+    }[]
+  }
+
+  return {
+    categories: ((categoriesResult.data ?? []) as unknown as Row[]).map((category) => ({
+      id: category.id,
+      name: category.name,
+      kind: category.kind,
+      items: [...category.menu_items]
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          imagePath: item.image_path,
+          isBestseller: item.is_bestseller,
+          isAvailable: item.is_available,
+          isArchived: item.is_archived,
+          categoryId: item.category_id,
+          prices: [...item.menu_variants]
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map((v) => ({ code: v.code, priceCentavos: v.price_centavos, isArchived: v.is_archived })),
+          optionGroupIds: item.item_option_groups.map((g) => g.group_id),
+        })),
+    })),
+    optionGroups: (groupsResult.data ?? []).map((g) => ({
+      id: g.id,
+      name: g.name,
+      minSelect: g.min_select,
+      maxSelect: g.max_select,
+    })),
+  }
 }
 
 export async function setAvailability(itemId: string, isAvailable: boolean) {
