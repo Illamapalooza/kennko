@@ -247,6 +247,12 @@ alter table ticket_counters enable row level security;
 alter table payments        enable row level security;
 alter table order_events    enable row level security;
 
+-- Supabase's default privileges give anon and authenticated every table
+-- privilege, including ones RLS does not govern. Keep only what the staff read
+-- policies below need.
+revoke all on payments, order_events, ticket_counters from anon, authenticated;
+grant select on payments, order_events to authenticated;
+
 -- Customers get no policy on payments or events: proof paths and references stay staff-only.
 create policy "staff read payments" on payments for select using (public.is_active_staff());
 create policy "staff read order events" on order_events for select using (public.is_active_staff());

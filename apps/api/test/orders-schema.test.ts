@@ -11,6 +11,7 @@ const OPTION = '00000000-0000-4000-8000-0000000000b1'
 
 const order = (n: number) => `0000000${n}-0000-4000-8000-000000000000`
 const line = (n: number) => `0000000${n}-0000-4000-8000-0000000000f0`
+const LINE_NO_ITEM = '00000002-0000-4000-8000-0000000000f1'
 
 // Old status, Manila wall-clock time, verified?, fulfilment, has the option (or the option is gone).
 const LEGACY_ORDERS: [number, string, string, boolean, 'pickup' | 'delivery'][] = [
@@ -54,6 +55,9 @@ values ('${line(n)}', '${order(n)}', '${ITEM}', 'Americano', 'M', 10000, 1, 1000
 insert into order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_centavos)
 values ('${line(n)}', ${n === 7 ? 'null' : `'${OPTION}'`}, 'Oat milk', 0);`,
 ).join('\n')}
+insert into order_items (id, order_id, menu_item_id, name_snapshot, size, base_price_centavos, quantity,
+  line_total_centavos, ice_level, ice_serve)
+values ('${LINE_NO_ITEM}', '${order(2)}', null, 'Old Latte', 'L', 0, 1, 0, 'less', 'side');
 `
 
 let db: TestDb
@@ -154,6 +158,12 @@ test('lines carry variants and options carry their group', async () => {
   expect(options[6]).toMatchObject({ option_id: null, option_name: 'Oat milk', group_name: '' })
 })
 
+test('a legacy line whose menu item is gone keeps its code and label, with no variant', async () => {
+  const [row] = await db.sql`select item_id, item_name, variant_id, variant_code, variant_label
+    from order_lines where id = ${LINE_NO_ITEM}`
+  expect(row).toEqual({ item_id: null, item_name: 'Old Latte', variant_id: null, variant_code: 'L', variant_label: 'Large' })
+})
+
 test('old columns and types are gone', async () => {
   const cols = await db.sql`
     select table_name, column_name from information_schema.columns
@@ -179,14 +189,31 @@ test('a customer still reads their own order and lines, and no payments', async 
       where l.order_id = ${order(1)}`,
     payments: await tx`select id from payments`,
     events: await tx`select id from order_events`,
-    counters: await tx`select * from ticket_counters`,
   }))
   expect(result.orders).toHaveLength(1)
   expect(result.lines).toHaveLength(1)
   expect(result.options).toHaveLength(1)
   expect(result.payments).toHaveLength(0)
   expect(result.events).toHaveLength(0)
-  expect(result.counters).toHaveLength(0)
+})
+
+test('anon and authenticated hold no privileges on ticket_counters, and only select on payments and events', async () => {
+  for (const user of [null, CUSTOMER]) {
+    await expect(asUser(db.sql, user, (tx) => tx`select * from ticket_counters`)).rejects.toMatchObject({ code: '42501' })
+  }
+  await expect(
+    asUser(db.sql, OWNER, (tx) => tx`insert into order_events (order_id, kind) values (${order(1)}, 'note')`),
+  ).rejects.toMatchObject({ code: '42501' })
+  const privs = await db.sql`
+    select r.role, t.tbl, p.priv, has_table_privilege(r.role, t.tbl, p.priv) as has
+    from (values ('anon'), ('authenticated')) r(role),
+         (values ('payments'), ('order_events'), ('ticket_counters')) t(tbl),
+         (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('REFERENCES'), ('TRIGGER')) p(priv)
+    where has_table_privilege(r.role, t.tbl, p.priv)`
+  expect(privs.map((x) => `${x.role}:${x.tbl}:${x.priv}`).sort()).toEqual([
+    'authenticated:order_events:SELECT',
+    'authenticated:payments:SELECT',
+  ])
 })
 
 test('staff read orders and payments but can no longer update orders', async () => {
@@ -255,6 +282,43 @@ test('a counter order cannot be a delivery, and the series follows the channel',
   await expect(insertOrder({ ticket_series: 'W', ticket_number: 50 })).rejects.toMatchObject({
     constraint_name: 'orders_ticket_series_channel',
   })
+})
+
+const onlineOrder = (fields: Record<string, unknown>) =>
+  insertOrder({
+    channel: 'online',
+    fulfilment: 'pickup',
+    ticket_series: 'W',
+    order_code: `T-${fields.ticket_number}`,
+    customer_phone: '09170000000',
+    customer_email: 'x@kennko.test',
+    fulfil_at: '2026-11-20T10:00:00+08:00',
+    ...fields,
+  })
+
+test('a discount larger than the subtotal fails orders_discount_le_subtotal', async () => {
+  // A delivery fee keeps the total non-negative, so only the discount rule can fail.
+  await expect(
+    onlineOrder({
+      ticket_number: 101,
+      fulfilment: 'delivery',
+      delivery_address: '1 Gate St',
+      delivery_barangay: 'Test Barangay',
+      delivery_zone_id: ZONE,
+      subtotal_centavos: 10000,
+      discount_centavos: 12000,
+      delivery_fee_centavos: 5000,
+      total_centavos: 3000,
+    }),
+  ).rejects.toMatchObject({ constraint_name: 'orders_discount_le_subtotal' })
+})
+
+test('a pickup order with a delivery fee fails orders_delivery_needs_address', async () => {
+  await expect(
+    onlineOrder({ ticket_number: 102, delivery_fee_centavos: 5000, total_centavos: 15000 }),
+  ).rejects.toMatchObject({ constraint_name: 'orders_delivery_needs_address' })
+  const [ok] = await onlineOrder({ ticket_number: 103 })
+  expect(ok.id).toBeTruthy()
 })
 
 test('one live payment per order; a rejected one does not count', async () => {
