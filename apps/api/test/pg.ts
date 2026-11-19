@@ -51,7 +51,7 @@ export async function startTestDb(opts: StartOptions = {}): Promise<TestDb> {
     }
 
     const port = await freePort()
-    server = new PGLiteSocketServer({ db: pg, port, host: '127.0.0.1' })
+    server = new PGLiteSocketServer({ db: pg, port, host: '127.0.0.1', maxConnections: 2 })
     await server.start()
 
     const url = `postgres://postgres:postgres@127.0.0.1:${port}/postgres`
