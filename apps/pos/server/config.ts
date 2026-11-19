@@ -12,8 +12,8 @@ export type Config = {
   managerPin: string
   shop: { name: string; address: string; phone: string; receiptFooter: string }
   discounts: Discount[]
-  /** Read-only access to the website's menu. Empty means the built-in menu is used. */
-  website: { url: string; anonKey: string }
+  /** Where the till pulls the menu from. Empty means the built-in menu is used. */
+  api: { url: string }
   /** A second place for the daily backup, such as a USB stick or a cloud-synced folder. "" keeps one copy only. */
   backupDir: string
 }
@@ -33,16 +33,13 @@ const DEFAULTS: Config = {
     { label: 'Senior / PWD 20%', kind: 'percent', value: 20 },
     { label: 'Promo 10%', kind: 'percent', value: 10 },
   ],
-  website: { url: '', anonKey: '' },
+  api: { url: '' },
   backupDir: '',
 }
 
 const str = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallback)
 
-export function loadConfig(root: string, repoRoot: string): Config {
-  // The website's .env.local already holds the Supabase address and public key; reuse it when present.
-  try { process.loadEnvFile(path.join(repoRoot, 'apps/web/.env.local')) } catch { /* no env file: built-in menu */ }
-
+export function loadConfig(root: string): Config {
   let raw: Record<string, any> = {}
   const file = path.join(root, 'config.json')
   try { raw = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) } catch (err: any) {
@@ -66,10 +63,8 @@ export function loadConfig(root: string, repoRoot: string): Config {
       receiptFooter: str(raw.shop?.receiptFooter, DEFAULTS.shop.receiptFooter),
     },
     discounts,
-    website: {
-      url: str(raw.website?.url, process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''),
-      anonKey: str(raw.website?.anonKey, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''),
-    },
+    // An old config.json may still carry a `website` block; it is ignored.
+    api: { url: str(raw.api?.url, process.env.KENNKO_API_URL ?? '').trim() },
     backupDir: str(raw.backupDir, DEFAULTS.backupDir).trim(),
   }
 }

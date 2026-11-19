@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { SIZE_ORDER, type DrinkSize, type Menu } from '@kennko/core'
+import { SIZE_ORDER, liveDrinkMenu, type Menu, type MenuSnapshot } from '@kennko/core'
 // The same list the website's seeder loads, so the till and the website start from one menu.
 import { SEED_CATEGORIES, SEED_MODIFIER_GROUPS } from '@kennko/core/seed-menu'
 
@@ -55,60 +55,21 @@ export function saveMenu(dataDir: string, menu: Menu): void {
   fs.renameSync(`${file}.tmp`, file)
 }
 
-type Rows = { categories: any[]; groups: any[] }
-
-/** Turns the website's database rows into the till's menu. Pure, so it can be tested without a network. */
-export function mapWebsiteMenu({ categories, groups }: Rows, now: number): Menu {
-  const bySort = (a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
-  return {
-    source: 'website',
-    updatedAt: now,
-    categories: [...categories].sort(bySort).map((c) => ({
-      id: String(c.id),
-      name: String(c.name),
-      items: [...(c.menu_items ?? [])].sort(bySort).map((i: any) => ({
-        id: String(i.id),
-        name: String(i.name),
-        isBestseller: Boolean(i.is_bestseller),
-        isAvailable: Boolean(i.is_available),
-        prices: [...(i.menu_item_prices ?? [])]
-          .filter((p: any) => SIZE_ORDER.includes(p.size) && Number.isInteger(p.price_centavos))
-          .sort((a: any, b: any) => SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size))
-          .map((p: any) => ({ size: p.size as DrinkSize, priceCentavos: p.price_centavos as number })),
-      })).filter((i: any) => i.prices.length > 0),
-    })).filter((c) => c.items.length > 0),
-    modifierGroups: [...groups].sort(bySort).map((g) => ({
-      id: String(g.id),
-      name: String(g.name),
-      isMultiSelect: Boolean(g.is_multi_select),
-      modifiers: [...(g.modifiers ?? [])].sort(bySort).map((m: any) => ({
-        id: String(m.id), name: String(m.name), priceCentavos: Number(m.price_centavos), isAvailable: m.is_available !== false,
-      })),
-    })).filter((g) => g.modifiers.length > 0),
+/** Reads the published menu from the Kennko API. Needs internet; everything else on the till does not. */
+export async function fetchApiMenu(apiUrl: string, now: number): Promise<Menu> {
+  if (!apiUrl) throw new Error('The website connection is not set up on this computer.')
+  const empty = () => new Error('The website menu came back empty, so the current menu was kept.')
+  let res: Response
+  try {
+    res = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/menu`, { signal: AbortSignal.timeout(15000) })
+  } catch {
+    throw new Error('Could not reach the website. Check the internet and try again.')
   }
-}
-
-/** Reads the public menu the website shows. Needs internet; everything else on the till does not. */
-export async function fetchWebsiteMenu(website: { url: string; anonKey: string }, now: number): Promise<Menu> {
-  if (!website.url || !website.anonKey) throw new Error('The website connection is not set up on this computer.')
-  const get = async (query: string) => {
-    let res: Response
-    try {
-      res = await fetch(`${website.url.replace(/\/$/, '')}/rest/v1/${query}`, {
-        headers: { apikey: website.anonKey, authorization: `Bearer ${website.anonKey}` },
-        signal: AbortSignal.timeout(15000),
-      })
-    } catch {
-      throw new Error('Could not reach the website. Check the internet and try again.')
-    }
-    if (!res.ok) throw new Error(`The website refused the menu request (${res.status}).`)
-    return res.json() as Promise<any[]>
-  }
-  const [categories, groups] = await Promise.all([
-    get('menu_categories?select=id,name,sort_order,menu_items(id,name,is_bestseller,is_available,sort_order,menu_item_prices(size,price_centavos))&is_active=eq.true'),
-    get('modifier_groups?select=id,name,is_multi_select,sort_order,modifiers(id,name,price_centavos,is_available,sort_order)'),
-  ])
-  const menu = mapWebsiteMenu({ categories, groups }, now)
-  if (menu.categories.length === 0) throw new Error('The website menu came back empty, so the current menu was kept.')
+  if (res.status === 404) throw empty()
+  if (!res.ok) throw new Error(`The website refused the menu request (${res.status}).`)
+  let snapshot: MenuSnapshot
+  try { snapshot = (await res.json()) as MenuSnapshot } catch { throw new Error('Could not reach the website. Check the internet and try again.') }
+  const menu = liveDrinkMenu(snapshot, now)
+  if (menu.categories.length === 0) throw empty()
   return menu
 }

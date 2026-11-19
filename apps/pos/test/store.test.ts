@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { OrderError } from '@kennko/core'
 import { createStore, type NewOrder } from '../server/store.ts'
-import { builtInMenu, mapWebsiteMenu } from '../server/menu.ts'
+import { builtInMenu } from '../server/menu.ts'
 import { reportCsv } from '../server/report.ts'
 import { wallOrders } from '../server/wall-feed.ts'
 
@@ -26,21 +26,6 @@ describe('built-in menu', () => {
     expect(hojicha.prices.map((p) => p.size)).toEqual(['M', 'L', 'HOT'])
     const ids = menu.categories.flatMap((c) => c.items.map((i) => i.id))
     expect(new Set(ids).size).toBe(ids.length)
-  })
-  it('maps website rows', () => {
-    const mapped = mapWebsiteMenu({
-      categories: [{ id: 'c1', name: 'Classics', sort_order: 0, menu_items: [
-        { id: 'i2', name: 'B', is_bestseller: true, is_available: false, sort_order: 1, menu_item_prices: [{ size: 'HOT', price_centavos: 9500 }, { size: 'M', price_centavos: 8000 }] },
-        { id: 'i1', name: 'A', is_bestseller: false, is_available: true, sort_order: 0, menu_item_prices: [{ size: 'M', price_centavos: 8000 }] },
-        { id: 'i3', name: 'No price', is_bestseller: false, is_available: true, sort_order: 2, menu_item_prices: [] },
-      ] }],
-      groups: [{ id: 'g1', name: 'Add-ons', is_multi_select: true, sort_order: 0, modifiers: [{ id: 'm1', name: 'Milk', price_centavos: 2000, is_available: true, sort_order: 0 }] }],
-    }, 5)
-    expect(mapped.source).toBe('website')
-    expect(mapped.categories[0].items.map((i) => i.name)).toEqual(['A', 'B'])
-    expect(mapped.categories[0].items[1].prices.map((p) => p.size)).toEqual(['M', 'HOT'])
-    expect(mapped.categories[0].items[1].isAvailable).toBe(false)
-    expect(mapped.modifierGroups[0].modifiers[0].priceCentavos).toBe(2000)
   })
 })
 

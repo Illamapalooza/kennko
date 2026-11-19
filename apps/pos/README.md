@@ -25,7 +25,7 @@ Needs Node.js 24 or newer (it uses Node's built-in SQLite).
 | **Orders** | The barista queue: Queued → Preparing → Serving → Done. Every tablet follows live. |
 | **History** | Every order of a day, its receipt, and voiding (manager PIN). CSV export. |
 | **Till** | Open with starting cash, cash in and out, sales so far, expected cash, and closing with a count (manager PIN). |
-| **Menu** | Switch a drink off when it runs out. "Update from website" pulls drinks and prices from the website's menu. |
+| **Menu** | Switch a drink off when it runs out. "Update from website" pulls the drinks and prices from the published menu on the Kennko API. |
 
 ## The projector wall
 
@@ -59,7 +59,7 @@ Copy `config.example.json` to `config.json` and edit it. **Change both PINs befo
 | `managerPin` | Asked for voids, cash out, closing the till and updating the menu. |
 | `shop` | Name, address, phone and footer printed on receipts. |
 | `discounts` | One-tap discounts. `kind` is `percent` (1 to 100) or `amount` (centavos). |
-| `website` | `{ "url", "anonKey" }` for the menu update. Defaults to the values in `apps/web/.env.local`. |
+| `api` | `{ "url" }`, the Kennko API the menu update reads from (`GET <url>/v1/menu`). Defaults to the `KENNKO_API_URL` environment variable. An old `website` block is ignored. |
 | `securePort` | The https port tablets install the app from. Default `4443`; `0` turns it off. |
 | `backupDir` | A second folder for the daily backup, such as a USB stick or a cloud-synced folder. `""` keeps one copy only. |
 

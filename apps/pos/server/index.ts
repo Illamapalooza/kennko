@@ -13,20 +13,19 @@ import { backupDay } from './backup.ts'
 import { ensureCertificate, tillNames, type Certificate } from './secure.ts'
 import { setupPage } from './setup-page.ts'
 import { loadConfig } from './config.ts'
-import { fetchWebsiteMenu, loadMenu, saveMenu } from './menu.ts'
+import { fetchApiMenu, loadMenu, saveMenu } from './menu.ts'
 import { createStore } from './store.ts'
 import { reportCsv } from './report.ts'
 import { WALL_LINGER_MS, wallOrders } from './wall-feed.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const REPO = path.resolve(ROOT, '../..')
 const DIST = path.join(ROOT, 'dist')
 const DATA = process.env.KENNKO_POS_DATA ? path.resolve(process.env.KENNKO_POS_DATA) : path.join(ROOT, 'data')
 
 const args = process.argv.slice(2)
 const DEV = args.includes('--dev')
 const portArg = args.indexOf('--port')
-const config = loadConfig(ROOT, REPO)
+const config = loadConfig(ROOT)
 const port = portArg >= 0 && Number(args[portArg + 1]) > 0 ? Number(args[portArg + 1]) : config.port
 
 fs.mkdirSync(DATA, { recursive: true })
@@ -161,7 +160,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const now = Date.now()
 
   if (req.method === 'GET' && route === '/api/bootstrap') {
-    return json(res, 200, { shop: config.shop, discounts: config.discounts, pinRequired: Boolean(config.staffPin), websiteConfigured: Boolean(config.website.url && config.website.anonKey), secureUrl: secureUrlFor(req) })
+    return json(res, 200, { shop: config.shop, discounts: config.discounts, pinRequired: Boolean(config.staffPin), websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req) })
   }
   if (req.method === 'GET' && route === '/api/wall/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
@@ -238,7 +237,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (route === '/api/menu/sync') {
     checkPin(req, body.managerPin, 'manager')
-    try { baseMenu = await fetchWebsiteMenu(config.website, now) } catch (err: any) { throw new OrderError(err.message) }
+    try { baseMenu = await fetchApiMenu(config.api.url, now) } catch (err: any) { throw new OrderError(err.message) }
     saveMenu(DATA, baseMenu)
     return done(menu())
   }
