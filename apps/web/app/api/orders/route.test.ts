@@ -11,9 +11,15 @@ vi.mock('@/lib/supabase/server', () => ({
   }),
 }))
 const sendEmail = vi.fn(async (_args: unknown) => true)
+const activeStaffEmails = vi.fn(async (): Promise<string[]> => ['staff@kennko.test'])
 vi.mock('@/lib/email/send', () => ({
   sendEmail: (args: unknown) => sendEmail(args),
-  activeStaffEmails: async () => ['staff@kennko.test'],
+  activeStaffEmails: () => activeStaffEmails(),
+}))
+// Run the deferred callback immediately so tests can observe it.
+vi.mock('next/server', async (orig) => ({
+  ...(await orig<typeof import('next/server')>()),
+  after: (fn: () => unknown) => { void fn() },
 }))
 
 import { POST } from './route'
@@ -29,7 +35,7 @@ const created = {
   totalCentavos: 29000,
 }
 
-function makeRequest() {
+function makeRequest(ip: string | null = '1.2.3.4, 5.6.7.8') {
   const form = new FormData()
   form.set(
     'order',
@@ -39,7 +45,7 @@ function makeRequest() {
   return new Request('http://localhost/api/orders', {
     method: 'POST',
     body: form,
-    headers: { 'x-forwarded-for': '1.2.3.4, 5.6.7.8' },
+    headers: ip ? { 'x-forwarded-for': ip } : {},
   }) as never
 }
 
@@ -49,6 +55,8 @@ const json = (body: unknown, status = 200) =>
 beforeEach(() => {
   resetRateLimit()
   sendEmail.mockClear()
+  activeStaffEmails.mockClear()
+  activeStaffEmails.mockResolvedValue(['staff@kennko.test'])
   getCurrentCustomer.mockResolvedValue({ id: 'u1', email: 'a@b.c', emailConfirmed: true })
   vi.stubEnv('NEXT_PUBLIC_ORDERING_ENABLED', 'true')
   vi.stubEnv('KENNKO_API_URL', 'https://api.test/')
@@ -134,5 +142,23 @@ describe('POST /api/orders', () => {
     expect(res.status).toBe(503)
     expect((await res.json()).code).toBe('ORDERING_DISABLED')
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('still returns 201 when the staff alert fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(created, 201)))
+    activeStaffEmails.mockRejectedValue(new Error('supabase down'))
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await POST(makeRequest())
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({ orderCode: 'KNK-ABC123', ticket: 'W3' })
+    err.mockRestore()
+  })
+
+  it('sends no x-forwarded-for when the client IP is unknown', async () => {
+    const fetchMock = vi.fn(async () => json(created, 201))
+    vi.stubGlobal('fetch', fetchMock)
+    await POST(makeRequest(null))
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+    expect((init.headers as Record<string, string>)['x-forwarded-for']).toBeUndefined()
   })
 })

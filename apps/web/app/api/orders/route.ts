@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { after } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { apiBase } from '@/lib/api/client'
 import { getCurrentCustomer } from '@/lib/auth/customer'
@@ -39,12 +40,12 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    request.headers.get('x-real-ip') ??
-    'unknown'
+  const clientIp =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') ||
+    null
 
-  if (!allowRequest(ip)) {
+  if (!allowRequest(clientIp ?? 'unknown')) {
     return NextResponse.json(
       { code: 'RATE_LIMITED', errors: ['Too many orders from this connection. Try again shortly.'] },
       { status: 429 },
@@ -64,7 +65,8 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const headers: Record<string, string> = { 'x-forwarded-for': ip }
+  const headers: Record<string, string> = {}
+  if (clientIp) headers['x-forwarded-for'] = clientIp
   // The token comes from the session, never from the request: a request cannot claim to be
   // somebody else's account.
   const customer = await getCurrentCustomer()
@@ -103,31 +105,38 @@ export async function POST(request: NextRequest) {
   }
   const created = body as Created
 
-  // Email is best-effort: the order is already saved, so a send failure must not fail the request.
-  let submitted: Submitted = {}
-  try {
-    const raw = form.get('order')
-    if (typeof raw === 'string') submitted = JSON.parse(raw) as Submitted
-  } catch {
-    // The API accepted it, so this only costs the alert some detail.
-  }
-  const fulfilment = submitted.fulfilment === 'delivery' ? 'delivery' : 'pickup'
-  const emailData = {
-    orderCode: created.orderCode,
-    ticket: created.ticket,
-    customerName: submitted.name ?? '',
-    fulfilment,
-    fulfilAt: submitted.fulfilAt ?? '',
-    totalCentavos: created.totalCentavos,
-    deliveryAddress: fulfilment === 'delivery' ? (submitted.address ?? null) : null,
-    // Names come from the API's repriced result, not the request.
-    items: created.items,
-  } as const
+  // Email is best-effort and runs after the response: the order is already saved, so nothing in
+  // the alert (recipient lookup included) may fail the request and invite a duplicate resubmit.
+  const rawOrder = form.get('order')
+  after(async () => {
+    try {
+      let submitted: Submitted = {}
+      try {
+        if (typeof rawOrder === 'string') submitted = JSON.parse(rawOrder) as Submitted
+      } catch {
+        // The API accepted it, so this only costs the alert some detail.
+      }
+      const fulfilment = submitted.fulfilment === 'delivery' ? 'delivery' : 'pickup'
+      const emailData = {
+        orderCode: created.orderCode,
+        ticket: created.ticket,
+        customerName: submitted.name ?? '',
+        fulfilment,
+        fulfilAt: submitted.fulfilAt ?? '',
+        totalCentavos: created.totalCentavos,
+        deliveryAddress: fulfilment === 'delivery' ? (submitted.address ?? null) : null,
+        // Names come from the API's repriced result, not the request.
+        items: created.items,
+      } as const
 
-  void sendEmail({
-    to: await activeStaffEmails(),
-    subject: staffAlertSubject(emailData),
-    text: staffAlertBody(emailData),
+      await sendEmail({
+        to: await activeStaffEmails(),
+        subject: staffAlertSubject(emailData),
+        text: staffAlertBody(emailData),
+      })
+    } catch (cause) {
+      console.error('[orders] staff alert failed', cause)
+    }
   })
 
   return NextResponse.json({ orderCode: created.orderCode, ticket: created.ticket }, { status: 201 })
