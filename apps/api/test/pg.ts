@@ -29,32 +29,55 @@ function freePort(): Promise<number> {
 /** Fresh in-memory Postgres with Supabase stubs and every migration applied. */
 export async function startTestDb(): Promise<TestDb> {
   const pg = new PGlite()
-  await pg.waitReady
-  await pg.exec(readFileSync(join(here, 'supabase-stubs.sql'), 'utf8'))
-  for (const file of readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort()) {
-    try {
-      await pg.exec(readFileSync(join(migrationsDir, file), 'utf8'))
-    } catch (err) {
-      throw new Error(`migration ${file} failed: ${(err as Error).message}`)
+  let server: PGLiteSocketServer | undefined
+  let sql: postgres.Sql | undefined
+  try {
+    await pg.waitReady
+    await pg.exec(readFileSync(join(here, 'supabase-stubs.sql'), 'utf8'))
+    for (const file of readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort()) {
+      try {
+        await pg.exec(readFileSync(join(migrationsDir, file), 'utf8'))
+      } catch (err) {
+        throw new Error(`migration ${file} failed: ${(err as Error).message}`)
+      }
     }
-  }
 
-  const port = await freePort()
-  const server = new PGLiteSocketServer({ db: pg, port, host: '127.0.0.1' })
-  await server.start()
+    const port = await freePort()
+    server = new PGLiteSocketServer({ db: pg, port, host: '127.0.0.1' })
+    await server.start()
 
-  const url = `postgres://postgres:postgres@127.0.0.1:${port}/postgres`
-  // PGlite serves one connection at a time and has no prepared-statement pool.
-  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} })
+    const url = `postgres://postgres:postgres@127.0.0.1:${port}/postgres`
+    // PGlite serves one connection at a time and has no prepared-statement pool.
+    sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} })
+    const client = sql
+    const srv = server
 
-  return {
-    sql,
-    url,
-    async stop() {
-      await sql.end({ timeout: 1 })
-      await server.stop()
+    return {
+      sql: client,
+      url,
+      async stop() {
+        try {
+          await client.end({ timeout: 1 })
+        } finally {
+          try {
+            await srv.stop()
+          } finally {
+            await pg.close()
+          }
+        }
+      },
+    }
+  } catch (err) {
+    try {
+      await sql?.end({ timeout: 1 })
+    } catch {}
+    try {
+      await server?.stop()
+    } catch {}
+    try {
       await pg.close()
-    },
+    } catch {}
+    throw err
   }
 }
 
@@ -67,6 +90,7 @@ export async function asUser<T>(
   return (await sql.begin(async (tx) => {
     await tx.unsafe(`set local role ${userId === null ? 'anon' : 'authenticated'}`)
     await tx`select set_config('request.jwt.claim.sub', ${userId ?? ''}, true)`
+    await tx`select set_config('request.jwt.claim.role', ${userId === null ? 'anon' : 'authenticated'}, true)`
     return fn(tx)
   })) as T
 }

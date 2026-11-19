@@ -23,3 +23,18 @@ test('anon can read a live menu item and not an archived one', async () => {
     await db.stop()
   }
 })
+
+test('asUser sets uid and role inside the transaction only', async () => {
+  const db = await startTestDb()
+  try {
+    const id = '11111111-1111-4111-8111-111111111111'
+    const [inside] = await asUser(db.sql, id, (tx) => tx`select auth.uid()::text as uid, auth.role() as role`)
+    expect(inside).toEqual({ uid: id, role: 'authenticated' })
+    const [after] = await db.sql`select auth.uid() as uid, auth.role() as role, current_user as usr`
+    expect(after.uid).toBeNull()
+    expect(after.role).toBe('anon')
+    expect(after.usr).toBe('postgres')
+  } finally {
+    await db.stop()
+  }
+})
