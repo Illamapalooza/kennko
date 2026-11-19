@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { MenuSnapshot } from '@kennko/core'
-import { priceLineFromSnapshot } from './price-from-snapshot'
-import type { SubmittedLine } from './create'
+import type { MenuSnapshot } from './snapshot.ts'
+import { priceLineFromSnapshot, priceOnlineOrder } from './price-order.ts'
+import type { CheckoutLine } from './checkout.ts'
+import { OrderError, lineTotal } from './cart.ts'
 
 const v = (code: string, priceCentavos: number, isAvailable = true) => ({
   id: `v-${code}`,
@@ -45,7 +46,7 @@ const snapshot = (over: Record<string, unknown> = {}): MenuSnapshot => ({
   ...over,
 })
 
-const line = (over: Partial<SubmittedLine> = {}): SubmittedLine => ({
+const line = (over: Partial<CheckoutLine> = {}): CheckoutLine => ({
   menuItemId: 'i1',
   size: 'M',
   quantity: 1,
@@ -102,5 +103,59 @@ describe('priceLineFromSnapshot', () => {
 
   it('refuses a sold-out option', () => {
     expect(priceLineFromSnapshot(snapshot(), line({ modifierIds: ['o2'] }))).toMatchObject({ ok: false, code: 'MODIFIER_UNAVAILABLE' })
+  })
+})
+
+describe('priceOnlineOrder', () => {
+  const two = [
+    line({ modifierIds: ['o1'], quantity: 2, note: '  less sweet  ' }),
+    line({ size: 'M', quantity: 1 }),
+  ]
+
+  it('prices a two-line order from the snapshot', () => {
+    const order = priceOnlineOrder(snapshot(), two)
+    expect(order.lines[0]).toMatchObject({
+      itemId: 'i1',
+      variantId: 'v-M',
+      variantCode: 'M',
+      variantLabel: 'M',
+      itemName: 'Americano',
+      unitPriceCentavos: 8000,
+      quantity: 2,
+      lineTotalCentavos: 24000,
+      note: 'less sweet',
+      options: [{ optionId: 'o1', groupName: 'Milk', optionName: 'Oat Milk', priceCentavos: 4000 }],
+    })
+    const sum = lineTotal({ basePriceCentavos: 8000, modifiers: [{ priceCentavos: 4000 }], quantity: 2 }) + 8000
+    expect(order.subtotalCentavos).toBe(sum)
+  })
+
+  it('throws SIZE_UNAVAILABLE for a sold-out size', () => {
+    const snap = snapshot({
+      categories: [{ id: 'c', name: 'Coffee', kind: 'drink', items: [item('i1', { variants: [v('M', 8000, false)] })] }],
+    })
+    expect(() => priceOnlineOrder(snap, [line()])).toThrowError(expect.objectContaining({ code: 'SIZE_UNAVAILABLE' }))
+  })
+
+  it('throws BAD_QUANTITY above 20', () => {
+    const run = () => priceOnlineOrder(snapshot(), [line({ quantity: 21 })])
+    expect(run).toThrow(OrderError)
+    expect(run).toThrowError(expect.objectContaining({ code: 'BAD_QUANTITY' }))
+  })
+
+  it('throws EMPTY_CART for no lines', () => {
+    expect(() => priceOnlineOrder(snapshot(), [])).toThrowError(expect.objectContaining({ code: 'EMPTY_CART' }))
+  })
+
+  it('drops the ice serve when the level is none', () => {
+    const [l] = priceOnlineOrder(snapshot(), [line({ iceLevel: 'none', iceServe: 'side' })]).lines
+    expect(l.iceLevel).toBe('none')
+    expect(l.iceServe).toBeNull()
+  })
+
+  it('cuts notes to NOTE_MAX and nulls blank ones', () => {
+    const [a, b] = priceOnlineOrder(snapshot(), [line({ note: 'x'.repeat(300) }), line({ note: '   ' })]).lines
+    expect(a.note).toHaveLength(200)
+    expect(b.note).toBeNull()
   })
 })

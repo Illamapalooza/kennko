@@ -1,10 +1,26 @@
-import type { Fulfilment } from '@/lib/cart/types'
+import type { IceLevel, IceServe } from './ice.ts'
+import type { DrinkSize } from './menu.ts'
+import type { Fulfilment as AnyFulfilment } from './order-status.ts'
+
+/** What the online checkout offers; core's wider `Fulfilment` also covers the till. */
+type CheckoutFulfilment = Extract<AnyFulfilment, 'pickup' | 'delivery'>
+
+/** One drink as the customer submitted it: ids and choices only, never prices. */
+export type CheckoutLine = {
+  menuItemId: string
+  size: DrinkSize
+  quantity: number
+  modifierIds: string[]
+  iceLevel: IceLevel | null
+  iceServe: IceServe | null
+  note?: string
+}
 
 export type CheckoutInput = {
   name: string
   email: string
   phone: string
-  fulfilment: Fulfilment
+  fulfilment: CheckoutFulfilment
   address: string
   barangay: string
   fulfilAt: string

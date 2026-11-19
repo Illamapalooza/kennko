@@ -1,25 +1,17 @@
 import 'server-only'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { validateImage } from '@/lib/images/validate'
-import { validateCheckout, type CheckoutInput } from './validate'
+import {
+  validateCheckout, verifyPin, priceLineFromSnapshot, ridingDistanceKm, deliveryFeeCentavos,
+  type CheckoutInput, type CheckoutLine, type MenuSnapshot,
+} from '@kennko/core'
 import { lineTotal, generateOrderCode } from '@/lib/cart/total'
 import { normaliseIce, iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
-import { ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
-import { verifyPin } from '@/lib/delivery/verify'
 import type { DrinkSize } from '@/lib/menu/types'
-import type { MenuSnapshot } from '@kennko/core'
 import { fetchMenuSnapshot } from '@/lib/menu/api'
-import { priceLineFromSnapshot } from './price-from-snapshot'
 
-export type SubmittedLine = {
-  menuItemId: string
-  size: DrinkSize
-  quantity: number
-  modifierIds: string[]
-  iceLevel: IceLevel | null
-  iceServe: IceServe | null
-  note?: string
-}
+
+export type SubmittedLine = CheckoutLine
 
 export type SubmittedOrder = CheckoutInput & {
   lines: SubmittedLine[]

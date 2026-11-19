@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateCheckout, type CheckoutInput } from './validate'
+import { validateCheckout, type CheckoutInput } from './checkout.ts'
 
 const NOW = new Date('2026-08-24T10:00:00+08:00')
 const LATER = '2026-08-24T11:00:00+08:00'

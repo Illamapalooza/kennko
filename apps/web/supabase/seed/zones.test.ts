@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SEED_ZONES } from './zones'
-import { CAFE_ORIGIN } from '@/lib/delivery/distance'
+import { CAFE_ORIGIN } from '@kennko/core'
 
 describe('delivery zone seed', () => {
   it('has no duplicate barangays', () => {

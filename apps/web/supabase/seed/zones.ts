@@ -9,7 +9,7 @@ export type SeedZone = {
 /**
  * Butuan City barangays Kennko delivers to, with approximate centres. Fees are
  * NOT stored: they are computed from these coordinates by the P20-per-4km rule
- * in lib/delivery/distance.ts, so changing the rule reprices everywhere at once.
+ * in packages/core/src/delivery.ts, so changing the rule reprices everywhere at once.
  *
  * The coordinates are estimates. A wrong one charges the wrong fee, so verify
  * each against the map before relying on it.

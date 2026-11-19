@@ -5,7 +5,7 @@ import { fetchMenuSnapshot } from '@/lib/menu/api'
 import { menuFromSnapshot } from '@/lib/menu/queries'
 import { getPublicClient } from '@/lib/supabase/public'
 import { getCurrentCustomer } from '@/lib/auth/customer'
-import { ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
+import { ridingDistanceKm, deliveryFeeCentavos } from '@kennko/core'
 import { OrderClient, type ModifierGroup, type Zone } from './OrderClient'
 import './order.css'
 

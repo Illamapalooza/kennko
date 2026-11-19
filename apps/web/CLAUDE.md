@@ -117,7 +117,7 @@ are computed, not looked up:
 
 - Free inside **Villa Kananga** (the cafe's own barangay, `is_home`).
 - Otherwise **₱20 per started 4km band**, measured from the cafe pin to the
-  barangay centre with the haversine formula in `lib/delivery/distance.ts`.
+  barangay centre with the haversine formula in `packages/core/src/delivery.ts`.
 - Straight-line distance is multiplied by `ROAD_FACTOR` (1.3), because riders
   follow streets. Without it every fee is systematically under-charged.
 - A zone can be pinned to a fixed price with `fee_override_centavos`.
