@@ -50,13 +50,13 @@ Check what would be applied first:
 npx supabase db push --dry-run
 ```
 
-Stop if it lists anything other than 0012. If it lists 0001 to 0011, they were probably applied outside the CLI. Mark the ones already applied, then dry-run again:
+The first push applies 0012 only; 0013 waits for step 8. Stop if the list contains anything other than 0012 (0013 included: if it shows up, move `supabase/migrations/0013_drop_legacy_menu.sql` out of the folder until step 8, then put it back). If it lists 0001 to 0011, they were probably applied outside the CLI. Mark the ones already applied, then dry-run again:
 
 ```sh
 npx supabase migration repair --status applied <version> [<version> ...]
 ```
 
-When the dry run lists only 0012, apply it:
+When the dry run lists only 0012, apply it. (0012 is already applied in production as of 2026-11-20, so production skips this.)
 
 ```sh
 npx supabase db push
@@ -155,4 +155,10 @@ wait; cat a.json b.json
 
 ## 8. Later: 0013
 
-0013 (`0013_drop_legacy_menu.sql`) now exists in the repo. Run the push again then, after the new website has been live and a checkout has worked.
+0013 (`0013_drop_legacy_menu.sql`) now exists in the repo. Apply it only when all of these are true:
+
+- The new website is live and a checkout has worked.
+- The shop till is updated to this branch (step 7).
+- This branch is merged.
+
+Then dry-run, confirm the list is 0013 only, and push.
