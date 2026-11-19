@@ -1,22 +1,18 @@
 import { saveMenuItem } from '@/app/admin/menu/actions'
-import { SIZES } from '@/app/admin/menu/format'
+import { CategoryPriceFields } from './CategoryPriceFields'
+import type { CategoryKind } from '@/app/admin/menu/format'
 import { ImageUploadField } from './ImageUploadField'
-import type { DrinkSize, MenuItemWithPrices } from '@/lib/menu/types'
+import type { AdminMenuItem } from '@/lib/menu/types'
 
-type EditableItem = MenuItemWithPrices & { categoryId: string; imageUrl: string | null }
+type EditableItem = AdminMenuItem & { categoryId: string; imageUrl: string | null }
 
 export function MenuItemForm({
   item,
   categories,
 }: {
   item?: EditableItem
-  categories: { id: string; name: string }[]
+  categories: { id: string; name: string; kind: CategoryKind }[]
 }) {
-  const priceFor = (size: DrinkSize) => {
-    const match = item?.prices.find((p) => p.size === size)
-    return match ? (match.priceCentavos / 100).toString() : ''
-  }
-
   return (
     <>
       <form action={saveMenuItem}>
@@ -28,36 +24,15 @@ export function MenuItemForm({
         </label>
 
         <label className="admin-field">
-          <span>Category</span>
-          <select name="category_id" defaultValue={item?.categoryId ?? ''} required>
-            <option value="">Choose…</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="admin-field">
           <span>Description (optional)</span>
           <textarea name="description" defaultValue={item?.description ?? ''} />
         </label>
 
-        <fieldset>
-          <legend>Prices in pesos — leave blank for sizes you do not offer</legend>
-          {SIZES.map((size) => (
-            <label className="admin-field" key={size}>
-              <span>{size}</span>
-              <input
-                name={`price_${size}`}
-                inputMode="decimal"
-                defaultValue={priceFor(size)}
-                placeholder="—"
-              />
-            </label>
-          ))}
-        </fieldset>
+        <CategoryPriceFields
+          categories={categories}
+          categoryId={item?.categoryId ?? ''}
+          prices={item?.prices ?? []}
+        />
 
         <label className="admin-field">
           <span>

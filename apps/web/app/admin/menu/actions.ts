@@ -6,22 +6,42 @@ import { getServerClient } from '@/lib/supabase/server'
 import { requireStaff, requireOwner } from '@/lib/auth/session'
 import { mapMenuRows } from '@/lib/menu/queries'
 import { validateImage } from '@/lib/images/validate'
-import { SIZES, parseSizePrices } from './format'
-import type { MenuCategoryWithItems } from '@/lib/menu/types'
+import { publishMenu } from '@/lib/menu/publish'
+import { VARIANT_META, parseVariantPrices, variantCodesFor, type CategoryKind } from './format'
+import type { AdminMenuCategory, VariantCode } from '@/lib/menu/types'
 
 const IMAGE_BUCKET = 'menu-images'
 
-export async function getAdminMenu(): Promise<MenuCategoryWithItems[]> {
+const ALL_CODES = Object.keys(VARIANT_META) as VariantCode[]
+
+/** Publishes after a save; a failure is surfaced, never swallowed, so a stale menu is never silent. */
+async function publishAfterSave() {
+  const result = await publishMenu()
+  if (!result.ok) {
+    throw new Error(
+      `Saved, but the menu could not be published: ${result.message}. Press Publish menu to try again.`,
+    )
+  }
+}
+
+export async function publishMenuNow(): Promise<{ ok: true; version: number } | { ok: false; message: string }> {
+  await requireOwner()
+  const result = await publishMenu()
+  if (result.ok) revalidatePath('/')
+  return result
+}
+
+export async function getAdminMenu(): Promise<AdminMenuCategory[]> {
   await requireStaff()
   const db = await getServerClient()
 
   const { data, error } = await db
     .from('menu_categories')
     .select(
-      `id, name, sort_order,
+      `id, name, kind, sort_order,
        menu_items ( id, name, description, image_path, is_bestseller,
                     is_available, sort_order,
-                    menu_item_prices ( size, price_centavos ) )`,
+                    menu_variants ( code, price_centavos, is_archived ) )`,
     )
     .order('sort_order')
 
@@ -57,9 +77,17 @@ export async function saveMenuItem(formData: FormData) {
   if (!name) throw new Error('Enter a name for the drink')
   if (!categoryId) throw new Error('Choose a category')
 
-  const prices = parseSizePrices(formData)
+  const { data: category, error: categoryError } = await db
+    .from('menu_categories')
+    .select('kind')
+    .eq('id', categoryId)
+    .single()
+  if (categoryError || !category) throw new Error('Choose a category')
+  const kind = category.kind as CategoryKind
+
+  const prices = parseVariantPrices(formData, kind)
   if (Object.values(prices).every((v) => v === null)) {
-    throw new Error('Set a price for at least one size')
+    throw new Error(kind === 'food' ? 'Set a price' : 'Set a price for at least one size')
   }
 
   const row = {
@@ -76,32 +104,37 @@ export async function saveMenuItem(formData: FormData) {
 
   if (error) throw new Error(`Could not save the drink: ${error.message}`)
 
-  // Sizes left blank are removed, so "not offered" round-trips correctly.
-  const toUpsert = SIZES.filter((s) => prices[s] !== null).map((size) => ({
-    menu_item_id: saved.id,
-    size,
-    price_centavos: prices[size] as number,
+  // A blank price archives the variant rather than deleting it, so history and a later re-price keep working.
+  const offered = variantCodesFor(kind).filter((code) => prices[code] !== null)
+  const toUpsert = offered.map((code) => ({
+    item_id: saved.id,
+    code,
+    label: VARIANT_META[code].label,
+    price_centavos: prices[code] as number,
+    temperature: VARIANT_META[code].temperature,
+    sort_order: VARIANT_META[code].sortOrder,
+    is_archived: false,
+    updated_at: new Date().toISOString(),
   }))
-  const toDelete = SIZES.filter((s) => prices[s] === null)
+  const toArchive = ALL_CODES.filter((code) => !offered.includes(code))
 
   if (toUpsert.length > 0) {
     const { error: upsertError } = await db
-      .from('menu_item_prices')
-      .upsert(toUpsert, { onConflict: 'menu_item_id,size' })
+      .from('menu_variants')
+      .upsert(toUpsert, { onConflict: 'item_id,code' })
     if (upsertError) throw new Error(`Could not save prices: ${upsertError.message}`)
   }
 
-  if (toDelete.length > 0) {
-    const { error: deleteError } = await db
-      .from('menu_item_prices')
-      .delete()
-      .eq('menu_item_id', saved.id)
-      .in('size', toDelete)
-    if (deleteError) throw new Error(`Could not clear prices: ${deleteError.message}`)
-  }
+  const { error: archiveError } = await db
+    .from('menu_variants')
+    .update({ is_archived: true, updated_at: new Date().toISOString() })
+    .eq('item_id', saved.id)
+    .in('code', toArchive)
+  if (archiveError) throw new Error(`Could not clear prices: ${archiveError.message}`)
 
   revalidatePath('/admin/menu')
   revalidatePath('/')
+  await publishAfterSave()
   redirect('/admin/menu')
 }
 
@@ -118,6 +151,7 @@ export async function archiveMenuItem(id: string) {
 
   revalidatePath('/admin/menu')
   revalidatePath('/')
+  await publishAfterSave()
 }
 
 export async function uploadMenuImage(itemId: string, file: File) {

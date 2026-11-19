@@ -8,7 +8,7 @@ export default async function NewMenuItemPage() {
 
   const { data: categories } = await db
     .from('menu_categories')
-    .select('id, name')
+    .select('id, name, kind')
     .order('sort_order')
 
   return (

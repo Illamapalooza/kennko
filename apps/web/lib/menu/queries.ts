@@ -1,11 +1,11 @@
 import { liveDrinkMenu, type MenuSnapshot } from '@kennko/core'
 import { fetchMenuSnapshot } from './api'
-import type { DrinkSize, MenuCategoryWithItems } from './types'
+import type { AdminMenuCategory, MenuCategoryWithItems, VariantCode } from './types'
 
-// Row mapping for the admin screens, which still read the tables directly.
-const SIZE_ORDER: DrinkSize[] = ['M', 'L', 'XL', 'HOT']
+// Row mapping for the admin screens, which read the tables directly (variants, not the old price table).
+const CODE_ORDER = ['M', 'L', 'XL', 'HOT', 'REG']
 
-type PriceRow = { size: string; price_centavos: number }
+type VariantRow = { code: string; price_centavos: number; is_archived: boolean }
 
 type ItemRow = {
   id: string
@@ -15,20 +15,22 @@ type ItemRow = {
   is_bestseller: boolean
   is_available: boolean
   sort_order: number
-  menu_item_prices: PriceRow[]
+  menu_variants: VariantRow[]
 }
 
 type CategoryRow = {
   id: string
   name: string
+  kind: 'drink' | 'food'
   sort_order: number
   menu_items: ItemRow[]
 }
 
-export function mapMenuRows(rows: CategoryRow[]): MenuCategoryWithItems[] {
+export function mapMenuRows(rows: CategoryRow[]): AdminMenuCategory[] {
   return rows.map((category) => ({
     id: category.id,
     name: category.name,
+    kind: category.kind,
     items: [...category.menu_items]
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((item) => ({
@@ -38,15 +40,12 @@ export function mapMenuRows(rows: CategoryRow[]): MenuCategoryWithItems[] {
         imagePath: item.image_path,
         isBestseller: item.is_bestseller,
         isAvailable: item.is_available,
-        prices: [...item.menu_item_prices]
-          .sort(
-            (a, b) =>
-              SIZE_ORDER.indexOf(a.size as DrinkSize) -
-              SIZE_ORDER.indexOf(b.size as DrinkSize),
-          )
-          .map((price) => ({
-            size: price.size as DrinkSize,
-            priceCentavos: price.price_centavos,
+        prices: item.menu_variants
+          .filter((variant) => !variant.is_archived)
+          .sort((a, b) => CODE_ORDER.indexOf(a.code) - CODE_ORDER.indexOf(b.code))
+          .map((variant) => ({
+            size: variant.code as VariantCode,
+            priceCentavos: variant.price_centavos,
           })),
       })),
   }))

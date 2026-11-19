@@ -18,3 +18,17 @@ export type MenuCategoryWithItems = {
   name: string
   items: MenuItemWithPrices[]
 }
+
+/** A variant code the admin can price: a drink size, or REG for food. */
+export type VariantCode = DrinkSize | 'REG'
+
+export type AdminMenuItem = Omit<MenuItemWithPrices, 'prices'> & {
+  prices: { size: VariantCode; priceCentavos: number }[]
+}
+
+export type AdminMenuCategory = {
+  id: string
+  name: string
+  kind: 'drink' | 'food'
+  items: AdminMenuItem[]
+}

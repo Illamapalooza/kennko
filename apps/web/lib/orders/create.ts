@@ -48,6 +48,7 @@ export type CreateResult =
   | { ok: false; status: number; code: string; errors: string[] }
 
 const PROOF_BUCKET = 'payment-proofs'
+const SELLABLE_CODES = ['M', 'L', 'XL', 'HOT']
 
 export async function createOrder(
   submitted: SubmittedOrder,
@@ -77,7 +78,7 @@ export async function createOrder(
 
   const { data: items, error: itemsError } = await db
     .from('menu_items')
-    .select('id, name, is_available, is_archived, menu_item_prices ( size, price_centavos )')
+    .select('id, name, is_available, is_archived, menu_variants ( code, price_centavos, is_available, is_archived )')
     .in('id', itemIds)
   if (itemsError) {
     return { ok: false, status: 500, code: 'LOOKUP_FAILED', errors: [itemsError.message] }
@@ -86,8 +87,8 @@ export async function createOrder(
   const modifiers = modifierIds.length
     ? (
         await db
-          .from('modifiers')
-          .select('id, name, price_centavos, is_available')
+          .from('options')
+          .select('id, name, price_centavos, is_available, is_archived')
           .in('id', modifierIds)
       ).data ?? []
     : []
@@ -112,8 +113,13 @@ export async function createOrder(
       }
     }
 
-    const price = (item.menu_item_prices ?? []).find(
-      (p: { size: string }) => p.size === line.size,
+    // Only M/L/XL/HOT are accepted until Plan 2 teaches the cart about other variants.
+    const price = (item.menu_variants ?? []).find(
+      (v: { code: string; is_available: boolean; is_archived: boolean }) =>
+        v.code === line.size &&
+        SELLABLE_CODES.includes(v.code) &&
+        v.is_available &&
+        !v.is_archived,
     )
     if (!price) {
       return {
@@ -126,7 +132,7 @@ export async function createOrder(
 
     const mods = line.modifierIds.map((id) => {
       const m = modifiers.find((x) => x.id === id)
-      return m && m.is_available
+      return m && m.is_available && !m.is_archived
         ? { id: m.id, name: m.name, priceCentavos: m.price_centavos }
         : null
     })

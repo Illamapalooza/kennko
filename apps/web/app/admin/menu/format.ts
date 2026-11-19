@@ -1,9 +1,9 @@
 import { formatPesos } from '@/lib/money'
-import type { DrinkSize, MenuItemPrice } from '@/lib/menu/types'
+import type { DrinkSize, VariantCode } from '@/lib/menu/types'
 
 export const SIZES: DrinkSize[] = ['M', 'L', 'XL', 'HOT']
 
-export function priceRange(prices: MenuItemPrice[]): string {
+export function priceRange(prices: { size: string; priceCentavos: number }[]): string {
   if (prices.length === 0) return 'No price set'
   const values = prices.map((p) => p.priceCentavos)
   const low = Math.min(...values)
@@ -31,10 +31,33 @@ export function parsePriceInput(raw: string): number | null {
   return Number(pesos) * 100 + Number(decimals.padEnd(2, '0'))
 }
 
-export function parseSizePrices(formData: FormData): Record<DrinkSize, number | null> {
-  const result = {} as Record<DrinkSize, number | null>
-  for (const size of SIZES) {
-    result[size] = parsePriceInput(String(formData.get(`price_${size}`) ?? ''))
+export type CategoryKind = 'drink' | 'food'
+export const FOOD_CODES: VariantCode[] = ['REG']
+
+/** Label, temperature and sort order a variant code is saved with. */
+export const VARIANT_META: Record<
+  VariantCode,
+  { label: string; temperature: 'iced' | 'hot' | 'none'; sortOrder: number }
+> = {
+  M: { label: 'Medium', temperature: 'iced', sortOrder: 0 },
+  L: { label: 'Large', temperature: 'iced', sortOrder: 1 },
+  XL: { label: 'XL', temperature: 'iced', sortOrder: 2 },
+  HOT: { label: 'Hot', temperature: 'hot', sortOrder: 3 },
+  REG: { label: 'Regular', temperature: 'none', sortOrder: 0 },
+}
+
+export function variantCodesFor(kind: CategoryKind): VariantCode[] {
+  return kind === 'food' ? FOOD_CODES : SIZES
+}
+
+/** Drinks read price_M/L/XL/HOT; food reads price_REG only. Blank means "not offered". */
+export function parseVariantPrices(
+  formData: FormData,
+  kind: CategoryKind,
+): Record<string, number | null> {
+  const result: Record<string, number | null> = {}
+  for (const code of variantCodesFor(kind)) {
+    result[code] = parsePriceInput(String(formData.get(`price_${code}`) ?? ''))
   }
   return result
 }

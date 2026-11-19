@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { priceRange, parsePriceInput } from './format'
+import { priceRange, parsePriceInput, parseVariantPrices } from './format'
 
 describe('priceRange', () => {
   it('shows a range when sizes differ', () => {
@@ -53,5 +53,23 @@ describe('parsePriceInput', () => {
 
   it('rejects fractions of a centavo', () => {
     expect(() => parsePriceInput('10.555')).toThrow('more than two decimal places')
+  })
+})
+
+describe('parseVariantPrices', () => {
+  const form = (entries: Record<string, string>) => {
+    const fd = new FormData()
+    for (const [k, v] of Object.entries(entries)) fd.set(k, v)
+    return fd
+  }
+
+  it('reads REG only for food', () => {
+    const fd = form({ price_REG: '60', price_M: '80' })
+    expect(parseVariantPrices(fd, 'food')).toEqual({ REG: 6000 })
+  })
+
+  it('reads M, L, XL and HOT for drinks, blank as null', () => {
+    const fd = form({ price_M: '80', price_L: '90', price_XL: '', price_HOT: '95.50', price_REG: '5' })
+    expect(parseVariantPrices(fd, 'drink')).toEqual({ M: 8000, L: 9000, XL: null, HOT: 9550 })
   })
 })

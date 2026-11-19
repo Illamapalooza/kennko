@@ -3,7 +3,7 @@ import { requireOwner } from '@/lib/auth/session'
 import { getServerClient } from '@/lib/supabase/server'
 import { menuImageUrl } from '../format'
 import { MenuItemForm } from '@/components/admin/MenuItemForm'
-import type { DrinkSize } from '@/lib/menu/types'
+import type { VariantCode } from '@/lib/menu/types'
 
 export default async function EditMenuItemPage({
   params,
@@ -17,7 +17,7 @@ export default async function EditMenuItemPage({
   const { data: item } = await db
     .from('menu_items')
     .select(
-      'id, name, description, image_path, is_bestseller, is_available, category_id, menu_item_prices ( size, price_centavos )',
+      'id, name, description, image_path, is_bestseller, is_available, category_id, menu_variants ( code, price_centavos, is_archived )',
     )
     .eq('id', id)
     .maybeSingle()
@@ -26,7 +26,7 @@ export default async function EditMenuItemPage({
 
   const { data: categories } = await db
     .from('menu_categories')
-    .select('id, name')
+    .select('id, name, kind')
     .order('sort_order')
 
   return (
@@ -43,12 +43,12 @@ export default async function EditMenuItemPage({
           isBestseller: item.is_bestseller,
           isAvailable: item.is_available,
           categoryId: item.category_id,
-          prices: (item.menu_item_prices ?? []).map(
-            (p: { size: string; price_centavos: number }) => ({
-              size: p.size as DrinkSize,
-              priceCentavos: p.price_centavos,
-            }),
-          ),
+          prices: (item.menu_variants ?? [])
+            .filter((v: { is_archived: boolean }) => !v.is_archived)
+            .map((v: { code: string; price_centavos: number }) => ({
+              size: v.code as VariantCode,
+              priceCentavos: v.price_centavos,
+            })),
         }}
       />
     </>

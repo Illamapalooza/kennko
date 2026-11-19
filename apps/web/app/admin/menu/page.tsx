@@ -3,6 +3,7 @@ import { getCurrentStaff } from '@/lib/auth/session'
 import { getAdminMenu } from './actions'
 import { priceRange } from './format'
 import { AvailabilityToggle } from '@/components/admin/AvailabilityToggle'
+import { PublishMenuButton } from '@/components/admin/PublishMenuButton'
 
 export default async function AdminMenuPage({
   searchParams,
@@ -29,7 +30,8 @@ export default async function AdminMenuPage({
         <p>
           <Link className="btn btn-primary" href="/admin/menu/new">
             Add a drink
-          </Link>
+          </Link>{' '}
+          <PublishMenuButton />
         </p>
       ) : null}
 

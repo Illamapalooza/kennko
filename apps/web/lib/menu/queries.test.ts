@@ -6,6 +6,7 @@ const rows = [
   {
     id: 'cat-1',
     name: 'Premium Classics',
+    kind: 'drink' as const,
     sort_order: 0,
     menu_items: [
       {
@@ -16,7 +17,7 @@ const rows = [
         is_bestseller: false,
         is_available: true,
         sort_order: 1,
-        menu_item_prices: [{ size: 'M', price_centavos: 10000 }],
+        menu_variants: [{ code: 'M', price_centavos: 10000, is_archived: false }],
       },
       {
         id: 'item-1',
@@ -26,10 +27,11 @@ const rows = [
         is_bestseller: false,
         is_available: true,
         sort_order: 0,
-        menu_item_prices: [
-          { size: 'HOT', price_centavos: 9500 },
-          { size: 'L', price_centavos: 9000 },
-          { size: 'M', price_centavos: 8000 },
+        menu_variants: [
+          { code: 'HOT', price_centavos: 9500, is_archived: false },
+          { code: 'L', price_centavos: 9000, is_archived: false },
+          { code: 'M', price_centavos: 8000, is_archived: false },
+          { code: 'XL', price_centavos: 9900, is_archived: true },
         ],
       },
     ],
@@ -162,6 +164,12 @@ describe('mapMenuRows', () => {
   it('orders prices M, L, XL, HOT regardless of row order', () => {
     const [category] = mapMenuRows(rows)
     expect(category.items[0].prices.map((p) => p.size)).toEqual(['M', 'L', 'HOT'])
+  })
+
+  it('leaves archived variants out and carries the category kind', () => {
+    const [category] = mapMenuRows(rows)
+    expect(category.kind).toBe('drink')
+    expect(category.items[0].prices.map((p) => p.size)).not.toContain('XL')
   })
 
   it('returns an empty list for no rows', () => {
