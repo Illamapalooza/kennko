@@ -4,6 +4,7 @@ const staffFetch = vi.fn()
 const sendEmail = vi.fn(async (..._a: unknown[]) => undefined)
 const revalidatePath = vi.fn()
 const update = vi.fn()
+let adminThrows = false
 
 vi.mock('next/cache', () => ({ revalidatePath: (...a: unknown[]) => revalidatePath(...a) }))
 vi.mock('@/lib/auth/session', () => ({ requireStaff: vi.fn(async () => ({ id: 's1', role: 'owner' })) }))
@@ -23,7 +24,9 @@ const orderRow = {
   }],
 }
 vi.mock('@/lib/supabase/admin', () => ({
-  getAdminClient: () => ({
+  getAdminClient: () => {
+    if (adminThrows) throw new Error('db down')
+    return {
     from: (table: string) => ({
       select: () => ({
         eq: () => ({
@@ -35,7 +38,8 @@ vi.mock('@/lib/supabase/admin', () => ({
       }),
     }),
     storage: { from: () => ({ createSignedUrl: async () => ({ data: { signedUrl: 'u' } }) }) },
-  }),
+  }
+  },
 }))
 
 import { confirmPayment, rejectPayment, advanceStatus, cancelOrder } from './actions'
@@ -45,6 +49,8 @@ const reply = (status: number, body: unknown = {}) =>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  adminThrows = false
+  vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
 describe('confirmPayment', () => {
@@ -71,6 +77,34 @@ describe('confirmPayment', () => {
     staffFetch.mockRejectedValue(new Error('network'))
     expect(await confirmPayment('p1')).toEqual({ ok: false, message: "Couldn't reach the server. Try again." })
     expect(sendEmail).not.toHaveBeenCalled()
+  })
+})
+
+describe('email trouble never reaches the UI', () => {
+  it('confirm still returns ok and revalidates when the email lookup throws', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    adminThrows = true
+    expect(await confirmPayment('p1')).toEqual({ ok: true })
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(revalidatePath).toHaveBeenCalledWith('/admin', 'layout')
+  })
+
+  it('reject still returns ok when the email lookup throws', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    adminThrows = true
+    expect(await rejectPayment('p1', 'No match')).toEqual({ ok: true })
+    expect(revalidatePath).toHaveBeenCalledWith('/admin', 'layout')
+  })
+})
+
+describe('customer email data', () => {
+  it('formats the pickup time in Manila time', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    await confirmPayment('p1')
+    const mail = sendEmail.mock.calls[0][0] as { subject: string; text: string }
+    // 08:00 UTC is 4:00 PM in Manila.
+    expect(mail.text).toContain('4:00 PM')
+    expect(mail.text).toContain('Nov 20, 2026')
   })
 })
 

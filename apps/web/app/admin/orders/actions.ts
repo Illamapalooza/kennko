@@ -1,12 +1,11 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import type { PrepStatus } from '@kennko/core'
+import { ticketLabel, type PrepStatus } from '@kennko/core'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { requireStaff } from '@/lib/auth/session'
 import { staffFetch } from '@/lib/api/client'
 import { sendEmail } from '@/lib/email/send'
-import { iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 import {
   customerConfirmSubject, customerConfirmBody,
   customerRejectSubject, customerRejectBody,
@@ -47,10 +46,7 @@ type OrderRow = {
   order_code: string; ticket_series: 'C' | 'W'; ticket_number: number
   customer_name: string; customer_email: string | null; fulfilment: 'pickup' | 'delivery'
   fulfil_at: string | null; total_centavos: number; delivery_address: string | null
-  order_lines: {
-    item_name: string; variant_label: string; quantity: number
-    ice_level: string | null; ice_serve: string | null; note: string | null
-  }[]
+  order_lines: { item_name: string; variant_label: string; quantity: number }[]
 }
 
 async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: string } | null> {
@@ -63,7 +59,7 @@ async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: 
     .select(
       `order_code, ticket_series, ticket_number, customer_name, customer_email, fulfilment, fulfil_at,
        total_centavos, delivery_address,
-       order_lines ( item_name, variant_label, quantity, ice_level, ice_serve, note )`,
+       order_lines ( item_name, variant_label, quantity )`,
     )
     .eq('id', payment.order_id)
     .maybeSingle()
@@ -74,19 +70,35 @@ async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: 
     to: row.customer_email,
     data: {
       orderCode: row.order_code,
+      ticket: ticketLabel(row.ticket_series, row.ticket_number),
       customerName: row.customer_name,
       fulfilment: row.fulfilment,
-      fulfilAt: row.fulfil_at ? new Date(row.fulfil_at).toLocaleString('en-PH') : '',
+      fulfilAt: row.fulfil_at
+        ? new Date(row.fulfil_at).toLocaleString('en-PH', {
+            timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short',
+          })
+        : '',
       totalCentavos: row.total_centavos,
       deliveryAddress: row.delivery_address,
       items: (row.order_lines ?? []).map((l) => ({
         name: l.item_name,
         variantLabel: l.variant_label,
         quantity: l.quantity,
-        ice: iceSummary(l.ice_level as IceLevel | null, l.ice_serve as IceServe | null),
-        note: l.note,
       })),
     },
+  }
+}
+
+/** The API call already succeeded; a mail problem must never turn that into an error for staff. */
+async function notifyCustomer(
+  paymentId: string,
+  compose: (data: OrderEmailData) => { subject: string; text: string },
+) {
+  try {
+    const mail = await emailFor(paymentId)
+    if (mail) void sendEmail({ to: [mail.to], ...compose(mail.data) })
+  } catch (cause) {
+    console.error('Customer email failed after the payment action succeeded', cause)
   }
 }
 
@@ -101,14 +113,9 @@ export async function confirmPayment(paymentId: string): Promise<Result> {
   if (!result.ok) return result
 
   // Only now does the customer hear anything -- the whole point of the verification gate.
-  const mail = await emailFor(paymentId)
-  if (mail) {
-    void sendEmail({
-      to: [mail.to],
-      subject: customerConfirmSubject(mail.data),
-      text: customerConfirmBody(mail.data),
-    })
-  }
+  await notifyCustomer(paymentId, (d) => ({
+    subject: customerConfirmSubject(d), text: customerConfirmBody(d),
+  }))
   refresh()
   return result
 }
@@ -123,14 +130,9 @@ export async function rejectPayment(paymentId: string, reason: string): Promise<
   })
   if (!result.ok) return result
 
-  const mail = await emailFor(paymentId)
-  if (mail) {
-    void sendEmail({
-      to: [mail.to],
-      subject: customerRejectSubject(mail.data),
-      text: customerRejectBody(mail.data, why),
-    })
-  }
+  await notifyCustomer(paymentId, (d) => ({
+    subject: customerRejectSubject(d), text: customerRejectBody(d, why),
+  }))
   refresh()
   return result
 }

@@ -40,6 +40,7 @@ describe('overview counts', () => {
     await countOrdersToCheck()
     expect(calls).toContainEqual(['eq', 'payment_status', 'pending_verification'])
     expect(calls).toContainEqual(['neq', 'prep_status', 'cancelled'])
+    expect(calls).toContainEqual(['eq', 'channel', 'online'])
     expect(calls.some((c) => c[1] === 'status')).toBe(false)
   })
 

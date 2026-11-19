@@ -8,6 +8,7 @@ export async function countOrdersToCheck(): Promise<number | null> {
   const { count, error } = await db
     .from('orders')
     .select('id', { count: 'exact', head: true })
+    .eq('channel', 'online')
     .eq('payment_status', 'pending_verification')
     .neq('prep_status', 'cancelled')
   if (error) {
