@@ -62,7 +62,7 @@ When the dry run lists only 0012, apply it:
 npx supabase db push
 ```
 
-0013 does not exist yet. A later step adds it; run the push again then.
+0013 (`0013_drop_legacy_menu.sql`) now exists in the repo. Do not apply it yet; see step 8.
 
 `supabase/.temp/` is git-ignored. Do not commit it.
 
@@ -155,4 +155,4 @@ wait; cat a.json b.json
 
 ## 8. Later: 0013
 
-A later step adds 0013 (drop the old tables). Run the push again then, after the new website has been live and a checkout has worked.
+0013 (`0013_drop_legacy_menu.sql`) now exists in the repo. Run the push again then, after the new website has been live and a checkout has worked.

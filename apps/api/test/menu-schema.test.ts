@@ -47,9 +47,9 @@ test('backfills a variant per old price', async () => {
 })
 
 test('keeps modifier ids as option ids', async () => {
-  const [{ missing }] = await db.sql`select count(*)::int as missing from modifiers m
-    where not exists (select 1 from options o where o.id = m.id)`
-  expect(missing).toBe(0)
+  const ids = ['b1', 'b2', 'b3', 'b4'].map((s) => `00000000-0000-4000-8000-0000000000${s}`)
+  const found = await db.sql`select id from options where id in ${db.sql(ids)}`
+  expect(found).toHaveLength(4)
   const groups = await db.sql`select name, min_select, max_select from option_groups
     where name in ('Milk', 'Sweetness', 'Add-ons') order by name`
   expect(groups.map((g) => [g.name, g.min_select, g.max_select])).toEqual([
@@ -196,4 +196,24 @@ test('an explicit anon JWT cannot change a variant', async () => {
   expect(rows).toHaveLength(0)
   const [row] = await db.sql`select price_centavos from menu_variants where id = ${variant.id}`
   expect(row.price_centavos).toBe(8000)
+})
+
+test('after 0013 the legacy menu tables are gone and every price lives on menu_variants', async () => {
+  const gone = await db.sql`select to_regclass('public.menu_item_prices') as p,
+    to_regclass('public.modifiers') as m, to_regclass('public.modifier_groups') as g`
+  expect(gone[0]).toEqual({ p: null, m: null, g: null })
+  const rows = await db.sql`select code, price_centavos from menu_variants
+    where item_id = ${ITEM} order by sort_order`
+  expect(rows.map((r) => [r.code, r.price_centavos])).toEqual([
+    ['M', 8000],
+    ['L', 9000],
+    ['XL', 10000],
+    ['HOT', 9500],
+  ])
+  // order_items.size still uses the enum.
+  const [{ n }] = await db.sql`select count(*)::int as n from pg_type where typname = 'drink_size'`
+  expect(n).toBe(1)
+  const policies = await db.sql`select policyname from pg_policies
+    where tablename in ('menu_item_prices', 'modifiers', 'modifier_groups')`
+  expect(policies).toHaveLength(0)
 })
