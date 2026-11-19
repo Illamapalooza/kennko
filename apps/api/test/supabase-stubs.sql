@@ -21,7 +21,7 @@ create function auth.uid() returns uuid language sql stable as $$
 $$;
 
 create function auth.role() returns text language sql stable as $$
-  select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'anon')
+  select nullif(current_setting('request.jwt.claim.role', true), '')
 $$;
 
 create function auth.jwt() returns jsonb language sql stable as $$

@@ -185,7 +185,7 @@ as $$
 begin
   -- Only signed-in JWT users are restricted; postgres, service_role and
   -- kennko_api sessions are trusted server code.
-  if auth.role() <> 'authenticated' or public.is_owner() then
+  if coalesce(auth.role(), '') <> 'authenticated' or public.is_owner() then
     return new;
   end if;
 
@@ -215,7 +215,7 @@ as $$
 begin
   -- Only signed-in JWT users are restricted; postgres, service_role and
   -- kennko_api sessions are trusted server code.
-  if auth.role() <> 'authenticated' or public.is_owner() then
+  if coalesce(auth.role(), '') <> 'authenticated' or public.is_owner() then
     return new;
   end if;
 
@@ -246,7 +246,7 @@ as $$
 begin
   -- Only signed-in JWT users are restricted; postgres, service_role and
   -- kennko_api sessions are trusted server code.
-  if auth.role() <> 'authenticated' or public.is_owner() then
+  if coalesce(auth.role(), '') <> 'authenticated' or public.is_owner() then
     return new;
   end if;
 

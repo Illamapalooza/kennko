@@ -32,7 +32,7 @@ test('asUser sets uid and role inside the transaction only', async () => {
     expect(inside).toEqual({ uid: id, role: 'authenticated' })
     const [after] = await db.sql`select auth.uid() as uid, auth.role() as role, current_user as usr`
     expect(after.uid).toBeNull()
-    expect(after.role).toBe('anon')
+    expect(after.role).toBeNull()
     expect(after.usr).toBe('postgres')
   } finally {
     await db.stop()

@@ -187,3 +187,13 @@ test('trusted server sessions (no JWT) are not restricted by the guards', async 
   expect(row.price_centavos).toBe(8100)
   await db.sql`update menu_variants set price_centavos = 8000 where id = ${variant.id}`
 })
+
+test('an explicit anon JWT cannot change a variant', async () => {
+  const [variant] = await db.sql`select id from menu_variants where item_id = ${ITEM} and code = 'M'`
+  const rows = await asUser(db.sql, null, (tx) =>
+    tx`update menu_variants set price_centavos = 1 where id = ${variant.id} returning id`,
+  )
+  expect(rows).toHaveLength(0)
+  const [row] = await db.sql`select price_centavos from menu_variants where id = ${variant.id}`
+  expect(row.price_centavos).toBe(8000)
+})
