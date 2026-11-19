@@ -1,24 +1,32 @@
-import type { OrderStatus } from './status'
+import type { PaymentStatus, PrepStatus } from '@kennko/core'
 
 export type OrderTab = 'check' | 'progress' | 'done'
 
-type TabOrder = { status: OrderStatus; createdAt: string }
+type TabOrder = { prepStatus: PrepStatus; paymentStatus: PaymentStatus; createdAt: string }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
-export const TAB_STATUSES: Record<OrderTab, OrderStatus[]> = {
-  check: ['awaiting_verification'],
-  progress: ['confirmed', 'preparing', 'ready', 'out_for_delivery'],
-  done: ['completed', 'rejected', 'cancelled'],
-}
+const PROGRESS_PREP: PrepStatus[] = ['placed', 'preparing', 'ready', 'out_for_delivery']
+const DONE_PREP: PrepStatus[] = ['completed', 'cancelled']
 
 export function parseTab(value: string | undefined): OrderTab | null {
   return value === 'check' || value === 'progress' || value === 'done' ? value : null
 }
 
+function inTab(o: TabOrder, tab: OrderTab): boolean {
+  switch (tab) {
+    case 'check':
+      return o.paymentStatus === 'pending_verification' && o.prepStatus !== 'cancelled'
+    case 'progress':
+      return o.paymentStatus === 'paid' && PROGRESS_PREP.includes(o.prepStatus)
+    case 'done':
+      return DONE_PREP.includes(o.prepStatus)
+  }
+}
+
 export function ordersForTab<T extends TabOrder>(orders: T[], tab: OrderTab, now: Date): T[] {
   return orders.filter((o) => {
-    if (!TAB_STATUSES[tab].includes(o.status)) return false
+    if (!inTab(o, tab)) return false
     if (tab !== 'done') return true
     return now.getTime() - new Date(o.createdAt).getTime() <= WEEK_MS
   })
@@ -32,15 +40,15 @@ export function tabCounts(orders: TabOrder[], now: Date): Record<OrderTab, numbe
   }
 }
 
-/** Statuses and cutoff for the two order queries: every open order, plus recent done ones. */
+/** Column filters for the three order queries. Open tabs are never limited; done is the last 7 days. */
 export function orderQueries(now: Date): {
-  openStatuses: OrderStatus[]
-  doneStatuses: OrderStatus[]
-  doneSince: string
+  check: { paymentStatus: PaymentStatus; excludePrep: PrepStatus[] }
+  progress: { paymentStatus: PaymentStatus; prepStatuses: PrepStatus[] }
+  done: { prepStatuses: PrepStatus[]; since: string }
 } {
   return {
-    openStatuses: [...TAB_STATUSES.check, ...TAB_STATUSES.progress],
-    doneStatuses: [...TAB_STATUSES.done],
-    doneSince: new Date(now.getTime() - WEEK_MS).toISOString(),
+    check: { paymentStatus: 'pending_verification', excludePrep: ['cancelled'] },
+    progress: { paymentStatus: 'paid', prepStatuses: [...PROGRESS_PREP] },
+    done: { prepStatuses: [...DONE_PREP], since: new Date(now.getTime() - WEEK_MS).toISOString() },
   }
 }

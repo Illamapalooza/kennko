@@ -11,8 +11,7 @@ export type OrderEmailData = {
   deliveryAddress?: string | null
   items: {
     name: string; quantity: number
-    /** Size or variant. `size` is the older spelling, kept so existing callers still compile. */
-    variantLabel?: string; size?: string
+    variantLabel: string
     ice?: string | null; note?: string | null
   }[]
 }
@@ -22,7 +21,7 @@ function itemLines(items: OrderEmailData['items']): string {
     .map((i) => {
       const ice = i.ice ? ` -- ${i.ice}` : ''
       const note = i.note ? `\n      NOTE: ${i.note}` : ''
-      return `  ${i.quantity}x ${i.name} (${i.variantLabel ?? i.size})${ice}${note}`
+      return `  ${i.quantity}x ${i.name} (${i.variantLabel})${ice}${note}`
     })
     .join('\n')
 }

@@ -2,14 +2,18 @@
 
 import { useState, useTransition } from 'react'
 import { formatPesos } from '@/lib/money'
-import { confirmPayment, rejectPayment, advanceStatus, proofUrl } from '@/app/admin/orders/actions'
-import { nextStatus, statusLabel, type OrderStatus, type Fulfilment } from '@/app/admin/orders/status'
+import type { OrderStage, PaymentStatus, PrepStatus } from '@kennko/core'
+import { confirmPayment, rejectPayment, advanceStatus, cancelOrder, proofUrl } from '@/app/admin/orders/actions'
+import { nextStatus, prepLabel, statusLabel, type Fulfilment } from '@/app/admin/orders/status'
 
 export type AdminOrder = {
   id: string
   orderCode: string
+  ticket: string
   createdAt: string
-  status: OrderStatus
+  prepStatus: PrepStatus
+  paymentStatus: PaymentStatus
+  stage: OrderStage
   fulfilment: Fulfilment
   customerName: string
   customerPhone: string
@@ -23,11 +27,12 @@ export type AdminOrder = {
   subtotalCentavos: number
   deliveryFeeCentavos: number
   totalCentavos: number
-  gcashReference: string
-  paymentProofPath: string
+  paymentId: string | null
+  gcashReference: string | null
+  proofPath: string | null
   customerNote: string | null
   items: {
-    name: string; size: string; quantity: number
+    name: string; variantLabel: string; quantity: number
     modifiers: string[]; ice: string | null; note: string | null
   }[]
 }
@@ -35,9 +40,11 @@ export type AdminOrder = {
 export function OrderCard({
   order,
   isDuplicateReference,
+  isOwner,
 }: {
   order: AdminOrder
   isDuplicateReference: boolean
+  isOwner: boolean
 }) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -45,24 +52,33 @@ export function OrderCard({
   const [showReject, setShowReject] = useState(false)
   const [proof, setProof] = useState<string | null>(null)
 
-  const run = (fn: () => Promise<unknown>) =>
+  const run = (fn: () => Promise<{ ok: true } | { ok: false; message: string } | void>) =>
     startTransition(async () => {
       setError(null)
       try {
-        await fn()
+        const result = await fn()
+        if (result && !result.ok) setError(result.message)
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Something went wrong')
       }
     })
 
-  const advance = nextStatus(order.status, order.fulfilment)
-  const unverified = order.status === 'awaiting_verification'
+  const advance = nextStatus(order)
+  const unverified = order.stage === 'awaiting_verification'
+  const canCancel = isOwner && order.prepStatus !== 'completed' && order.prepStatus !== 'cancelled'
+
+  const askCancel = () => {
+    const why = window.prompt('Why is this order being cancelled?')
+    if (!why || !why.trim()) return
+    if (!window.confirm(`Cancel order ${order.ticket}? This cannot be undone.`)) return
+    run(() => cancelOrder(order.id, why))
+  }
 
   return (
     <article className="section-card" style={{ display: 'grid', gap: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        <strong>{order.orderCode}</strong>
-        <span>{statusLabel(order.status)}</span>
+        <strong>{order.ticket} · {order.orderCode}</strong>
+        <span>{statusLabel(order.stage)}</span>
       </div>
 
       <div>
@@ -99,7 +115,7 @@ export function OrderCard({
       <div>
         {order.items.map((item, i) => (
           <div key={`${item.name}-${i}`}>
-            {item.quantity}× {item.name} ({item.size})
+            {item.quantity}× {item.name} ({item.variantLabel})
             {item.modifiers.length > 0 ? ` + ${item.modifiers.join(', ')}` : ''}
             {item.ice ? <strong className="order-ice"> · {item.ice}</strong> : null}
             {item.note ? (
@@ -125,7 +141,7 @@ export function OrderCard({
       </div>
 
       <div>
-        <strong>GCash ref: {order.gcashReference}</strong>
+        <strong>GCash ref: {order.gcashReference ?? 'none'}</strong>
         {isDuplicateReference ? (
           <p className="admin-error" role="alert">
             This reference is already used by another live order. Check both
@@ -134,7 +150,7 @@ export function OrderCard({
         ) : null}
       </div>
 
-      {proof ? (
+      {order.proofPath === null ? null : proof ? (
         <a href={proof} target="_blank" rel="noreferrer">
           <img src={proof} alt="GCash receipt" style={{ maxWidth: '100%', borderRadius: 12 }} />
         </a>
@@ -143,7 +159,7 @@ export function OrderCard({
           type="button"
           className="btn btn-secondary"
           disabled={pending}
-          onClick={() => run(async () => setProof(await proofUrl(order.paymentProofPath)))}
+          onClick={() => run(async () => setProof(await proofUrl(order.proofPath as string)))}
         >
           View receipt
         </button>
@@ -157,11 +173,11 @@ export function OrderCard({
       ) : null}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {unverified ? (
+        {unverified && order.paymentId ? (
           <>
             <button
               type="button" className="btn btn-primary" disabled={pending}
-              onClick={() => run(() => confirmPayment(order.id))}
+              onClick={() => run(() => confirmPayment(order.paymentId as string))}
             >
               Confirm payment
             </button>
@@ -179,12 +195,21 @@ export function OrderCard({
             type="button" className="btn btn-primary" disabled={pending}
             onClick={() => run(() => advanceStatus(order.id, advance))}
           >
-            Mark {statusLabel(advance).toLowerCase()}
+            Mark {prepLabel(advance).toLowerCase()}
+          </button>
+        ) : null}
+
+        {canCancel ? (
+          <button
+            type="button" className="btn btn-secondary" disabled={pending}
+            onClick={askCancel}
+          >
+            Cancel order
           </button>
         ) : null}
       </div>
 
-      {showReject ? (
+      {showReject && order.paymentId ? (
         <div>
           <label className="admin-field">
             <span>Why? The customer sees this.</span>
@@ -192,7 +217,7 @@ export function OrderCard({
           </label>
           <button
             type="button" className="btn btn-primary" disabled={pending || !reason.trim()}
-            onClick={() => run(() => rejectPayment(order.id, reason))}
+            onClick={() => run(() => rejectPayment(order.paymentId as string, reason))}
           >
             Send rejection
           </button>

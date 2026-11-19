@@ -4,7 +4,7 @@ import { getMenuStatus } from '@/lib/menu/status'
 import { countOrdersToCheck, countSoldOut, recentOrders } from '@/lib/admin/overview-data'
 import { InstallAppButton } from '@/components/InstallAppButton'
 import { formatPesos } from '@/lib/money'
-import { statusLabel, type OrderStatus } from './orders/status'
+import { statusLabel } from './orders/status'
 import { overviewTiles } from './overview'
 
 export const dynamic = 'force-dynamic'
@@ -40,9 +40,9 @@ export default async function AdminOverviewPage() {
           {orders.map((o) => (
             <li key={o.id}>
               <Link href="/admin/orders" className="overview-order">
-                <strong>{o.orderCode}</strong>
+                <strong>{o.ticket} · {o.orderCode}</strong>
                 <span>{o.customerName}</span>
-                <span className="overview-order-status">{statusLabel(o.status as OrderStatus)}</span>
+                <span className="overview-order-status">{statusLabel(o.stage)}</span>
                 <span className="overview-order-total">{formatPesos(o.totalCentavos)}</span>
               </Link>
             </li>

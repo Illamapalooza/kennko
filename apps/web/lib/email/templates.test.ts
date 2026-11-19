@@ -14,7 +14,7 @@ const base: OrderEmailData = {
   fulfilment: 'pickup',
   fulfilAt: '24 Aug 2026, 3:00 PM',
   totalCentavos: 29000,
-  items: [{ name: 'Spanish Latte', size: 'L', quantity: 2 }],
+  items: [{ name: 'Spanish Latte', variantLabel: 'L', quantity: 2 }],
 }
 
 const delivery: OrderEmailData = {
@@ -30,7 +30,7 @@ describe('staff alert', () => {
     expect(subject.startsWith('New order W3 · KNK-7F3Q — ₱290')).toBe(true)
   })
 
-  it('reads variantLabel as well as the older size', () => {
+  it('prints the variant label', () => {
     const body = staffAlertBody({
       ...base,
       items: [{ name: 'Spanish Latte', variantLabel: '16oz', quantity: 1 }],

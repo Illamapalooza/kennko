@@ -1,45 +1,51 @@
 import { describe, expect, it } from 'vitest'
 import { nextStatus, duplicateReferences, statusLabel } from './status'
 
+const paid = { paymentStatus: 'paid' as const }
+
 describe('nextStatus', () => {
   it('walks a pickup order to the counter', () => {
-    expect(nextStatus('confirmed', 'pickup')).toBe('preparing')
-    expect(nextStatus('preparing', 'pickup')).toBe('ready')
-    expect(nextStatus('ready', 'pickup')).toBe('completed')
+    expect(nextStatus({ ...paid, prepStatus: 'placed', fulfilment: 'pickup' })).toBe('preparing')
+    expect(nextStatus({ ...paid, prepStatus: 'preparing', fulfilment: 'pickup' })).toBe('ready')
+    expect(nextStatus({ ...paid, prepStatus: 'ready', fulfilment: 'pickup' })).toBe('completed')
   })
 
   it('walks a delivery order out with a rider', () => {
-    expect(nextStatus('confirmed', 'delivery')).toBe('preparing')
-    expect(nextStatus('preparing', 'delivery')).toBe('out_for_delivery')
-    expect(nextStatus('out_for_delivery', 'delivery')).toBe('completed')
+    expect(nextStatus({ ...paid, prepStatus: 'placed', fulfilment: 'delivery' })).toBe('preparing')
+    expect(nextStatus({ ...paid, prepStatus: 'preparing', fulfilment: 'delivery' })).toBe('out_for_delivery')
+    expect(nextStatus({ ...paid, prepStatus: 'out_for_delivery', fulfilment: 'delivery' })).toBe('completed')
   })
 
   it('never sends a pickup order out for delivery', () => {
-    expect(nextStatus('preparing', 'pickup')).not.toBe('out_for_delivery')
+    expect(nextStatus({ ...paid, prepStatus: 'preparing', fulfilment: 'pickup' })).not.toBe('out_for_delivery')
   })
 
   it('never marks a delivery order ready for pickup', () => {
-    expect(nextStatus('preparing', 'delivery')).not.toBe('ready')
+    expect(nextStatus({ ...paid, prepStatus: 'preparing', fulfilment: 'delivery' })).not.toBe('ready')
   })
 
   it('stops at completed', () => {
-    expect(nextStatus('completed', 'pickup')).toBeNull()
-    expect(nextStatus('completed', 'delivery')).toBeNull()
+    expect(nextStatus({ ...paid, prepStatus: 'completed', fulfilment: 'pickup' })).toBeNull()
+    expect(nextStatus({ ...paid, prepStatus: 'completed', fulfilment: 'delivery' })).toBeNull()
   })
 
-  it('offers nothing for an unverified, rejected, or cancelled order', () => {
-    expect(nextStatus('awaiting_verification', 'pickup')).toBeNull()
-    expect(nextStatus('rejected', 'pickup')).toBeNull()
-    expect(nextStatus('cancelled', 'delivery')).toBeNull()
+  it('offers nothing while the payment is not paid', () => {
+    for (const paymentStatus of ['unpaid', 'pending_verification', 'rejected', 'refunded'] as const) {
+      expect(nextStatus({ prepStatus: 'placed', paymentStatus, fulfilment: 'pickup' })).toBeNull()
+    }
+  })
+
+  it('offers nothing for a cancelled order', () => {
+    expect(nextStatus({ ...paid, prepStatus: 'cancelled', fulfilment: 'delivery' })).toBeNull()
   })
 })
 
 describe('duplicateReferences', () => {
   it('flags a reference used by two live orders', () => {
     const dupes = duplicateReferences([
-      { gcashReference: 'ABC123', status: 'awaiting_verification' },
-      { gcashReference: 'ABC123', status: 'confirmed' },
-      { gcashReference: 'XYZ789', status: 'confirmed' },
+      { gcashReference: 'ABC123', paymentStatus: 'pending_verification' },
+      { gcashReference: 'ABC123', paymentStatus: 'paid' },
+      { gcashReference: 'XYZ789', paymentStatus: 'paid' },
     ])
     expect(dupes.has('ABC123')).toBe(true)
     expect(dupes.has('XYZ789')).toBe(false)
@@ -47,16 +53,24 @@ describe('duplicateReferences', () => {
 
   it('ignores case when comparing', () => {
     const dupes = duplicateReferences([
-      { gcashReference: 'abc123', status: 'confirmed' },
-      { gcashReference: 'ABC123', status: 'preparing' },
+      { gcashReference: 'abc123', paymentStatus: 'paid' },
+      { gcashReference: 'ABC123', paymentStatus: 'paid' },
     ])
     expect(dupes.has('ABC123')).toBe(true)
   })
 
-  it('does not count rejected orders, so a corrected resubmit is not flagged', () => {
+  it('does not count rejected payments, so a corrected resubmit is not flagged', () => {
     const dupes = duplicateReferences([
-      { gcashReference: 'ABC123', status: 'rejected' },
-      { gcashReference: 'ABC123', status: 'awaiting_verification' },
+      { gcashReference: 'ABC123', paymentStatus: 'rejected' },
+      { gcashReference: 'ABC123', paymentStatus: 'pending_verification' },
+    ])
+    expect(dupes.size).toBe(0)
+  })
+
+  it('skips orders with no payment reference', () => {
+    const dupes = duplicateReferences([
+      { gcashReference: null, paymentStatus: 'paid' },
+      { gcashReference: null, paymentStatus: 'paid' },
     ])
     expect(dupes.size).toBe(0)
   })
