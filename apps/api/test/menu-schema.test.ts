@@ -106,16 +106,24 @@ test('seeds discount presets', async () => {
   ])
 })
 
-test('repoints order_item_modifiers.modifier_id to options', async () => {
+test('order line options point at options (order_item_modifiers.modifier_id, renamed by 0014)', async () => {
   const [opt] = await db.sql`insert into options (group_id, name, price_centavos)
     select id, 'Brand new', 0 from option_groups where name = 'Milk' returning id`
   const [order] = await db.sql`insert into orders (order_code, customer_name, customer_phone, customer_email,
-      fulfilment, fulfil_at, subtotal_centavos, total_centavos, gcash_reference, payment_proof_path)
-    values ('T-1', 'A', '1', 'a@b.c', 'pickup', now(), 0, 0, 'ref', 'p') returning id`
-  const [line] = await db.sql`insert into order_items (order_id, name_snapshot, size, base_price_centavos,
-      quantity, line_total_centavos) values (${order.id}, 'Americano', 'HOT', 8000, 1, 8000) returning id`
-  await db.sql`insert into order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_centavos)
-    values (${line.id}, ${opt.id}, 'Brand new', 0)`
+      fulfilment, fulfil_at, subtotal_centavos, total_centavos, business_day, ticket_series, ticket_number,
+      prep_status, payment_status)
+    values ('T-1', 'A', '1', 'a@b.c', 'pickup', now(), 0, 0, '2026-11-20', 'W', 1, 'placed', 'pending_verification')
+    returning id`
+  const [line] = await db.sql`insert into order_lines (order_id, item_name, variant_code, variant_label,
+      unit_price_centavos, quantity, line_total_centavos)
+    values (${order.id}, 'Americano', 'HOT', 'Hot', 8000, 1, 8000) returning id`
+  await db.sql`insert into order_line_options (line_id, option_id, group_name, option_name, price_centavos)
+    values (${line.id}, ${opt.id}, 'Milk', 'Brand new', 0)`
+  const [fk] = await db.sql`select confrelid::regclass::text as target from pg_constraint
+    where conrelid = 'order_line_options'::regclass and contype = 'f'
+      and conkey = array[(select attnum from pg_attribute
+        where attrelid = 'order_line_options'::regclass and attname = 'option_id')]::int2[]`
+  expect(fk.target).toBe('options')
 })
 
 test('stamps availability_changed_at when is_available changes', async () => {
@@ -210,9 +218,9 @@ test('after 0013 the legacy menu tables are gone and every price lives on menu_v
     ['XL', 10000],
     ['HOT', 9500],
   ])
-  // order_items.size still uses the enum.
+  // 0014 drops drink_size once order_items.size becomes order_lines.variant_code.
   const [{ n }] = await db.sql`select count(*)::int as n from pg_type where typname = 'drink_size'`
-  expect(n).toBe(1)
+  expect(n).toBe(0)
   const policies = await db.sql`select policyname from pg_policies
     where tablename in ('menu_item_prices', 'modifiers', 'modifier_groups')`
   expect(policies).toHaveLength(0)
