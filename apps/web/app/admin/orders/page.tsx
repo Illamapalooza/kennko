@@ -3,7 +3,7 @@ import { getServerClient } from '@/lib/supabase/server'
 import { OrderCard, type AdminOrder } from '@/components/admin/OrderCard'
 import { duplicateReferences, type OrderStatus, type Fulfilment } from './status'
 import Link from 'next/link'
-import { ordersForTab, tabCounts, parseTab, type OrderTab } from './tabs'
+import { ordersForTab, tabCounts, orderQueries, parseTab, type OrderTab } from './tabs'
 import { iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 
 export const dynamic = 'force-dynamic'
@@ -40,19 +40,25 @@ export default async function AdminOrdersPage({
   await requireStaff()
   const db = await getServerClient()
 
-  const { data } = await db
-    .from('orders')
-    .select(
-      `id, order_code, status, fulfilment, customer_name, customer_phone,
+  const now = new Date()
+  const q = orderQueries(now)
+  const select = `id, order_code, status, fulfilment, customer_name, customer_phone,
        customer_email, delivery_address, delivery_barangay,
        delivery_lat, delivery_lng, delivery_distance_km, fulfil_at,
        subtotal_centavos, delivery_fee_centavos, total_centavos,
        gcash_reference, payment_proof_path, customer_note, created_at,
        order_items ( name_snapshot, size, quantity, ice_level, ice_serve, item_note,
-                     order_item_modifiers ( name_snapshot ) )`,
-    )
-    .order('created_at', { ascending: false })
-    .limit(100)
+                     order_item_modifiers ( name_snapshot ) )`
+
+  // Open orders are never limited: an old unverified payment must not vanish.
+  const [openRes, doneRes] = await Promise.all([
+    db.from('orders').select(select).in('status', q.openStatuses)
+      .order('created_at', { ascending: false }),
+    db.from('orders').select(select).in('status', q.doneStatuses)
+      .gte('created_at', q.doneSince)
+      .order('created_at', { ascending: false }).limit(100),
+  ])
+  const data = [...(openRes.data ?? []), ...(doneRes.data ?? [])]
 
   const rows = (data ?? []) as Row[]
 
@@ -93,7 +99,6 @@ export default async function AdminOrdersPage({
     }))
     .sort((a, b) => RANK[a.status] - RANK[b.status])
 
-  const now = new Date()
   const counts = tabCounts(orders, now)
   const tab: OrderTab =
     parseTab(tabParam) ?? (counts.check > 0 ? 'check' : 'progress')
@@ -102,7 +107,6 @@ export default async function AdminOrdersPage({
   const dupes = duplicateReferences(
     orders.map((o) => ({ gcashReference: o.gcashReference, status: o.status })),
   )
-  const unverified = counts.check
   const tabs: { id: OrderTab; label: string }[] = [
     { id: 'check', label: `Needs checking (${counts.check})` },
     { id: 'progress', label: `In progress (${counts.progress})` },
@@ -111,7 +115,7 @@ export default async function AdminOrdersPage({
 
   return (
     <>
-      <title>{unverified > 0 ? `(${unverified}) Kennko Admin` : 'Kennko Admin'}</title>
+      <title>{counts.check > 0 ? `(${counts.check}) Kennko Admin` : 'Kennko Admin'}</title>
       <h1>Orders</h1>
 
       <nav className="order-tabs" aria-label="Order views">
@@ -127,9 +131,9 @@ export default async function AdminOrdersPage({
         ))}
       </nav>
 
-      {unverified > 0 && tab === 'check' ? (
+      {counts.check > 0 && tab === 'check' ? (
         <p className="admin-notice">
-          {unverified} order(s) awaiting a payment check. Verify the GCash
+          {counts.check} order(s) awaiting a payment check. Verify the GCash
           reference before anyone starts making drinks.
         </p>
       ) : null}

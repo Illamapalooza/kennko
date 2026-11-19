@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ordersForTab, tabCounts, type OrderTab } from './tabs'
+import { ordersForTab, tabCounts, orderQueries, type OrderTab } from './tabs'
 import type { OrderStatus } from './status'
 
 const now = new Date('2026-11-20T12:00:00Z')
@@ -51,5 +51,25 @@ describe('tabCounts', () => {
       { status: 'cancelled' as const, createdAt: fresh },
     ]
     expect(tabCounts(orders, now)).toEqual({ check: 1, progress: 2, done: 1 })
+  })
+})
+
+describe('7-day boundary', () => {
+  it('includes exactly 7 days old and excludes one ms older', () => {
+    const edge = new Date(now.getTime() - 7 * 86400000).toISOString()
+    const past = new Date(now.getTime() - 7 * 86400000 - 1).toISOString()
+    expect(ordersForTab([{ status: 'completed', createdAt: edge }], 'done', now)).toHaveLength(1)
+    expect(ordersForTab([{ status: 'completed', createdAt: past }], 'done', now)).toHaveLength(0)
+  })
+})
+
+describe('orderQueries', () => {
+  it('splits open and done statuses with a 7-day cutoff', () => {
+    const q = orderQueries(now)
+    expect(q.openStatuses).toEqual([
+      'awaiting_verification', 'confirmed', 'preparing', 'ready', 'out_for_delivery',
+    ])
+    expect(q.doneStatuses).toEqual(['completed', 'rejected', 'cancelled'])
+    expect(q.doneSince).toBe('2026-11-13T12:00:00.000Z')
   })
 })

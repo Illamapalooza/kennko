@@ -6,7 +6,7 @@ type TabOrder = { status: OrderStatus; createdAt: string }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
-const TAB_STATUSES: Record<OrderTab, OrderStatus[]> = {
+export const TAB_STATUSES: Record<OrderTab, OrderStatus[]> = {
   check: ['awaiting_verification'],
   progress: ['confirmed', 'preparing', 'ready', 'out_for_delivery'],
   done: ['completed', 'rejected', 'cancelled'],
@@ -29,5 +29,18 @@ export function tabCounts(orders: TabOrder[], now: Date): Record<OrderTab, numbe
     check: ordersForTab(orders, 'check', now).length,
     progress: ordersForTab(orders, 'progress', now).length,
     done: ordersForTab(orders, 'done', now).length,
+  }
+}
+
+/** Statuses and cutoff for the two order queries: every open order, plus recent done ones. */
+export function orderQueries(now: Date): {
+  openStatuses: OrderStatus[]
+  doneStatuses: OrderStatus[]
+  doneSince: string
+} {
+  return {
+    openStatuses: [...TAB_STATUSES.check, ...TAB_STATUSES.progress],
+    doneStatuses: [...TAB_STATUSES.done],
+    doneSince: new Date(now.getTime() - WEEK_MS).toISOString(),
   }
 }
