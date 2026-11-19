@@ -20,7 +20,7 @@ export function liveDrinkMenu(snapshot: MenuSnapshot, now: number): Menu {
     const items: MenuItem[] = []
     for (const item of category.items) {
       const prices = SIZE_ORDER.flatMap((size: DrinkSize) => {
-        const variant = item.variants.find((v) => v.code === size)
+        const variant = item.variants.find((v) => v.code === size && v.isAvailable)
         return variant ? [{ size, priceCentavos: variant.priceCentavos }] : []
       })
       if (prices.length === 0) continue

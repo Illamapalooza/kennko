@@ -110,3 +110,18 @@ test('marks an item unavailable when isAvailable is false', () => {
   const off = menu.categories[0]!.items.find((i) => i.id === 'i-off')!
   expect(off.isAvailable).toBe(false)
 })
+
+test('drops a sold-out variant from prices', () => {
+  const soldOut: MenuSnapshot = {
+    ...snapshot,
+    categories: snapshot.categories.map((c) => ({
+      ...c,
+      items: c.items.map((i) => ({
+        ...i,
+        variants: i.variants.map((v) => (v.code === 'XL' ? { ...v, isAvailable: false } : v)),
+      })),
+    })),
+  }
+  const latte = liveDrinkMenu(soldOut, 0).categories[0]!.items.find((i) => i.id === 'i-latte')!
+  expect(latte.prices.map((p) => p.size)).toEqual(['M', 'L', 'HOT'])
+})
