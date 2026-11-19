@@ -35,4 +35,10 @@ describe('overviewTiles', () => {
     })
     expect(tiles[2].value).toBe('Unpublished changes')
   })
+
+  it('shows a dash, not 0, when a count failed', () => {
+    const tiles = overviewTiles({ ordersToCheck: null, soldOut: null, status: published })
+    expect(tiles[0].value).toBe('—')
+    expect(tiles[1].value).toBe('—')
+  })
 })

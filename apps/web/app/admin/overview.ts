@@ -7,7 +7,10 @@ export type OverviewTile = {
   href: string
 }
 
-type OverviewInput = { ordersToCheck: number; soldOut: number; status: MenuStatus }
+type OverviewInput = { ordersToCheck: number | null; soldOut: number | null; status: MenuStatus }
+
+/** A failed count shows a dash: 0 would claim there is nothing to do. */
+const countValue = (n: number | null): string => (n === null ? '—' : String(n))
 
 function menuValue(status: MenuStatus): string {
   if (!status.ok) return 'Status unavailable'
@@ -17,8 +20,8 @@ function menuValue(status: MenuStatus): string {
 
 export function overviewTiles({ ordersToCheck, soldOut, status }: OverviewInput): OverviewTile[] {
   return [
-    { key: 'orders', title: 'Orders to check', value: String(ordersToCheck), href: '/admin/orders?tab=check' },
-    { key: 'soldout', title: 'Sold out now', value: String(soldOut), href: '/admin/menu?filter=soldout' },
+    { key: 'orders', title: 'Orders to check', value: countValue(ordersToCheck), href: '/admin/orders?tab=check' },
+    { key: 'soldout', title: 'Sold out now', value: countValue(soldOut), href: '/admin/menu?filter=soldout' },
     { key: 'menu', title: 'Menu', value: menuValue(status), href: '/admin/menu' },
   ]
 }

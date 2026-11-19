@@ -42,10 +42,12 @@ export default async function AdminLayout({
   const isOwner = staff.role === 'owner'
   // Chrome data fails soft: a broken count must not take down every admin page.
   const [ordersToCheck, status] = await Promise.all([
-    countOrdersToCheck().catch((e) => {
-      console.error('admin layout: orders count failed', e)
-      return 0
-    }),
+    countOrdersToCheck()
+      .then((n) => n ?? 0)
+      .catch((e) => {
+        console.error('admin layout: orders count failed', e)
+        return 0
+      }),
     getMenuStatus().catch((): MenuStatus => ({ ok: false })),
   ])
 

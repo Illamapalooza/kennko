@@ -25,7 +25,6 @@ self.addEventListener('activate', (event) => {
 // Responses that belong to one person or must be fresh are never stored.
 function storable(response) {
   if (!response || !response.ok || response.type === 'opaque') return false
-  if (response.headers.has('set-cookie')) return false
   const control = (response.headers.get('cache-control') || '').toLowerCase()
   return !control.includes('no-store') && !control.includes('private')
 }
@@ -38,10 +37,11 @@ async function cacheFirst(request) {
   return response
 }
 
-async function networkFirst(request) {
+// Pages are stored only when the allow-list in sw-routes.js names them (the home page and /offline).
+async function networkFirst(request, url) {
   try {
     const response = await fetch(request)
-    if (storable(response)) { const copy = response.clone(); caches.open(CACHE).then((c) => c.put(request, copy)) }
+    if (self.mayStorePage(url) && storable(response)) { const copy = response.clone(); caches.open(CACHE).then((c) => c.put(request, copy)) }
     return response
   } catch (err) {
     const saved = await caches.match(request, { cacheName: CACHE })
@@ -56,7 +56,7 @@ self.addEventListener('fetch', (event) => {
   const strategy = self.cacheStrategyFor(url, request.method)
   if (strategy === 'cache-first') event.respondWith(cacheFirst(request))
   // Only whole-page visits fall back to a saved page; data fetches (RSC payloads and the like) go straight through.
-  else if (strategy === 'network-first' && request.mode === 'navigate') event.respondWith(networkFirst(request))
+  else if (strategy === 'network-first' && request.mode === 'navigate') event.respondWith(networkFirst(request, url))
 })
 `
 }

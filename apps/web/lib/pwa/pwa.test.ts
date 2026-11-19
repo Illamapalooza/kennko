@@ -4,8 +4,9 @@ import manifest from '../../app/manifest'
 import { adminManifest } from './manifests'
 import { serviceWorkerSource } from './sw-source'
 
-const { cacheStrategyFor } = createRequire(import.meta.url)('../../public/sw-routes.js') as {
+const { cacheStrategyFor, mayStorePage } = createRequire(import.meta.url)('../../public/sw-routes.js') as {
   cacheStrategyFor: (url: URL, method: string) => 'cache-first' | 'network-first' | 'network-only'
+  mayStorePage: (url: URL) => boolean
 }
 const at = (path: string, method = 'GET') => cacheStrategyFor(new URL(path, 'https://kennko.test'), method)
 
@@ -65,6 +66,17 @@ describe('cacheStrategyFor', () => {
   })
 })
 
+describe('mayStorePage', () => {
+  const page = (path: string) => mayStorePage(new URL(path, 'https://kennko.test'))
+  it('stores only the home page and the offline page', () => {
+    expect(page('/')).toBe(true)
+    expect(page('/offline')).toBe(true)
+  })
+  it.each(['/menu', '/visit', '/order', '/orders', '/admin', '/offline/x', '/ordering-tips'])('never stores %s', (path) =>
+    expect(page(path)).toBe(false),
+  )
+})
+
 describe('service worker source', () => {
   const source = serviceWorkerSource('abc123')
   it('is valid JavaScript', () => {
@@ -75,8 +87,14 @@ describe('service worker source', () => {
     expect(source).toContain('caches.delete')
     expect(source).toContain("importScripts('/sw-routes.js')")
   })
-  it('refuses to store no-store, private or cookie-setting responses', () => {
+  it('refuses to store no-store or private responses', () => {
     expect(source).toContain('no-store')
-    expect(source).toContain('set-cookie')
+    expect(source).toContain('private')
+  })
+  it('stores a page only when the allow-list says so', () => {
+    expect(source).toContain('self.mayStorePage(')
+  })
+  it('does not rely on Set-Cookie, which a worker cannot see', () => {
+    expect(source.toLowerCase()).not.toContain('set-cookie')
   })
 })

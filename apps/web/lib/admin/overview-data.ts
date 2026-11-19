@@ -1,7 +1,8 @@
 import 'server-only'
 import { getServerClient } from '@/lib/supabase/server'
 
-export async function countOrdersToCheck(): Promise<number> {
+/** Null when the count could not be read, so the UI can show "—" rather than a misleading 0. */
+export async function countOrdersToCheck(): Promise<number | null> {
   const db = await getServerClient()
   const { count, error } = await db
     .from('orders')
@@ -9,12 +10,13 @@ export async function countOrdersToCheck(): Promise<number> {
     .eq('status', 'awaiting_verification')
   if (error) {
     console.error('countOrdersToCheck failed', error.message)
-    return 0
+    return null
   }
   return count ?? 0
 }
 
-export async function countSoldOut(): Promise<number> {
+/** Null when any of the counts could not be read. */
+export async function countSoldOut(): Promise<number | null> {
   const db = await getServerClient()
   const tables = ['menu_items', 'menu_variants', 'options'] as const
   const counts = await Promise.all(
@@ -26,12 +28,13 @@ export async function countSoldOut(): Promise<number> {
         .eq('is_archived', false)
       if (error) {
         console.error(`countSoldOut failed for ${table}`, error.message)
-        return 0
+        return null
       }
       return count ?? 0
     }),
   )
-  return counts.reduce((a, b) => a + b, 0)
+  if (counts.some((c) => c === null)) return null
+  return counts.reduce<number>((a, b) => a + (b ?? 0), 0)
 }
 
 export type RecentOrder = {

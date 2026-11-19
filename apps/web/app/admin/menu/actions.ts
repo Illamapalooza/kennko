@@ -94,7 +94,10 @@ export async function getAdminMenu(): Promise<AdminMenu> {
   }
 }
 
-export async function setAvailability(itemId: string, isAvailable: boolean) {
+export async function setAvailability(
+  itemId: string,
+  isAvailable: boolean,
+): Promise<{ ok: true } | { ok: false; message: string }> {
   await requireStaff()
   const db = await getServerClient()
 
@@ -103,11 +106,12 @@ export async function setAvailability(itemId: string, isAvailable: boolean) {
     .update({ is_available: isAvailable })
     .eq('id', itemId)
 
-  if (error) throw new Error(`Could not update availability: ${error.message}`)
+  if (error) return { ok: false, message: `Could not update availability: ${error.message}` }
 
   revalidatePath('/admin/menu')
   revalidatePath('/')
   revalidatePath('/admin', 'layout')
+  return { ok: true }
 }
 
 /** Saves an item as a draft: no publish, no redirect. New items need a price; existing items keep theirs (prices are edited in the table). */
