@@ -3,8 +3,6 @@ import { getCurrentStaff } from '@/lib/auth/session'
 import { getAdminMenu } from './actions'
 import { priceRange } from './format'
 import { AvailabilityToggle } from '@/components/admin/AvailabilityToggle'
-import { PublishBar } from '@/components/admin/PublishBar'
-import { getMenuStatus } from '@/lib/menu/status'
 
 export default async function AdminMenuPage({
   searchParams,
@@ -15,7 +13,6 @@ export default async function AdminMenuPage({
   const staff = await getCurrentStaff()
   const categories = await getAdminMenu()
   const isOwner = staff?.role === 'owner'
-  const status = await getMenuStatus()
 
   return (
     <>
@@ -88,8 +85,6 @@ export default async function AdminMenuPage({
           </table>
         </section>
       ))}
-
-      <PublishBar status={status} isOwner={isOwner} />
     </>
   )
 }
