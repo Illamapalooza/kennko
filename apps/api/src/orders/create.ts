@@ -131,6 +131,28 @@ async function resolveDelivery(sql: postgres.Sql, order: SubmittedOrder): Promis
   }
 }
 
+// Bounds at the API boundary, measured on the submitted text.
+const LIMITS: [label: string, max: number, pick: (o: SubmittedOrder) => string][] = [
+  ['Name', 100, (o) => o.name],
+  ['Email', 200, (o) => o.email],
+  ['Mobile number', 30, (o) => o.phone],
+  ['Delivery address', 300, (o) => o.address],
+  ['Barangay', 100, (o) => o.barangay],
+  ['Order note', 500, (o) => o.note],
+  ['GCash reference', 40, (o) => o.gcashReference],
+]
+const LINE_NOTE_MAX = 200
+
+function lengthProblems(order: SubmittedOrder): string[] {
+  const problems = LIMITS.filter(([, max, pick]) => pick(order).length > max).map(
+    ([label, max]) => `${label} must be ${max} characters or fewer.`,
+  )
+  if (order.lines.some((l) => (l.note ?? '').length > LINE_NOTE_MAX)) {
+    problems.push(`Drink note must be ${LINE_NOTE_MAX} characters or fewer.`)
+  }
+  return problems
+}
+
 function isOrderCodeCollision(err: unknown): boolean {
   const e = err as { code?: string; constraint_name?: string }
   return e?.code === '23505' && e.constraint_name === 'orders_order_code_key'
@@ -148,7 +170,7 @@ export async function createOnlineOrder(deps: CreateOrderDeps, input: CreateOrde
   const { order, proof, userId } = input
   const now = deps.now()
 
-  const problems = validateCheckout(order, now)
+  const problems = [...lengthProblems(order), ...validateCheckout(order, now)]
   if (problems.length > 0) return { ok: false, status: 400, code: 'INVALID', errors: problems }
 
   if (order.lines.length === 0) return fail(400, 'EMPTY_CART', 'Your cart is empty.')
@@ -178,10 +200,17 @@ export async function createOnlineOrder(deps: CreateOrderDeps, input: CreateOrde
       return fail(409, code, message)
     }
     if (code === 'BAD_QUANTITY' || code === 'EMPTY_CART') return fail(400, code, message)
-    throw err
+    console.error('order pricing failed unexpectedly', err)
+    return fail(500, 'ORDER_FAILED', 'Could not save the order')
   }
 
-  const delivery = await resolveDelivery(deps.sql, order)
+  let delivery: Delivery | Failure
+  try {
+    delivery = await resolveDelivery(deps.sql, order)
+  } catch (err) {
+    console.error('delivery zone lookup failed', err)
+    return fail(503, 'ORDERING_UNAVAILABLE', 'Ordering is unavailable right now. Please try again in a few minutes.')
+  }
   if ('ok' in delivery) return delivery
 
   const subtotal = priced.subtotalCentavos
@@ -203,6 +232,8 @@ export async function createOnlineOrder(deps: CreateOrderDeps, input: CreateOrde
       await deps.proofs.upload(proofPath, proof.bytes, image.contentType)
     } catch (err) {
       console.error('payment proof upload failed', err)
+      // The object may have landed even though the call failed.
+      await removeQuietly(deps, proofPath)
       return fail(500, 'UPLOAD_FAILED', 'We could not save your payment screenshot. Please try again.')
     }
 

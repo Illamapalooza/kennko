@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import type { AppDeps } from '../create-app.js'
 import { optionalUser, type AppEnv } from '../auth.js'
@@ -31,6 +32,9 @@ const orderSchema = z.object({
 })
 
 const MALFORMED = 'The order could not be read.'
+const TOO_LARGE = 'That photo is too large. Use one under 5 MB.'
+// The proof cap plus room for the order JSON and multipart framing.
+const MAX_BODY_BYTES = 5 * 1024 * 1024 + 64 * 1024
 
 function malformed() {
   return Response.json({ code: 'MALFORMED', message: MALFORMED, errors: [MALFORMED] }, { status: 400 })
@@ -39,7 +43,12 @@ function malformed() {
 export function ordersRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>()
 
-  app.post('/', optionalUser(deps), async (c) => {
+  const limit = bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) => c.json({ code: 'BAD_PROOF', message: TOO_LARGE, errors: [TOO_LARGE] }, 413),
+  })
+
+  app.post('/', limit, optionalUser(deps), async (c) => {
     let form: FormData
     try {
       form = await c.req.formData()

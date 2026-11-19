@@ -1,7 +1,20 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose'
 import type { Hono } from 'hono'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deliveryFeeCentavos, ridingDistanceKm } from '@kennko/core'
+
+// Lets one test make pricing throw something that is not an OrderError.
+const pricing = vi.hoisted(() => ({ explode: false }))
+vi.mock('@kennko/core', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@kennko/core')>()
+  return {
+    ...real,
+    priceOnlineOrder: (...args: Parameters<typeof real.priceOnlineOrder>) => {
+      if (pricing.explode) throw new TypeError('cannot read properties of undefined')
+      return real.priceOnlineOrder(...args)
+    },
+  }
+})
 import { createApp } from '../src/create-app.js'
 import { verifierFromJwks, type AppEnv } from '../src/auth.js'
 import { generateOrderCode } from '../src/orders/create.js'
@@ -98,6 +111,7 @@ describe('POST /v1/orders', () => {
     proofs.removed.length = 0
     proofs.failUpload = false
     codes.length = 0
+    pricing.explode = false
   })
 
   const pickup = (over: Record<string, unknown> = {}) => ({
@@ -348,11 +362,66 @@ describe('POST /v1/orders', () => {
       expect(proofs.uploads).toHaveLength(0)
     })
 
-    it('UPLOAD_FAILED -> 500, nothing written', async () => {
+    it('UPLOAD_FAILED -> 500, nothing written, the maybe-landed proof removed', async () => {
       const before = await count('orders')
       proofs.failUpload = true
       expectError(await post(pickup()), 500, 'UPLOAD_FAILED')
       expect(await count('orders')).toBe(before)
+      expect(proofs.removed).toHaveLength(1)
+      expect(proofs.removed[0]).toMatch(/^proofs\/KNK-[A-Z0-9]{6}\/[0-9a-f-]{36}\.jpg$/)
+    })
+
+    it('a body over 5 MB + 64 KB -> 413 BAD_PROOF, nothing uploaded', async () => {
+      const r = await post(pickup(), jpeg(5 * 1024 * 1024 + 70 * 1024))
+      expect(r.status).toBe(413)
+      expect(r.body).toEqual({
+        code: 'BAD_PROOF',
+        message: 'That photo is too large. Use one under 5 MB.',
+        errors: ['That photo is too large. Use one under 5 MB.'],
+      })
+      expect(proofs.uploads).toHaveLength(0)
+    })
+
+    it('an unexpected pricing failure -> 500 ORDER_FAILED in the order error shape', async () => {
+      pricing.explode = true
+      expectError(await post(pickup()), 500, 'ORDER_FAILED')
+      expect(proofs.uploads).toHaveLength(0)
+    })
+
+    it('a zone lookup failure -> 503 ORDERING_UNAVAILABLE in the order error shape', async () => {
+      await db.sql`alter table delivery_zones rename to delivery_zones_gone`
+      try {
+        const r = await post(delivery())
+        expectError(r, 503, 'ORDERING_UNAVAILABLE')
+        expect(r.body.errors).toEqual(['Ordering is unavailable right now. Please try again in a few minutes.'])
+      } finally {
+        await db.sql`alter table delivery_zones_gone rename to delivery_zones`
+      }
+      expect(proofs.uploads).toHaveLength(0)
+    })
+
+    it('fields over their length bounds -> 400 INVALID naming each field', async () => {
+      const long = (n: number) => 'a'.repeat(n)
+      const line = { menuItemId: latteId, size: 'M', quantity: 1, modifierIds: [], iceLevel: null, iceServe: null, note: long(201) }
+      const r = await post(
+        delivery({
+          name: long(101),
+          email: `${long(195)}@x.test`,
+          phone: `0917 ${long(26)}`,
+          address: long(301),
+          barangay: long(101),
+          note: long(501),
+          gcashReference: long(41),
+          lines: [line],
+        }),
+      )
+      expectError(r, 400, 'INVALID')
+      for (const field of ['Name', 'Email', 'Mobile number', 'Delivery address', 'Barangay', 'Order note', 'GCash reference', 'Drink note']) {
+        expect(r.body.errors!.some((e) => e.startsWith(`${field} must be`))).toBe(true)
+      }
+      // At the bound is fine.
+      const ok = await post(pickup({ name: long(100), note: long(500) }))
+      expect(ok.status).toBe(201)
     })
 
     it('Review Focus 1: proof stored, then the database write fails -> rolled back, proof removed', async () => {
