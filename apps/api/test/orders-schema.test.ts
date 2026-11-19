@@ -208,7 +208,7 @@ test('anon and authenticated hold no privileges on ticket_counters, and only sel
     select r.role, t.tbl, p.priv, has_table_privilege(r.role, t.tbl, p.priv) as has
     from (values ('anon'), ('authenticated')) r(role),
          (values ('payments'), ('order_events'), ('ticket_counters')) t(tbl),
-         (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('REFERENCES'), ('TRIGGER')) p(priv)
+         (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('REFERENCES'), ('TRIGGER'), ('TRUNCATE')) p(priv)
     where has_table_privilege(r.role, t.tbl, p.priv)`
   expect(privs.map((x) => `${x.role}:${x.tbl}:${x.priv}`).sort()).toEqual([
     'authenticated:order_events:SELECT',
