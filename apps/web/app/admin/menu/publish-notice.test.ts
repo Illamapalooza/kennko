@@ -25,3 +25,24 @@ describe('publish notice', () => {
     expect(readPublishNotice({ reason: 'x' })).toBeNull()
   })
 })
+
+describe('reason cap', () => {
+  const long = 'x'.repeat(500)
+
+  it('caps the reason at 200 characters when building the URL', () => {
+    const url = new URL(publishFailedUrl(long), 'http://x')
+    expect(url.searchParams.get('reason')).toHaveLength(200)
+  })
+
+  it('caps a hand-crafted long reason when reading', () => {
+    const copy = readPublishNotice({ publish: 'failed', reason: long })
+    expect(copy).toBe(publishFailureCopy('x'.repeat(200)))
+  })
+
+  it('strips control characters', () => {
+    expect(readPublishNotice({ publish: 'failed', reason: 'a\u0000b\nc\u007f' })).toBe(
+      publishFailureCopy('abc'),
+    )
+    expect(publishFailedUrl('a\u0000b\nc')).toBe('/admin/menu?publish=failed&reason=abc')
+  })
+})

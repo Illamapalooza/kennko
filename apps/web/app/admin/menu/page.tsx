@@ -12,10 +12,10 @@ export default async function AdminMenuPage({
   searchParams: Promise<{ denied?: string; publish?: string; reason?: string }>
 }) {
   const { denied, publish, reason } = await searchParams
-  const publishNotice = readPublishNotice({ publish, reason })
   const staff = await getCurrentStaff()
   const categories = await getAdminMenu()
   const isOwner = staff?.role === 'owner'
+  const publishNotice = isOwner ? readPublishNotice({ publish, reason }) : null
 
   return (
     <>
