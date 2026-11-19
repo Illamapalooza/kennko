@@ -9,7 +9,7 @@ function cleanReason(raw: string): string {
 }
 
 export function publishFailureCopy(message: string): string {
-  return `Saved, but the menu could not be published: ${message}. Press Publish menu to try again.`
+  return `Saved, but the menu could not be published: ${message}. Press Publish menu to try again. Until then, online orders for the edited items will be refused.`
 }
 
 export function publishFailedUrl(message: string): string {

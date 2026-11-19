@@ -16,7 +16,7 @@ describe('publish notice', () => {
 
   it('uses the exact copy', () => {
     expect(publishFailureCopy('boom')).toBe(
-      'Saved, but the menu could not be published: boom. Press Publish menu to try again.',
+      'Saved, but the menu could not be published: boom. Press Publish menu to try again. Until then, online orders for the edited items will be refused.',
     )
   })
 
