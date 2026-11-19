@@ -5,13 +5,14 @@ import { getOrderHistory } from '@/lib/orders/history'
 import { signOutCustomer } from '@/app/account/actions'
 import { formatPesos } from '@/lib/money'
 import { SIZE_VOLUMES } from '@/lib/menu/sizes'
-import { statusLabel, type OrderStatus } from '@/app/admin/orders/status'
+import { statusLabel } from '@/app/admin/orders/status'
+import type { OrderStage } from '@kennko/core'
 import type { DrinkSize } from '@/lib/menu/types'
 import '../order/order.css'
 
 export const dynamic = 'force-dynamic'
 
-const LIVE: OrderStatus[] = [
+const LIVE: OrderStage[] = [
   'awaiting_verification', 'confirmed', 'preparing', 'ready', 'out_for_delivery',
 ]
 
@@ -20,8 +21,8 @@ export default async function OrdersPage() {
   if (!customer) redirect('/account?next=/orders')
 
   const orders = await getOrderHistory(customer)
-  const live = orders.filter((o) => LIVE.includes(o.status as OrderStatus))
-  const past = orders.filter((o) => !LIVE.includes(o.status as OrderStatus))
+  const live = orders.filter((o) => LIVE.includes(o.stage))
+  const past = orders.filter((o) => !LIVE.includes(o.stage))
 
   return (
     <div className="order-shell">
@@ -77,8 +78,9 @@ function HistoryCard({
       <header className="history-top">
         <div>
           <strong>{order.orderCode}</strong>
-          <span className={`badge badge-${order.status}`}>
-            {statusLabel(order.status as OrderStatus)}
+          <span className="history-guest">{order.ticket}</span>
+          <span className={`badge badge-${order.stage}`}>
+            {statusLabel(order.stage)}
           </span>
         </div>
         <span className="history-date">
@@ -95,7 +97,7 @@ function HistoryCard({
             <div className="summary-detail">
               <strong>{item.name}</strong>
               <span>
-                {item.size} · {SIZE_VOLUMES[item.size as DrinkSize] ?? ''}
+                {item.variantLabel} · {SIZE_VOLUMES[item.variantLabel as DrinkSize] ?? ''}
               </span>
               {item.modifiers.length > 0 ? <span>{item.modifiers.join(', ')}</span> : null}
               {item.ice ? <span>{item.ice}</span> : null}

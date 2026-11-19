@@ -46,7 +46,7 @@ describe('publishMenu', () => {
     vi.stubEnv('KENNKO_API_URL', '')
     expect(await publishMenu()).toEqual({
       ok: false,
-      message: 'The menu API is not configured (KENNKO_API_URL).',
+      message: 'The API is not configured (KENNKO_API_URL).',
     })
   })
 })

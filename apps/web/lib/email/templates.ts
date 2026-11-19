@@ -2,13 +2,17 @@ import { formatPesos } from '@/lib/money'
 
 export type OrderEmailData = {
   orderCode: string
+  /** The customer-facing number, e.g. W3. Leads the staff alert when present. */
+  ticket?: string
   customerName: string
   fulfilment: 'pickup' | 'delivery'
   fulfilAt: string
   totalCentavos: number
   deliveryAddress?: string | null
   items: {
-    name: string; size: string; quantity: number
+    name: string; quantity: number
+    /** Size or variant. `size` is the older spelling, kept so existing callers still compile. */
+    variantLabel?: string; size?: string
     ice?: string | null; note?: string | null
   }[]
 }
@@ -18,13 +22,14 @@ function itemLines(items: OrderEmailData['items']): string {
     .map((i) => {
       const ice = i.ice ? ` -- ${i.ice}` : ''
       const note = i.note ? `\n      NOTE: ${i.note}` : ''
-      return `  ${i.quantity}x ${i.name} (${i.size})${ice}${note}`
+      return `  ${i.quantity}x ${i.name} (${i.variantLabel ?? i.size})${ice}${note}`
     })
     .join('\n')
 }
 
 export function staffAlertSubject(data: OrderEmailData): string {
-  return `New order ${data.orderCode} — ${formatPesos(data.totalCentavos)} (${data.fulfilment})`
+  const lead = data.ticket ? `${data.ticket} · ${data.orderCode}` : data.orderCode
+  return `New order ${lead} — ${formatPesos(data.totalCentavos)} (${data.fulfilment})`
 }
 
 export function staffAlertBody(data: OrderEmailData): string {
@@ -34,7 +39,7 @@ export function staffAlertBody(data: OrderEmailData): string {
       : 'For pickup at the counter'
 
   return [
-    `New order ${data.orderCode} from ${data.customerName}.`,
+    `New order ${data.ticket ? `${data.ticket} · ` : ''}${data.orderCode} from ${data.customerName}.`,
     '',
     itemLines(data.items),
     '',

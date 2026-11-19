@@ -25,6 +25,19 @@ const delivery: OrderEmailData = {
 }
 
 describe('staff alert', () => {
+  it('leads the subject with the ticket when there is one', () => {
+    const subject = staffAlertSubject({ ...base, ticket: 'W3' })
+    expect(subject.startsWith('New order W3 · KNK-7F3Q — ₱290')).toBe(true)
+  })
+
+  it('reads variantLabel as well as the older size', () => {
+    const body = staffAlertBody({
+      ...base,
+      items: [{ name: 'Spanish Latte', variantLabel: '16oz', quantity: 1 }],
+    })
+    expect(body).toContain('1x Spanish Latte (16oz)')
+  })
+
   it('puts the code and total in the subject so it is actionable from a lock screen', () => {
     const subject = staffAlertSubject(base)
     expect(subject).toContain('KNK-7F3Q')

@@ -1,15 +1,18 @@
 import 'server-only'
 import { getAdminClient } from '@/lib/supabase/admin'
+import { orderStage, ticketLabel, type OrderStage } from '@kennko/core'
 import { iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 
 export type PublicOrder = {
   orderCode: string
-  status: string
+  stage: OrderStage
+  /** The customer's number, e.g. W3. */
+  ticket: string
   fulfilment: 'pickup' | 'delivery'
   fulfilAt: string
   totalCentavos: number
   deliveryAddress: string | null
-  items: { name: string; size: string; quantity: number; ice: string | null }[]
+  items: { name: string; variantLabel: string; quantity: number; ice: string | null }[]
 }
 
 /**
@@ -23,7 +26,7 @@ export async function lookupOrder(code: string): Promise<PublicOrder | null> {
   const { data } = await db
     .from('orders')
     .select(
-      'order_code, status, fulfilment, fulfil_at, total_centavos, delivery_address, order_items ( name_snapshot, size, quantity, ice_level, ice_serve )',
+      'order_code, prep_status, payment_status, ticket_series, ticket_number, fulfilment, fulfil_at, total_centavos, delivery_address, order_lines ( item_name, variant_label, quantity, ice_level, ice_serve, note, order_line_options ( option_name ) )',
     )
     .eq('order_code', code.toUpperCase())
     .maybeSingle()
@@ -32,18 +35,19 @@ export async function lookupOrder(code: string): Promise<PublicOrder | null> {
 
   return {
     orderCode: data.order_code,
-    status: data.status,
+    stage: orderStage(data.prep_status, data.payment_status),
+    ticket: ticketLabel(data.ticket_series, data.ticket_number),
     fulfilment: data.fulfilment,
     fulfilAt: data.fulfil_at,
     totalCentavos: data.total_centavos,
     deliveryAddress: data.delivery_address,
-    items: (data.order_items ?? []).map(
+    items: (data.order_lines ?? []).map(
       (i: {
-        name_snapshot: string; size: string; quantity: number
+        item_name: string; variant_label: string; quantity: number
         ice_level: IceLevel | null; ice_serve: IceServe | null
       }) => ({
-        name: i.name_snapshot,
-        size: i.size,
+        name: i.item_name,
+        variantLabel: i.variant_label,
         quantity: i.quantity,
         ice: iceSummary(i.ice_level, i.ice_serve),
       }),

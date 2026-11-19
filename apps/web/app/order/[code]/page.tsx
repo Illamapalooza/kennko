@@ -1,11 +1,12 @@
 import { notFound } from 'next/navigation'
+import type { OrderStage } from '@kennko/core'
 import { lookupOrder } from '@/lib/orders/lookup'
 import { formatPesos } from '@/lib/money'
 import '../order.css'
 
 export const dynamic = 'force-dynamic'
 
-const STATUS_COPY: Record<string, string> = {
+const STATUS_COPY: Record<OrderStage, string> = {
   awaiting_verification:
     'We have your order and are checking your GCash payment. Nothing is being prepared yet.',
   confirmed: 'Payment checked. Your order is queued.',
@@ -31,10 +32,11 @@ export default async function OrderStatusPage({
     <div className="order-shell">
       <div className="order-main">
         <h1>Order {order.orderCode}</h1>
+        <p className="order-note">Your number: {order.ticket}</p>
 
         <div className="order-card">
-          <p className={order.status === 'awaiting_verification' ? 'order-note' : undefined}>
-            {STATUS_COPY[order.status] ?? order.status}
+          <p className={order.stage === 'awaiting_verification' ? 'order-note' : undefined}>
+            {STATUS_COPY[order.stage]}
           </p>
         </div>
 
@@ -42,7 +44,7 @@ export default async function OrderStatusPage({
           {order.items.map((item, index) => (
             <div className="order-total" key={`${item.name}-${index}`}>
               <span>
-                {item.quantity}× {item.name} ({item.size})
+                {item.quantity}× {item.name} ({item.variantLabel})
                 {item.ice ? ` · ${item.ice}` : ''}
               </span>
             </div>

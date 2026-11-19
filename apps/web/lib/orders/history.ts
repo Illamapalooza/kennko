@@ -1,12 +1,14 @@
 import 'server-only'
 import { getAdminClient } from '@/lib/supabase/admin'
+import { orderStage, ticketLabel, type OrderStage, type PrepStatus, type PaymentStatus } from '@kennko/core'
 import { iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 import type { Customer } from '@/lib/auth/customer'
 
 export type HistoryOrder = {
   id: string
   orderCode: string
-  status: string
+  stage: OrderStage
+  ticket: string
   fulfilment: 'pickup' | 'delivery'
   fulfilAt: string
   createdAt: string
@@ -16,7 +18,7 @@ export type HistoryOrder = {
   totalCentavos: number
   claimedByEmail: boolean
   items: {
-    name: string; size: string; quantity: number
+    name: string; variantLabel: string; quantity: number
     ice: string | null; note: string | null; modifiers: string[]
   }[]
 }
@@ -33,11 +35,11 @@ export type HistoryOrder = {
 export async function getOrderHistory(customer: Customer): Promise<HistoryOrder[]> {
   const db = getAdminClient()
 
-  const columns = `id, order_code, status, fulfilment, fulfil_at, created_at,
+  const columns = `id, order_code, prep_status, payment_status, ticket_series, ticket_number, fulfilment, fulfil_at, created_at,
      delivery_address, subtotal_centavos, delivery_fee_centavos, total_centavos,
      customer_user_id, customer_email,
-     order_items ( name_snapshot, size, quantity, ice_level, ice_serve, item_note,
-                   order_item_modifiers ( name_snapshot ) )`
+     order_lines ( item_name, variant_label, quantity, ice_level, ice_serve, note,
+                   order_line_options ( option_name ) )`
 
   const filter = customer.emailConfirmed
     ? `customer_user_id.eq.${customer.id},customer_email.eq.${customer.email.toLowerCase()}`
@@ -53,22 +55,25 @@ export async function getOrderHistory(customer: Customer): Promise<HistoryOrder[
   if (error) throw new Error(`Could not load your orders: ${error.message}`)
 
   type Row = {
-    id: string; order_code: string; status: string
+    id: string; order_code: string
+    prep_status: PrepStatus; payment_status: PaymentStatus
+    ticket_series: 'C' | 'W'; ticket_number: number
     fulfilment: 'pickup' | 'delivery'; fulfil_at: string; created_at: string
     delivery_address: string | null
     subtotal_centavos: number; delivery_fee_centavos: number; total_centavos: number
     customer_user_id: string | null; customer_email: string
-    order_items: {
-      name_snapshot: string; size: string; quantity: number
-      ice_level: IceLevel | null; ice_serve: IceServe | null; item_note: string | null
-      order_item_modifiers: { name_snapshot: string }[]
+    order_lines: {
+      item_name: string; variant_label: string; quantity: number
+      ice_level: IceLevel | null; ice_serve: IceServe | null; note: string | null
+      order_line_options: { option_name: string }[]
     }[]
   }
 
   return ((data ?? []) as Row[]).map((r) => ({
     id: r.id,
     orderCode: r.order_code,
-    status: r.status,
+    stage: orderStage(r.prep_status, r.payment_status),
+    ticket: ticketLabel(r.ticket_series, r.ticket_number),
     fulfilment: r.fulfilment,
     fulfilAt: r.fulfil_at,
     createdAt: r.created_at,
@@ -77,13 +82,13 @@ export async function getOrderHistory(customer: Customer): Promise<HistoryOrder[
     deliveryFeeCentavos: r.delivery_fee_centavos,
     totalCentavos: r.total_centavos,
     claimedByEmail: r.customer_user_id !== customer.id,
-    items: (r.order_items ?? []).map((i) => ({
-      name: i.name_snapshot,
-      size: i.size,
+    items: (r.order_lines ?? []).map((i) => ({
+      name: i.item_name,
+      variantLabel: i.variant_label,
       quantity: i.quantity,
       ice: iceSummary(i.ice_level, i.ice_serve),
-      note: i.item_note,
-      modifiers: (i.order_item_modifiers ?? []).map((m) => m.name_snapshot),
+      note: i.note,
+      modifiers: (i.order_line_options ?? []).map((m) => m.option_name),
     })),
   }))
 }
