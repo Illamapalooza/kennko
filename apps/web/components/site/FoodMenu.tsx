@@ -1,37 +1,15 @@
 import { formatPesos } from '@/lib/money'
 import { CatToon } from '@kennko/cats'
+import type { FoodItem } from '@/lib/menu/queries'
 
-// Food is not in the ordering system yet, so it lives here, copied from the 2026 food-menu flyer
-// (brand/assets/food-menu/). Move it into packages/core once food can be ordered or rung up on the till.
-type FoodItem = {
-  name: string
-  options: string[]
-  priceCentavos: number
-  image: string
+// Art is keyed by item name; an item with no art gets no picture.
+const FOOD_ART: Record<string, string> = {
+  Cookies: '/brand/food-cookies.png',
+  Empanada: '/brand/food-empanada.png',
+  Fries: '/brand/food-fries.png',
 }
 
-const FOOD: FoodItem[] = [
-  {
-    name: 'Cookies',
-    options: ['Original', 'Chocolate', 'Red Velvet'],
-    priceCentavos: 6000,
-    image: '/brand/food-cookies.png',
-  },
-  {
-    name: 'Empanada',
-    options: ['Chicken'],
-    priceCentavos: 4500,
-    image: '/brand/food-empanada.png',
-  },
-  {
-    name: 'Fries',
-    options: ['Original', 'Cheese', 'BBQ', 'Sour Cream'],
-    priceCentavos: 8500,
-    image: '/brand/food-fries.png',
-  },
-]
-
-export function FoodMenu() {
+export function FoodMenu({ items }: { items: FoodItem[] }) {
   return (
     <section id="food">
       <div className="container">
@@ -47,12 +25,13 @@ export function FoodMenu() {
           </h2>
 
           <div className="food-rows">
-            {FOOD.map((item) => {
+            {items.map((item) => {
+              const image = FOOD_ART[item.name]
               const titleId = `food-${item.name.toLowerCase()}`
               return (
-                <article className="k-sticker-row food-row" key={item.name} aria-labelledby={titleId}>
+                <article className="k-sticker-row food-row" key={item.id} aria-labelledby={titleId}>
                   <div className="food-art">
-                    <img src={item.image} alt={`${item.name} illustration`} loading="lazy" />
+                    {image && <img src={image} alt={`${item.name} illustration`} loading="lazy" />}
                   </div>
                   <div className="food-info">
                     <h3 id={titleId}>{item.name}</h3>

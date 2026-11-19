@@ -1,6 +1,8 @@
 export type AppEnv = {
   supabaseUrl: string
   supabaseAnonKey: string
+  /** Optional: without it the menu is empty (see lib/menu/api.ts). */
+  apiUrl: string | undefined
 }
 
 export function readEnv(source: Record<string, string | undefined>): AppEnv {
@@ -13,7 +15,12 @@ export function readEnv(source: Record<string, string | undefined>): AppEnv {
     throw new Error('NEXT_PUBLIC_SUPABASE_URL must be https')
   }
 
-  return { supabaseUrl: url, supabaseAnonKey: anonKey }
+  const apiUrl = source.KENNKO_API_URL || undefined
+  if (apiUrl && !URL.canParse(apiUrl)) {
+    throw new Error('KENNKO_API_URL must be a valid URL')
+  }
+
+  return { supabaseUrl: url, supabaseAnonKey: anonKey, apiUrl }
 }
 
 let cached: AppEnv | undefined
@@ -33,6 +40,7 @@ export function getEnv(): AppEnv {
   cached ??= readEnv({
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    KENNKO_API_URL: process.env.KENNKO_API_URL,
   })
   return cached
 }

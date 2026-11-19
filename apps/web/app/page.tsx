@@ -6,13 +6,13 @@ import { FoodMenu } from '@/components/site/FoodMenu'
 import { Perks } from '@/components/site/Perks'
 import { Visit } from '@/components/site/Visit'
 import { Footer } from '@/components/site/Footer'
-import { getMenu } from '@/lib/menu/queries'
+import { getMenu, getFoodMenu } from '@/lib/menu/queries'
 import './landing.css'
 
 export const revalidate = 60
 
 export default async function HomePage() {
-  const categories = await getMenu()
+  const [categories, food] = await Promise.all([getMenu(), getFoodMenu()])
 
   return (
     <div className="landing k-paper-grid">
@@ -21,7 +21,7 @@ export default async function HomePage() {
         <Hero />
         <About />
         <MenuSection categories={categories} />
-        <FoodMenu />
+        <FoodMenu items={food} />
         <Perks />
         <Visit />
       </main>

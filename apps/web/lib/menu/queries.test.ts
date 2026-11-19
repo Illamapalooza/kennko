@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { mapMenuRows } from './queries'
+import type { MenuSnapshot } from '@kennko/core'
+import { foodFromSnapshot, mapMenuRows, menuFromSnapshot } from './queries'
 
 const rows = [
   {
@@ -34,6 +35,116 @@ const rows = [
     ],
   },
 ]
+
+const v = (code: string, priceCentavos: number, isAvailable = true) => ({
+  id: `v-${code}-${priceCentavos}`,
+  code,
+  label: code,
+  priceCentavos,
+  temperature: 'none' as const,
+  isAvailable,
+})
+
+const snapshot: MenuSnapshot = {
+  version: 1,
+  publishedAt: '2026-11-20T00:00:00.000Z',
+  discountPresets: [],
+  optionGroups: [
+    {
+      id: 'g-cookie',
+      name: 'Cookie flavour',
+      minSelect: 1,
+      maxSelect: 1,
+      options: [
+        { id: 'o1', name: 'Original', priceCentavos: 0, isAvailable: true },
+        { id: 'o2', name: 'Chocolate', priceCentavos: 0, isAvailable: true },
+        { id: 'o3', name: 'Red Velvet', priceCentavos: 0, isAvailable: true },
+      ],
+    },
+  ],
+  categories: [
+    {
+      id: 'c1',
+      name: 'Premium Classics',
+      kind: 'drink',
+      items: [
+        {
+          id: 'i1',
+          name: 'Americano',
+          description: null,
+          imagePath: null,
+          isBestseller: false,
+          isAvailable: true,
+          optionGroupIds: [],
+          variants: [v('HOT', 9500), v('L', 9000), v('M', 8000)],
+        },
+      ],
+    },
+    {
+      id: 'c2',
+      name: 'Food',
+      kind: 'food',
+      items: [
+        {
+          id: 'f1',
+          name: 'Cookies',
+          description: null,
+          imagePath: null,
+          isBestseller: false,
+          isAvailable: true,
+          optionGroupIds: ['g-cookie'],
+          variants: [v('REG', 6000)],
+        },
+        {
+          id: 'f2',
+          name: 'Empanada',
+          description: 'Chicken',
+          imagePath: null,
+          isBestseller: false,
+          isAvailable: true,
+          optionGroupIds: [],
+          variants: [v('REG', 4500)],
+        },
+      ],
+    },
+  ],
+}
+
+describe('menuFromSnapshot', () => {
+  it('returns [] for null', () => {
+    expect(menuFromSnapshot(null)).toEqual([])
+  })
+
+  it('maps drink variants to sizes in order', () => {
+    const [category] = menuFromSnapshot(snapshot)
+    expect(category.items[0].prices).toEqual([
+      { size: 'M', priceCentavos: 8000 },
+      { size: 'L', priceCentavos: 9000 },
+      { size: 'HOT', priceCentavos: 9500 },
+    ])
+  })
+
+  it('leaves food out of the drink list', () => {
+    expect(menuFromSnapshot(snapshot).map((c) => c.name)).toEqual(['Premium Classics'])
+  })
+})
+
+describe('foodFromSnapshot', () => {
+  it('returns [] for null', () => {
+    expect(foodFromSnapshot(null)).toEqual([])
+  })
+
+  it('lists Cookies with its three flavours at ₱60', () => {
+    const cookies = foodFromSnapshot(snapshot).find((f) => f.name === 'Cookies')
+    expect(cookies?.options).toEqual(['Original', 'Chocolate', 'Red Velvet'])
+    expect(cookies?.priceCentavos).toBe(6000)
+  })
+
+  it('shows the description as the single bullet when there is no group', () => {
+    const empanada = foodFromSnapshot(snapshot).find((f) => f.name === 'Empanada')
+    expect(empanada?.options).toEqual(['Chicken'])
+  })
+})
 
 describe('mapMenuRows', () => {
   it('maps snake_case rows to camelCase domain types', () => {

@@ -1,6 +1,8 @@
-import { getPublicClient } from '@/lib/supabase/public'
+import { liveDrinkMenu, type MenuSnapshot } from '@kennko/core'
+import { fetchMenuSnapshot } from './api'
 import type { DrinkSize, MenuCategoryWithItems } from './types'
 
+// Row mapping for the admin screens, which still read the tables directly.
 const SIZE_ORDER: DrinkSize[] = ['M', 'L', 'XL', 'HOT']
 
 type PriceRow = { size: string; price_centavos: number }
@@ -50,20 +52,69 @@ export function mapMenuRows(rows: CategoryRow[]): MenuCategoryWithItems[] {
   }))
 }
 
+export type FoodItem = {
+  id: string
+  name: string
+  options: string[]
+  priceCentavos: number
+  isAvailable: boolean
+}
+
+/** Drink categories in the website's shape, prices from the M/L/XL/HOT variants. */
+export function menuFromSnapshot(s: MenuSnapshot | null): MenuCategoryWithItems[] {
+  if (!s) return []
+  const extras = new Map(
+    s.categories.flatMap((c) => c.items).map((i) => [i.id, i] as const),
+  )
+  return liveDrinkMenu(s, 0).categories.map((category) => ({
+    id: category.id,
+    name: category.name,
+    items: category.items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: extras.get(item.id)?.description ?? null,
+      imagePath: extras.get(item.id)?.imagePath ?? null,
+      isBestseller: item.isBestseller,
+      isAvailable: item.isAvailable,
+      prices: item.prices,
+    })),
+  }))
+}
+
+/**
+ * Food board rows. `options` are the option names of the item's first required group; an item
+ * with no group shows its description as its single bullet.
+ */
+export function foodFromSnapshot(s: MenuSnapshot | null): FoodItem[] {
+  if (!s) return []
+  const groups = new Map(s.optionGroups.map((g) => [g.id, g] as const))
+  return s.categories
+    .filter((c) => c.kind === 'food')
+    .flatMap((c) => c.items)
+    .map((item) => {
+      const group = item.optionGroupIds
+        .map((id) => groups.get(id))
+        .find((g) => g !== undefined && g.minSelect >= 1)
+      const options = group
+        ? group.options.filter((o) => o.isAvailable).map((o) => o.name)
+        : item.description
+          ? [item.description]
+          : []
+      const reg = item.variants.find((v) => v.code === 'REG')
+      return {
+        id: item.id,
+        name: item.name,
+        options,
+        priceCentavos: reg?.priceCentavos ?? 0,
+        isAvailable: item.isAvailable && (reg?.isAvailable ?? false),
+      }
+    })
+}
+
 export async function getMenu(): Promise<MenuCategoryWithItems[]> {
-  const db = getPublicClient()
+  return menuFromSnapshot(await fetchMenuSnapshot())
+}
 
-  const { data, error } = await db
-    .from('menu_categories')
-    .select(
-      `id, name, sort_order,
-       menu_items ( id, name, description, image_path, is_bestseller,
-                    is_available, sort_order,
-                    menu_item_prices ( size, price_centavos ) )`,
-    )
-    .order('sort_order')
-
-  if (error) throw new Error(`Failed to load menu: ${error.message}`)
-
-  return mapMenuRows((data ?? []) as CategoryRow[])
+export async function getFoodMenu(): Promise<FoodItem[]> {
+  return foodFromSnapshot(await fetchMenuSnapshot())
 }
