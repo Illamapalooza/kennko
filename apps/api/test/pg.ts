@@ -61,6 +61,13 @@ export async function startTestDb(opts: StartOptions = {}): Promise<TestDb> {
     const client = sql
     const srv = server
 
+    // PGlite quirk: the first parameterised query on a connection whose result includes an enum column fails
+    // once ("unnamed prepared statement does not exist"). Touch every public enum type up front.
+    const enums = await client`select typname from pg_type where typtype = 'e' and typnamespace = 'public'::regnamespace`
+    if (enums.length > 0) {
+      await client.unsafe(`select ${enums.map((e) => `null::public."${e.typname}"`).join(', ')}`)
+    }
+
     return {
       sql: client,
       url,

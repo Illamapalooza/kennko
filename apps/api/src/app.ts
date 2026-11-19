@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import type postgres from 'postgres'
+import type { AppEnv } from './auth.ts'
 import { apiError } from './http.ts'
 
 export type AppDeps = {
@@ -8,8 +9,8 @@ export type AppDeps = {
   verifyUser: (token: string) => Promise<{ userId: string }>
 }
 
-export function createApp(deps: AppDeps): Hono {
-  const app = new Hono()
+export function createApp(deps: AppDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>()
 
   app.notFound(() => {
     throw apiError(404, 'NOT_FOUND', 'Not found')

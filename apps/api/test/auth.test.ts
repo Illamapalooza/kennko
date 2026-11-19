@@ -15,6 +15,7 @@ const FIRED = '00000000-0000-4000-8000-000000000003'
 describe('staff auth', () => {
   let db: TestDb
   let app: Hono<AppEnv>
+  let privateKey: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
   let sign: (sub: string, opts?: { expiresIn?: string | number; key?: Awaited<ReturnType<typeof generateKeyPair>>['privateKey'] }) => Promise<string>
 
   beforeAll(async () => {
@@ -38,7 +39,9 @@ describe('staff auth', () => {
       )
       .simple()
 
-    const { publicKey, privateKey } = await generateKeyPair('ES256')
+    const pair = await generateKeyPair('ES256')
+    const publicKey = pair.publicKey
+    privateKey = pair.privateKey
     const jwk: JWK = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'ES256', use: 'sig' }
     const verifyUser = verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER)
     sign = (sub, opts = {}) =>
@@ -52,13 +55,10 @@ describe('staff auth', () => {
         .sign(opts.key ?? privateKey)
 
     const deps = { sql: db.sql, verifyUser }
-    app = createApp(deps) as unknown as Hono<AppEnv>
+    app = createApp(deps)
     app.get('/owner-only', requireStaff(deps, 'owner'), (c) => c.json(c.get('staff')))
     app.get('/any-staff', requireStaff(deps), (c) => c.json(c.get('staff')))
 
-    // PGlite quirk: the first run of a given parameterised query fails once ("unnamed prepared statement
-    // does not exist"); real Postgres is unaffected. Burn it with a throwaway request (result ignored).
-    await app.request('/any-staff', { headers: { Authorization: `Bearer ${await sign(OWNER)}` } })
   })
   afterAll(async () => {
     await db.stop()
@@ -110,5 +110,66 @@ describe('staff auth', () => {
     const res = await get('/any-staff', await sign(BARISTA))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ id: BARISTA, role: 'barista' })
+  })
+
+  const base = () => new SignJWT({}).setIssuedAt().setExpirationTime('5m')
+
+  it('a non-uuid subject -> 401, not 500', async () => {
+    expect((await get('/any-staff', await sign('not-a-uuid'))).status).toBe(401)
+  })
+
+  it('a missing subject -> 401', async () => {
+    const t = await base()
+      .setProtectedHeader({ alg: 'ES256', kid: 'k1' })
+      .setIssuer(ISSUER)
+      .setAudience('authenticated')
+      .sign(privateKey)
+    expect((await get('/any-staff', t)).status).toBe(401)
+  })
+
+  it('a wrong issuer -> 401', async () => {
+    const t = await base()
+      .setProtectedHeader({ alg: 'ES256', kid: 'k1' })
+      .setSubject(OWNER)
+      .setIssuer('http://evil.test/auth/v1')
+      .setAudience('authenticated')
+      .sign(privateKey)
+    expect((await get('/any-staff', t)).status).toBe(401)
+  })
+
+  it('a wrong audience -> 401', async () => {
+    const t = await base()
+      .setProtectedHeader({ alg: 'ES256', kid: 'k1' })
+      .setSubject(OWNER)
+      .setIssuer(ISSUER)
+      .setAudience('anon')
+      .sign(privateKey)
+    expect((await get('/any-staff', t)).status).toBe(401)
+  })
+
+  it('an HS256-signed token -> 401', async () => {
+    const t = await base()
+      .setProtectedHeader({ alg: 'HS256', kid: 'k1' })
+      .setSubject(OWNER)
+      .setIssuer(ISSUER)
+      .setAudience('authenticated')
+      .sign(new TextEncoder().encode('a-shared-secret-that-is-long-enough-32b'))
+    expect((await get('/any-staff', t)).status).toBe(401)
+  })
+
+  it('an alg:none token -> 401', async () => {
+    const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url')
+    const t = `${b64({ alg: 'none', kid: 'k1' })}.${b64({
+      sub: OWNER,
+      iss: ISSUER,
+      aud: 'authenticated',
+      exp: Math.floor(Date.now() / 1000) + 300,
+    })}.`
+    expect((await get('/any-staff', t)).status).toBe(401)
+  })
+
+  it('a non-Bearer Authorization header -> 401', async () => {
+    const res = await app.request('/any-staff', { headers: { Authorization: 'Basic xyz' } })
+    expect(res.status).toBe(401)
   })
 })

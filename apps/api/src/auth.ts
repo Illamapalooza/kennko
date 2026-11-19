@@ -10,6 +10,8 @@ export type AppEnv = {
   Variables: { staff: { id: string; role: StaffRole } }
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 type VerifyUser = (token: string) => Promise<{ userId: string }>
 
 /** Verifier over any JWKS source, so tests can inject a local key set. */
@@ -21,7 +23,7 @@ export function verifierFromJwks(jwks: JWTVerifyGetKey, issuer: string): VerifyU
         audience: 'authenticated',
         algorithms: ['ES256'],
       })
-      if (!payload.sub) throw new Error('token has no subject')
+      if (!payload.sub || !UUID.test(payload.sub)) throw new Error('token subject is not a uuid')
       return { userId: payload.sub }
     } catch {
       throw apiError(401, 'UNAUTHENTICATED', 'Invalid or expired token')
