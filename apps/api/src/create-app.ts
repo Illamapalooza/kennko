@@ -1,9 +1,9 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import type postgres from 'postgres'
-import type { AppEnv } from './auth.ts'
-import { apiError } from './http.ts'
-import { menuRoutes } from './routes/menu.ts'
+import type { AppEnv } from './auth.js'
+import { apiError } from './http.js'
+import { menuRoutes } from './routes/menu.js'
 
 export type AppDeps = {
   sql: postgres.Sql

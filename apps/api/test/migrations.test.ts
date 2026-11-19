@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { asUser, startTestDb } from './pg.ts'
+import { asUser, startTestDb } from './pg.js'
 
 test('every migration applies to a fresh database', async () => {
   const db = await startTestDb()

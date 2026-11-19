@@ -1,7 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose'
 import type { MiddlewareHandler } from 'hono'
-import type { AppDeps } from './app.ts'
-import { apiError } from './http.ts'
+import type { AppDeps } from './create-app.js'
+import { apiError } from './http.js'
 
 export type StaffRole = 'owner' | 'barista'
 

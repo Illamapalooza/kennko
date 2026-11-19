@@ -1,7 +1,7 @@
 import postgres from 'postgres'
 import { afterAll, beforeAll, expect, test } from 'vitest'
-import { buildSnapshotBody, hashBody, publishMenu } from '../src/menu/snapshot.ts'
-import { startTestDb, type TestDb } from './pg.ts'
+import { buildSnapshotBody, hashBody, publishMenu } from '../src/menu/snapshot.js'
+import { startTestDb, type TestDb } from './pg.js'
 
 let db: TestDb
 let itemId: string

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'vitest'
-import { asUser, startTestDb, type TestDb } from './pg.ts'
+import { asUser, startTestDb, type TestDb } from './pg.js'
 
 // Today's shape, loaded before 0012 runs.
 const SEED = `

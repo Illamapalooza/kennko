@@ -1,9 +1,9 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose'
 import type { Hono } from 'hono'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createApp } from '../src/app.ts'
-import { requireStaff, verifierFromJwks, type AppEnv } from '../src/auth.ts'
-import { startTestDb, type TestDb } from './pg.ts'
+import { createApp } from '../src/create-app.js'
+import { requireStaff, verifierFromJwks, type AppEnv } from '../src/auth.js'
+import { startTestDb, type TestDb } from './pg.js'
 
 const SUPABASE_URL = 'http://supabase.test'
 const ISSUER = `${SUPABASE_URL}/auth/v1`

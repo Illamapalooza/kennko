@@ -1,9 +1,9 @@
 import { Hono } from 'hono'
-import type { AppDeps } from '../app.ts'
-import { requireStaff, type AppEnv } from '../auth.ts'
-import { apiError } from '../http.ts'
-import { readLatestMenu, readMenuVersion } from '../menu/read.ts'
-import { publishMenu } from '../menu/snapshot.ts'
+import type { AppDeps } from '../create-app.js'
+import { requireStaff, type AppEnv } from '../auth.js'
+import { apiError } from '../http.js'
+import { readLatestMenu, readMenuVersion } from '../menu/read.js'
+import { publishMenu } from '../menu/snapshot.js'
 
 export function menuRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>()

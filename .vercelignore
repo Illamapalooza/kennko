@@ -1,0 +1,12 @@
+# Never upload these to Vercel: the till's real sales, PINs, local secrets and scratch work.
+apps/pos/data
+apps/pos/config.json
+**/.env
+**/.env.*
+!**/.env.local.example
+**/supabase/.temp
+.superpowers
+.playwright-mcp
+brand/assets
+wall/music
+*.pem

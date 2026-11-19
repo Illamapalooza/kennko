@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createApp } from '../src/app.ts'
-import { loadConfig } from '../src/config.ts'
-import { startTestDb, type TestDb } from './pg.ts'
+import { createApp } from '../src/create-app.js'
+import { loadConfig } from '../src/config.js'
+import { startTestDb, type TestDb } from './pg.js'
 
 describe('app skeleton', () => {
   let db: TestDb
