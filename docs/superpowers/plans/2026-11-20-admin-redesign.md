@@ -165,7 +165,36 @@ apps/web/app/admin/admin.css           rewritten for the shell and table
 - [ ] **Step 2:** FAIL. **Step 3:** Implement. **Step 4:** PASS; typecheck.
 - [ ] **Step 5:** Commit `feat(web): order tabs and staff table`.
 
-### Task 9: Deploy and visual check
+### Task 9: Installable apps (PWA) for the website, admin and wall
+
+Julius (2026-11-20): "make sure all the web apps are PWA". The till (`apps/pos`) already is (manifest, icons, `src/pwa.ts`, service worker); this task brings the website, admin and the wall to the same standard. No new dependencies.
+
+**Files:**
+- Website: Create `apps/web/app/manifest.ts`, `apps/web/public/sw.js`, `apps/web/app/offline/page.tsx`, `apps/web/components/RegisterServiceWorker.tsx`, `apps/web/public/icons/` (copy `apps/pos/public/icons/*`); Modify `apps/web/app/layout.tsx`.
+- Admin: Create `apps/web/app/admin/manifest.webmanifest/route.ts`; Modify `apps/web/app/admin/layout.tsx` (metadata `manifest: '/admin/manifest.webmanifest'`).
+- Wall: Create `wall/public/manifest.webmanifest`, `wall/public/pad.webmanifest`, `wall/public/sw.js`, `wall/public/icons/` (copy the till's icons); Modify `wall/public/index.html`, `wall/public/pad.html`, `wall/public/wall.mjs`, `wall/public/pad.js`, and `wall/server.mjs` only if it needs the `.webmanifest` content type.
+- Test: `apps/web/app/manifest.test.ts`, `apps/web/public/sw.test.ts` (or a pure module the worker imports), `wall/test/pwa.test.mjs`.
+
+**Interfaces / values:**
+- Website manifest: name `Kennko Coffee`, short_name `Kennko`, start_url `/`, scope `/`, display `standalone`, background_color `#fff5f0`, theme_color `#0055ff`, icons 192, 512, maskable 512.
+- Admin manifest: name `Kennko Admin`, short_name `Admin`, id `/admin`, start_url `/admin`, scope `/admin`, display `standalone`, background_color `#ffffff`, theme_color `#0055ff`, same icons. The admin layout's metadata points at it so installing from any admin page installs the admin app.
+- Wall manifest: name `Kennko Wall`, start_url `/`, display `fullscreen`, theme_color `#0055ff`; pad manifest: name `Kennko Pad`, start_url `/pad`, display `standalone`.
+- Website service worker (`/sw.js`, registered in production only, scope `/`):
+  - `/_next/static/*`, `/brand/*`, `/icons/*`, fonts: cache-first.
+  - Page navigations outside `/admin` and `/order`: network-first, falling back to the cached copy, then to `/offline`.
+  - **Never cached:** `/admin/**`, `/order/**`, `/orders`, `/account`, `/auth/**`, `/api/**`, any non-GET request, and any response with `Cache-Control: no-store` or a `Set-Cookie`. Signed-in pages and live prices must always come from the network.
+  - On a new deploy the cache name changes (versioned by a build id string written into `sw.js`), and old caches are deleted on `activate`.
+- `/offline` page: sticker style, wordmark, `You're offline` and `Kennko will be right here when you're back online.`
+- Wall service worker: caches the wall's static files (html, css, mjs, scene, brand, cats, icons) cache-first so the scene loads if the LAN server restarts; never caches `/api/**` or the event streams.
+- iOS: `apple-touch-icon` link and `appleWebApp: { capable: true, title: ... }` metadata on the website and admin.
+
+- [ ] **Step 1: Write failing tests:** website manifest values above; admin manifest values (start_url and scope `/admin`); the worker's routing helper `cacheStrategyFor(url: URL, method: string): 'cache-first' | 'network-first' | 'network-only'` (put it in a plain module the worker can import, e.g. `public/sw-routes.js`, tested from vitest) returns `network-only` for `/admin/menu`, `/order`, `/api/orders`, `/auth/callback`, a POST, and `cache-first` for `/_next/static/x.js`, `network-first` for `/`; wall test reads both manifests and checks `index.html`/`pad.html` link them.
+- [ ] **Step 2:** Run root `npm test` — FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** Run root `npm test` and `npm run typecheck` — PASS. Build the website once (`npm run build -w @kennko/web`) to prove `manifest.ts` and the route compile.
+- [ ] **Step 5:** Commit `feat: installable website, admin and wall (PWA)`.
+
+### Task 10: Deploy and visual check
 
 - [ ] **Step 1:** Run root `npm test` and `npm run typecheck`.
 - [ ] **Step 2:** Deploy the API (`apps/api` has the new route) and the website to Vercel production (projects `kennko-api` and `kennko`, team `illamapaloozas-projects`; relink with `vercel link --project <name>` and delete the pulled root `.env.local` after each link).
