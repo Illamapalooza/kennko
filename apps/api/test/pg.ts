@@ -55,7 +55,8 @@ export async function startTestDb(opts: StartOptions = {}): Promise<TestDb> {
     await server.start()
 
     const url = `postgres://postgres:postgres@127.0.0.1:${port}/postgres`
-    // PGlite serves one connection at a time and has no prepared-statement pool.
+    // PGlite has no prepared-statement pool. The server allows two connections, but both share one backend
+    // session, so tests cannot exercise locking or isolation between connections.
     sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} })
     const client = sql
     const srv = server

@@ -88,6 +88,19 @@ test('two publishes at the same time make one version', async () => {
   }
 })
 
+test('option groups of inactive categories are left out', async () => {
+  const groupNames = (body: { optionGroups: { name: string }[] }) => body.optionGroups.map((g) => g.name)
+  const before = await buildSnapshotBody(db.sql)
+  expect(groupNames(before)).toEqual(expect.arrayContaining(['Cookie flavour', 'Fries flavour']))
+
+  await db.sql`update menu_categories set is_active = false where name = 'Food'`
+  const after = await buildSnapshotBody(db.sql)
+  expect(groupNames(after)).not.toContain('Cookie flavour')
+  expect(groupNames(after)).not.toContain('Fries flavour')
+  expect(after.categories.map((c) => c.name)).not.toContain('Food')
+  await db.sql`update menu_categories set is_active = true where name = 'Food'`
+})
+
 test('hashBody ignores key order', async () => {
   const body = await buildSnapshotBody(db.sql)
   const reverse = (v: unknown): unknown =>

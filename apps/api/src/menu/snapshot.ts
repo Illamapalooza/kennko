@@ -14,6 +14,7 @@ export async function buildSnapshotBody(sql: Db): Promise<SnapshotBody> {
   const items = await sql`
     select i.id, i.category_id, i.name, i.description, i.image_path, i.is_bestseller
     from menu_items i
+    join menu_categories c on c.id = i.category_id and c.is_active
     where not i.is_archived
     order by i.sort_order, i.name, i.id`
   const variants = await sql`
