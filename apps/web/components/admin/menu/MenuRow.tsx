@@ -22,6 +22,7 @@ export function MenuRow({ item, kind, isOwner }: { item: AdminTableItem; kind: '
           <PriceCell
             key={cell.code}
             itemId={item.id}
+            itemName={item.name}
             code={cell.code}
             label={cell.label}
             initialCentavos={cell.priceCentavos}

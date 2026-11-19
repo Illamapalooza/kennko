@@ -304,6 +304,18 @@ export async function updateVariantPrice(
   }
 
   const db = await getServerClient()
+  const { data: found } = await db
+    .from('menu_items')
+    .select('id, menu_categories!inner ( kind )')
+    .eq('id', itemId)
+    .maybeSingle()
+  if (!found) return { ok: false, message: 'Item not found.' }
+  const rawCategory = (found as unknown as { menu_categories: { kind: CategoryKind } | { kind: CategoryKind }[] }).menu_categories
+  const kind = (Array.isArray(rawCategory) ? rawCategory[0] : rawCategory).kind
+  if (!variantCodesFor(kind).includes(code)) {
+    return { ok: false, message: 'That size does not apply to this item.' }
+  }
+
   const now = new Date().toISOString()
 
   if (priceCentavos === null) {

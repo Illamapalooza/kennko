@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { updateVariantPrice } from '@/app/admin/menu/actions'
+import { formatPesos } from '@/lib/money'
 import type { VariantCode } from '@/lib/menu/types'
 
 type Props = {
   itemId: string
+  itemName: string
   code: VariantCode
   label: string
   initialCentavos: number | null
@@ -17,34 +19,63 @@ function toInput(centavos: number | null): string {
   return centavos === null ? '' : (centavos / 100).toFixed(2)
 }
 
-export function PriceCell({ itemId, code, label, initialCentavos, editable, soldOut = false }: Props) {
+export function PriceCell({ itemId, itemName, code, label, initialCentavos, editable, soldOut = false }: Props) {
   const [value, setValue] = useState(toInput(initialCentavos))
-  const saved = useRef(toInput(initialCentavos))
+  const [savedText, setSavedText] = useState(toInput(initialCentavos))
+  const valueRef = useRef(value)
+  const savedRef = useRef(savedText)
+  const inFlight = useRef(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [message, setMessage] = useState('')
 
+  const dirty = value !== savedText
+  const warn = status === 'saving' || (status === 'error' && dirty)
+
   useEffect(() => {
-    if (status !== 'saving') return
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [status])
+    if (!warn) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [warn])
 
   async function save() {
-    if (value === saved.current || status === 'saving') return
+    if (inFlight.current || valueRef.current === savedRef.current) return
+    inFlight.current = true
     setStatus('saving')
-    const result = await updateVariantPrice(itemId, code, value)
-    if (result.ok) {
-      saved.current = toInput(result.priceCentavos)
-      setValue(saved.current)
+    try {
+      // Text typed while a save is in flight is sent next, never overwritten.
+      while (valueRef.current !== savedRef.current) {
+        const sent = valueRef.current
+        let result: Awaited<ReturnType<typeof updateVariantPrice>>
+        try {
+          result = await updateVariantPrice(itemId, code, sent)
+        } catch {
+          setMessage('Could not save. Try again.')
+          setStatus('error')
+          return
+        }
+        if (!result.ok) {
+          setMessage(result.message)
+          setStatus('error')
+          return
+        }
+        savedRef.current = toInput(result.priceCentavos)
+        setSavedText(savedRef.current)
+        if (valueRef.current === sent) {
+          valueRef.current = savedRef.current
+          setValue(savedRef.current)
+        }
+      }
       setStatus('saved')
-    } else {
-      setMessage(result.message)
-      setStatus('error')
+    } finally {
+      inFlight.current = false
     }
   }
 
-  const display = value === '' ? 'Not offered' : `₱${value}`
+  const inputLabel = label === 'Single price' ? `${itemName} single price` : `${itemName} ${label} price`
 
   return (
     <div className="price-cell">
@@ -56,8 +87,11 @@ export function PriceCell({ itemId, code, label, initialCentavos, editable, sold
             inputMode="decimal"
             value={value}
             placeholder="—"
-            aria-label={`${label} price`}
-            onChange={(e) => setValue(e.target.value)}
+            aria-label={inputLabel}
+            onChange={(e) => {
+              valueRef.current = e.target.value
+              setValue(e.target.value)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
@@ -67,7 +101,9 @@ export function PriceCell({ itemId, code, label, initialCentavos, editable, sold
             onBlur={() => void save()}
           />
         ) : (
-          <span className="price-cell-value">{display}</span>
+          <span className="price-cell-value">
+            {savedText === '' ? 'Not offered' : formatPesos(Math.round(Number(savedText) * 100))}
+          </span>
         )}
       </label>
       {status === 'saving' ? <small>Saving…</small> : null}

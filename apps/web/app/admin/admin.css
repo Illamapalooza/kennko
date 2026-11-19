@@ -147,8 +147,8 @@
 }
 
 .admin-notice {
-  color: #7a4b00;
-  background: #fff4e0;
+  color: var(--ink);
+  background: var(--amber-soft);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   margin: 0 0 14px;
@@ -259,7 +259,7 @@
   padding-left: 10px;
   border-left: 3px solid var(--amber);
   font-style: italic;
-  color: #7a4b00;
+  color: var(--ink);
 }
 
 /* Publish bar: sticky to the bottom of the main column (above the phone tabs). */
@@ -325,12 +325,12 @@
 .menu-row { display: grid; gap: 8px; padding: 12px; background: var(--white); border-bottom: 1px solid var(--line); }
 .menu-row.is-archived { opacity: 0.6; }
 .menu-row-name { display: flex; align-items: center; gap: 8px; font-weight: 600; flex-wrap: wrap; }
-.menu-row-tag, .price-cell-sold { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: #fff4e0; color: #7a4b00; }
+.menu-row-tag, .price-cell-sold { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: var(--amber-soft); color: var(--ink); }
 .menu-row-prices { display: flex; flex-wrap: wrap; gap: 8px; }
 .price-cell-label { display: grid; gap: 2px; font-size: 0.8rem; }
 .price-cell input { width: 96px; min-height: 44px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-md); }
 .price-cell small { display: block; font-size: 0.75rem; }
-.price-cell-error { color: #b00020; }
+.price-cell-error { color: var(--red); }
 .menu-row-actions { display: flex; align-items: center; gap: 8px; }
 .menu-row-open { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; font-size: 1.4rem; }
 .star-toggle { min-width: 44px; background: none; border: 0; color: var(--blue); font-size: 1.25rem; }
@@ -338,3 +338,5 @@
 @media (min-width: 921px) {
   .menu-row { grid-template-columns: minmax(180px, 1fr) auto auto; align-items: start; }
 }
+.menu-chip, .star-toggle, .menu-toggles label { min-height: var(--tap); }
+.menu-chip, .menu-toggles label { display: inline-flex; align-items: center; }
