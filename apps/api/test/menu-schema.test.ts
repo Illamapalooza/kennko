@@ -142,10 +142,7 @@ test('anon reads live variants only', async () => {
     values (${cat.id}, 'Old Brew', true) returning id`
   await db.sql`insert into menu_variants (item_id, code, label, price_centavos, temperature)
     values (${archivedItem.id}, 'M', 'Medium', 100, 'iced')`
-  await db.sql.begin(async (tx) => {
-    await tx`set local session_replication_role = replica`
-    await tx`update menu_variants set is_archived = true where item_id = ${ITEM} and code = 'XL'`
-  })
+  await db.sql`update menu_variants set is_archived = true where item_id = ${ITEM} and code = 'XL'`
   const rows = await asUser(db.sql, null, (tx) =>
     tx`select i.name, v.code from menu_variants v join menu_items i on i.id = v.item_id
        where i.name in ('Americano', 'Old Brew') order by v.sort_order`,
@@ -178,4 +175,15 @@ test('kennko_api can insert a snapshot and cannot update menu_items', async () =
   const items = await run((tx) => tx`select count(*)::int as n from menu_items`)
   expect(items[0].n).toBeGreaterThan(0)
   await expect(run((tx) => tx`update menu_items set name = 'x'`)).rejects.toMatchObject({ code: '42501' })
+  await expect(run((tx) => tx`update menu_snapshots set body_hash = 'z'`)).rejects.toMatchObject({ code: '42501' })
+  await expect(run((tx) => tx`delete from menu_publish_lock`)).rejects.toMatchObject({ code: '42501' })
+  await run((tx) => tx`update menu_publish_lock set id = true`)
+})
+
+test('trusted server sessions (no JWT) are not restricted by the guards', async () => {
+  const [variant] = await db.sql`select id from menu_variants where item_id = ${ITEM} and code = 'M'`
+  await db.sql`update menu_variants set price_centavos = 8100 where id = ${variant.id}`
+  const [row] = await db.sql`select price_centavos from menu_variants where id = ${variant.id}`
+  expect(row.price_centavos).toBe(8100)
+  await db.sql`update menu_variants set price_centavos = 8000 where id = ${variant.id}`
 })

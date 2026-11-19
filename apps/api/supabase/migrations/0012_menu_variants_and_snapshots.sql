@@ -183,7 +183,9 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
-  if public.is_owner() then
+  -- Only signed-in JWT users are restricted; postgres, service_role and
+  -- kennko_api sessions are trusted server code.
+  if auth.role() <> 'authenticated' or public.is_owner() then
     return new;
   end if;
 
@@ -211,7 +213,9 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
-  if public.is_owner() then
+  -- Only signed-in JWT users are restricted; postgres, service_role and
+  -- kennko_api sessions are trusted server code.
+  if auth.role() <> 'authenticated' or public.is_owner() then
     return new;
   end if;
 
@@ -240,7 +244,9 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
-  if public.is_owner() then
+  -- Only signed-in JWT users are restricted; postgres, service_role and
+  -- kennko_api sessions are trusted server code.
+  if auth.role() <> 'authenticated' or public.is_owner() then
     return new;
   end if;
 
@@ -338,16 +344,18 @@ grant select on
 grant insert on menu_snapshots to kennko_api;
 grant select, update on menu_publish_lock to kennko_api;
 
-create policy "api reads menu_categories" on menu_categories for all to kennko_api using (true) with check (true);
-create policy "api reads menu_items" on menu_items for all to kennko_api using (true) with check (true);
-create policy "api reads menu_item_prices" on menu_item_prices for all to kennko_api using (true) with check (true);
-create policy "api reads modifier_groups" on modifier_groups for all to kennko_api using (true) with check (true);
-create policy "api reads modifiers" on modifiers for all to kennko_api using (true) with check (true);
-create policy "api reads menu_variants" on menu_variants for all to kennko_api using (true) with check (true);
-create policy "api reads option_groups" on option_groups for all to kennko_api using (true) with check (true);
-create policy "api reads options" on options for all to kennko_api using (true) with check (true);
-create policy "api reads item_option_groups" on item_option_groups for all to kennko_api using (true) with check (true);
-create policy "api reads discount_presets" on discount_presets for all to kennko_api using (true) with check (true);
-create policy "api reads staff" on staff for all to kennko_api using (true) with check (true);
-create policy "api writes menu_snapshots" on menu_snapshots for all to kennko_api using (true) with check (true);
-create policy "api uses menu_publish_lock" on menu_publish_lock for all to kennko_api using (true) with check (true);
+create policy "api reads menu_categories" on menu_categories for select to kennko_api using (true);
+create policy "api reads menu_items" on menu_items for select to kennko_api using (true);
+create policy "api reads menu_item_prices" on menu_item_prices for select to kennko_api using (true);
+create policy "api reads modifier_groups" on modifier_groups for select to kennko_api using (true);
+create policy "api reads modifiers" on modifiers for select to kennko_api using (true);
+create policy "api reads menu_variants" on menu_variants for select to kennko_api using (true);
+create policy "api reads option_groups" on option_groups for select to kennko_api using (true);
+create policy "api reads options" on options for select to kennko_api using (true);
+create policy "api reads item_option_groups" on item_option_groups for select to kennko_api using (true);
+create policy "api reads discount_presets" on discount_presets for select to kennko_api using (true);
+create policy "api reads staff" on staff for select to kennko_api using (true);
+create policy "api reads menu_snapshots" on menu_snapshots for select to kennko_api using (true);
+create policy "api inserts menu_snapshots" on menu_snapshots for insert to kennko_api with check (true);
+create policy "api reads menu_publish_lock" on menu_publish_lock for select to kennko_api using (true);
+create policy "api updates menu_publish_lock" on menu_publish_lock for update to kennko_api using (true) with check (true);
