@@ -16,7 +16,8 @@ export function menuRoutes(deps: AppDeps): Hono<AppEnv> {
       'Cache-Control': 'public, max-age=30, stale-while-revalidate=300',
     }
     const match = c.req.header('If-None-Match')
-    if (match && match.split(',').some((t) => t.trim() === latest.etag)) {
+    const tokens = (match ?? '').split(',').map((t) => t.trim().replace(/^W\//, ''))
+    if (tokens.some((t) => t === '*' || t === latest.etag)) {
       return new Response(null, { status: 304, headers })
     }
     return c.json(latest.snapshot, 200, headers)
@@ -29,7 +30,7 @@ export function menuRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get('/:version', async (c) => {
     const raw = c.req.param('version')
     const version = Number(raw)
-    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(version)) {
+    if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(version)) {
       throw apiError(400, 'BAD_VERSION', 'Version must be a positive integer')
     }
     const snapshot = await readMenuVersion(deps.sql, version)

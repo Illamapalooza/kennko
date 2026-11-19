@@ -33,10 +33,8 @@ export async function readLatestMenu(sql: postgres.Sql): Promise<{ snapshot: Men
 
   const unavailable: string[] = []
   const mark = (x: { id: string; isAvailable: boolean }) => {
-    if (off.has(x.id)) {
-      x.isAvailable = false
-      unavailable.push(x.id)
-    }
+    x.isAvailable = !off.has(x.id)
+    if (!x.isAvailable) unavailable.push(x.id)
   }
   for (const cat of snapshot.categories) {
     for (const item of cat.items) {

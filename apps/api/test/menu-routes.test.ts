@@ -45,7 +45,7 @@ describe('menu routes', () => {
   })
 
   const publish = () => app.request('/v1/menu/publish', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
-  type Snap = { version: number; categories: { name: string; items: { variants: { isAvailable: boolean }[] }[] }[] }
+  type Snap = { version: number; categories: { name: string; items: { id: string; isAvailable: boolean; variants: { isAvailable: boolean }[] }[] }[] }
 
   it('no snapshot -> 404 NO_MENU', async () => {
     const res = await app.request('/v1/menu')
@@ -84,8 +84,33 @@ describe('menu routes', () => {
     const etag = (await app.request('/v1/menu')).headers.get('ETag')!
     const res = await app.request('/v1/menu', { headers: { 'If-None-Match': etag } })
     expect(res.status).toBe(304)
+    const weak = await app.request('/v1/menu', { headers: { 'If-None-Match': `W/${etag}` } })
+    expect(weak.status).toBe(304)
+    const multi = await app.request('/v1/menu', { headers: { 'If-None-Match': `"v0-00000000", ${etag}` } })
+    expect(multi.status).toBe(304)
+    expect((await app.request('/v1/menu', { headers: { 'If-None-Match': '*' } })).status).toBe(304)
+    expect(await res.text()).toBe('')
+    expect(res.headers.get('ETag')).toBe(etag)
+    expect(res.headers.get('Cache-Control')).toBe('public, max-age=30, stale-while-revalidate=300')
     const stale = await app.request('/v1/menu', { headers: { 'If-None-Match': '"v0-00000000"' } })
     expect(stale.status).toBe(200)
+  })
+
+  it('overlays sold-out items and options too, and back to available', async () => {
+    const [opt] = await db.sql`select o.id from options o limit 1`
+    const [item] = await db.sql`select id from menu_items limit 1`
+    const flat = async () => {
+      const b = (await (await app.request('/v1/menu')).json()) as Snap & { optionGroups: { options: { id: string; isAvailable: boolean }[] }[] }
+      return { item: b.categories.flatMap((c) => c.items).find((i) => i.id === item!.id)!.isAvailable, opt: b.optionGroups.flatMap((g) => g.options).find((o) => o.id === opt?.id)?.isAvailable }
+    }
+    await db.sql`update menu_items set is_available = false where id = ${item!.id}`
+    if (opt) await db.sql`update options set is_available = false where id = ${opt.id}`
+    const off = await flat()
+    expect(off.item).toBe(false)
+    if (opt) expect(off.opt).toBe(false)
+    await db.sql`update menu_items set is_available = true where id = ${item!.id}`
+    if (opt) await db.sql`update options set is_available = true where id = ${opt.id}`
+    expect((await flat()).item).toBe(true)
   })
 
   it('a version endpoint ignores later sold-out marks', async () => {
@@ -101,7 +126,7 @@ describe('menu routes', () => {
     const missing = await app.request('/v1/menu/99')
     expect(missing.status).toBe(404)
     expect(((await missing.json()) as { code: string }).code).toBe('NO_SUCH_VERSION')
-    for (const v of ['abc', '1.5', '-1', '99999999999999999999']) {
+    for (const v of ['abc', '1.5', '-1', '0', '01', '1e3', '99999999999999999999']) {
       const res = await app.request(`/v1/menu/${v}`)
       expect(res.status).toBe(400)
       expect(((await res.json()) as { code: string }).code).toBe('BAD_VERSION')
