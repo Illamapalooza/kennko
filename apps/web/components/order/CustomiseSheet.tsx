@@ -10,6 +10,7 @@ import {
   ICE_LEVELS, ICE_SERVES, takesIce, takesIceServe, normaliseIce,
   type IceLevel, type IceServe,
 } from '@/lib/cart/ice'
+import { groupsForItem } from '@/lib/menu/item-groups'
 import type { DrinkSize, MenuItemWithPrices } from '@/lib/menu/types'
 
 export type ModifierGroup = {
@@ -29,7 +30,7 @@ export type SheetResult = {
 }
 
 export function CustomiseSheet({
-  item, initialSize, groups, onCancel, onAdd,
+  item, initialSize, groups: allGroups, onCancel, onAdd,
 }: {
   item: MenuItemWithPrices
   initialSize: DrinkSize
@@ -37,6 +38,8 @@ export function CustomiseSheet({
   onCancel: () => void
   onAdd: (item: MenuItemWithPrices, result: SheetResult) => void
 }) {
+  // Only this item's own groups: checkout refuses an add-on whose group is not linked to the item.
+  const groups = useMemo(() => groupsForItem(allGroups, item.optionGroupIds), [allGroups, item.optionGroupIds])
   const [size, setSize] = useState<DrinkSize>(initialSize)
   const [modIds, setModIds] = useState<string[]>([])
   const [qty, setQty] = useState(1)

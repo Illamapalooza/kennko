@@ -8,6 +8,7 @@ import { mapMenuRows } from '@/lib/menu/queries'
 import { validateImage } from '@/lib/images/validate'
 import { publishMenu } from '@/lib/menu/publish'
 import { publishFailedUrl } from './publish-notice'
+import { drinkGroupLinksFor, type DrinkGroupLinkRow } from './drink-groups'
 import { VARIANT_META, parseVariantPrices, variantCodesFor, type CategoryKind } from './format'
 import type { AdminMenuCategory, VariantCode } from '@/lib/menu/types'
 
@@ -103,6 +104,19 @@ export async function saveMenuItem(formData: FormData) {
     : await db.from('menu_items').insert(row).select('id').single()
 
   if (error) throw new Error(`Could not save the drink: ${error.message}`)
+
+  // A new drink gets the drink add-on groups, or checkout would refuse every add-on on it. Food gets none.
+  if (!id && kind === 'drink') {
+    const { data: linked, error: linkedError } = await db
+      .from('item_option_groups')
+      .select('group_id, sort_order, menu_items!inner ( is_archived, menu_categories!inner ( kind ) )')
+    if (linkedError) throw new Error(`Could not load the add-on groups: ${linkedError.message}`)
+    const links = drinkGroupLinksFor(saved.id, (linked ?? []) as unknown as DrinkGroupLinkRow[])
+    if (links.length > 0) {
+      const { error: linkError } = await db.from('item_option_groups').insert(links)
+      if (linkError) throw new Error(`Could not attach the add-ons: ${linkError.message}`)
+    }
+  }
 
   // A blank price archives the variant rather than deleting it, so history and a later re-price keep working.
   const offered = variantCodesFor(kind).filter((code) => prices[code] !== null)

@@ -29,14 +29,26 @@ export default async function OrderPage() {
   if (process.env.NEXT_PUBLIC_ORDERING_ENABLED !== 'true') notFound()
 
   const db = getPublicClient()
-  let snapshot: MenuSnapshot | null = null
+  // The mapping sits inside the try too, so a malformed 200 shows the same "menu can't load" card.
+  let categories: ReturnType<typeof menuFromSnapshot>
+  let modifierGroups: ModifierGroup[]
   try {
-    snapshot = await fetchMenuSnapshot()
+    const snapshot: MenuSnapshot | null = await fetchMenuSnapshot()
+    if (!snapshot) return <MenuUnavailable />
+    categories = menuFromSnapshot(snapshot)
+    // An unavailable modifier is never offered.
+    modifierGroups = liveDrinkMenu(snapshot, Date.now()).modifierGroups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      isMultiSelect: g.isMultiSelect,
+      modifiers: g.modifiers
+        .filter((m) => m.isAvailable)
+        .map((m) => ({ id: m.id, name: m.name, priceCentavos: m.priceCentavos })),
+    }))
   } catch (err) {
     console.error('Could not load the menu for /order', err)
+    return <MenuUnavailable />
   }
-  if (!snapshot) return <MenuUnavailable />
-  const categories = menuFromSnapshot(snapshot)
   const customer = await getCurrentCustomer()
 
   const { data: zones } = await db
@@ -44,16 +56,6 @@ export default async function OrderPage() {
     .select('barangay, is_home, latitude, longitude, fee_override_centavos')
     .eq('is_active', true)
     .order('sort_order')
-
-  // An unavailable modifier is never offered.
-  const modifierGroups: ModifierGroup[] = liveDrinkMenu(snapshot, Date.now()).modifierGroups.map((g) => ({
-    id: g.id,
-    name: g.name,
-    isMultiSelect: g.isMultiSelect,
-    modifiers: g.modifiers
-      .filter((m) => m.isAvailable)
-      .map((m) => ({ id: m.id, name: m.name, priceCentavos: m.priceCentavos })),
-  }))
 
   // Quoted with the same function the server charges with, so the price shown
   // before payment is the price recomputed after it.

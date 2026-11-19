@@ -11,6 +11,8 @@ export type MenuItemWithPrices = {
   isBestseller: boolean
   isAvailable: boolean
   prices: MenuItemPrice[]
+  /** The option groups linked to this item; only these may be offered (and accepted at checkout). */
+  optionGroupIds: string[]
 }
 
 export type MenuCategoryWithItems = {
@@ -22,7 +24,7 @@ export type MenuCategoryWithItems = {
 /** A variant code the admin can price: a drink size, or REG for food. */
 export type VariantCode = DrinkSize | 'REG'
 
-export type AdminMenuItem = Omit<MenuItemWithPrices, 'prices'> & {
+export type AdminMenuItem = Omit<MenuItemWithPrices, 'prices' | 'optionGroupIds'> & {
   prices: { size: VariantCode; priceCentavos: number }[]
 }
 

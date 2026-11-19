@@ -76,6 +76,7 @@ export function menuFromSnapshot(s: MenuSnapshot | null): MenuCategoryWithItems[
       isBestseller: item.isBestseller,
       isAvailable: item.isAvailable,
       prices: item.prices,
+      optionGroupIds: extras.get(item.id)?.optionGroupIds ?? [],
     })),
   }))
 }

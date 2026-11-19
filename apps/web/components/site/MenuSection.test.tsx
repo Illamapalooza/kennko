@@ -15,6 +15,7 @@ const categories: MenuCategoryWithItems[] = [
         imagePath: null,
         isBestseller: false,
         isAvailable: true,
+        optionGroupIds: [],
         prices: [
           { size: 'M', priceCentavos: 8000 },
           { size: 'L', priceCentavos: 9000 },
@@ -27,6 +28,7 @@ const categories: MenuCategoryWithItems[] = [
         imagePath: null,
         isBestseller: true,
         isAvailable: true,
+        optionGroupIds: [],
         prices: [{ size: 'M', priceCentavos: 10500 }],
       },
       {
@@ -36,6 +38,7 @@ const categories: MenuCategoryWithItems[] = [
         imagePath: null,
         isBestseller: false,
         isAvailable: false,
+        optionGroupIds: [],
         prices: [{ size: 'M', priceCentavos: 10500 }],
       },
     ],

@@ -126,6 +126,19 @@ describe('menuFromSnapshot', () => {
     ])
   })
 
+  it("carries each item's own optionGroupIds through", () => {
+    const withGroups: MenuSnapshot = {
+      ...snapshot,
+      categories: snapshot.categories.map((c) =>
+        c.kind === 'drink'
+          ? { ...c, items: c.items.map((i) => ({ ...i, optionGroupIds: ['g-milk'] })) }
+          : c,
+      ),
+    }
+    expect(menuFromSnapshot(withGroups)[0].items[0].optionGroupIds).toEqual(['g-milk'])
+    expect(menuFromSnapshot(snapshot)[0].items[0].optionGroupIds).toEqual([])
+  })
+
   it('leaves food out of the drink list', () => {
     expect(menuFromSnapshot(snapshot).map((c) => c.name)).toEqual(['Premium Classics'])
   })

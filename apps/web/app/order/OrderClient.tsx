@@ -12,6 +12,7 @@ import { SIZE_VOLUMES } from '@/lib/menu/sizes'
 import { describeFee, ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
 import { LocationPin, type SharedPin } from '@/components/order/LocationPin'
 import { CatToon, type CatCoat, type CatPose } from '@kennko/cats'
+import { groupsForItem } from '@/lib/menu/item-groups'
 import type { MenuCategoryWithItems, MenuItemWithPrices, DrinkSize } from '@/lib/menu/types'
 
 // A cat from the wall's cast perches on each category label, cycling through the poses.
@@ -190,7 +191,7 @@ export function OrderClient({
   function addLine(item: MenuItemWithPrices, result: SheetResult) {
     const price = item.prices.find((p) => p.size === result.size)
     if (!price) return
-    const mods = modifierGroups
+    const mods = groupsForItem(modifierGroups, item.optionGroupIds)
       .flatMap((g) => g.modifiers)
       .filter((m) => result.modIds.includes(m.id))
 
