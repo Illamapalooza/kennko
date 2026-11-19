@@ -12,11 +12,21 @@ vi.mock('@/lib/auth/session', () => ({
   requireStaff: vi.fn(),
   requireOwner: vi.fn(),
 }))
+const itemUpdates: Record<string, unknown>[] = []
+const storageUpload = vi.fn(async () => ({ error: null }))
+const storageRemove = vi.fn(async () => ({ error: null }))
 vi.mock('@/lib/supabase/server', () => ({
   getServerClient: async () => ({
+    storage: { from: () => ({ upload: storageUpload, remove: storageRemove }) },
     from: (t: string) =>
       t === 'menu_items'
-        ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: found, error: null }) }) }) }
+        ? {
+            select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: found, error: null }) }) }),
+            update: (payload: Record<string, unknown>) => {
+              itemUpdates.push(payload)
+              return { eq: async () => ({ error: null }) }
+            },
+          }
         : { upsert },
   }),
 }))
@@ -82,5 +92,70 @@ describe('saveMenuItemDraft', () => {
     getCurrentStaff.mockResolvedValue({ role: 'owner' })
     const { saveMenuItemDraft } = await import('./actions')
     expect(await saveMenuItemDraft(new FormData())).toEqual({ ok: false, message: 'Enter a name' })
+  })
+})
+
+describe('archiveMenuItem', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    itemUpdates.length = 0
+  })
+
+  it('archives as a draft: does not touch is_available', async () => {
+    const { archiveMenuItem } = await import('./actions')
+    await archiveMenuItem('i1')
+    expect(itemUpdates).toEqual([{ is_archived: true }])
+  })
+})
+
+describe('unarchiveMenuItem', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    itemUpdates.length = 0
+  })
+
+  it('refuses a barista', async () => {
+    getCurrentStaff.mockResolvedValue({ role: 'barista' })
+    const { unarchiveMenuItem } = await import('./actions')
+    expect(await unarchiveMenuItem('i1')).toEqual({ ok: false, message: 'Only the owner can change the menu.' })
+    expect(itemUpdates).toEqual([])
+  })
+
+  it('restores the item for the owner without publishing', async () => {
+    getCurrentStaff.mockResolvedValue({ role: 'owner' })
+    const { unarchiveMenuItem } = await import('./actions')
+    const { publishMenu } = await import('@/lib/menu/publish')
+    expect(await unarchiveMenuItem('i1')).toEqual({ ok: true })
+    expect(itemUpdates).toEqual([{ is_archived: false }])
+    expect(revalidatePath).toHaveBeenCalledWith('/admin', 'layout')
+    expect(publishMenu).not.toHaveBeenCalled()
+  })
+})
+
+describe('menu photos keep the published image alive', () => {
+  const PNG = new File(
+    [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])],
+    'p.png',
+    { type: 'image/png' },
+  )
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    itemUpdates.length = 0
+    found = { image_path: 'menu/i1/old.png' } as never
+  })
+
+  it('replacing a photo does not delete the old object', async () => {
+    const { uploadMenuImage } = await import('./actions')
+    await uploadMenuImage('i1', PNG)
+    expect(storageUpload).toHaveBeenCalledTimes(1)
+    expect(storageRemove).not.toHaveBeenCalled()
+  })
+
+  it('removing a photo does not delete the object', async () => {
+    const { removeMenuImage } = await import('./actions')
+    await removeMenuImage('i1')
+    expect(itemUpdates).toEqual([{ image_path: null }])
+    expect(storageRemove).not.toHaveBeenCalled()
   })
 })

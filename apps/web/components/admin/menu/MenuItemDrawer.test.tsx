@@ -5,12 +5,14 @@ const replace = vi.fn()
 const saveMenuItemDraft = vi.fn()
 const setItemOptionGroups = vi.fn()
 const archiveMenuItem = vi.fn()
+const unarchiveMenuItem = vi.fn()
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace }) }))
 vi.mock('@/app/admin/menu/actions', () => ({
   saveMenuItemDraft: (...a: unknown[]) => saveMenuItemDraft(...a),
   setItemOptionGroups: (...a: unknown[]) => setItemOptionGroups(...a),
   archiveMenuItem: (...a: unknown[]) => archiveMenuItem(...a),
+  unarchiveMenuItem: (...a: unknown[]) => unarchiveMenuItem(...a),
   uploadMenuImage: vi.fn(),
   removeMenuImage: vi.fn(),
 }))
@@ -96,5 +98,45 @@ describe('MenuItemDrawer', () => {
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
     expect(screen.queryByLabelText('Name')).toBeNull()
+  })
+
+  it('asks before archiving, and does nothing when cancelled', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<MenuItemDrawer item={item} categories={categories} optionGroups={optionGroups} isOwner />)
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    expect(confirm).toHaveBeenCalledWith('Archive "Latte"? It disappears from the menu after you publish.')
+    expect(archiveMenuItem).not.toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
+  it('archives after confirmation', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    archiveMenuItem.mockResolvedValue(undefined)
+    render(<MenuItemDrawer item={item} categories={categories} optionGroups={optionGroups} isOwner />)
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    await waitFor(() => expect(archiveMenuItem).toHaveBeenCalledWith('i1'))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/admin/menu'))
+    confirm.mockRestore()
+  })
+
+  it('shows Restore instead of Archive for an archived item', async () => {
+    unarchiveMenuItem.mockResolvedValue({ ok: true })
+    render(
+      <MenuItemDrawer item={{ ...item, isArchived: true }} categories={categories} optionGroups={optionGroups} isOwner />,
+    )
+    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(unarchiveMenuItem).toHaveBeenCalledWith('i1'))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/admin/menu'))
+  })
+
+  it('shows a restore error inline', async () => {
+    unarchiveMenuItem.mockResolvedValue({ ok: false, message: 'Only the owner can change the menu.' })
+    render(
+      <MenuItemDrawer item={{ ...item, isArchived: true }} categories={categories} optionGroups={optionGroups} isOwner />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('Only the owner can change the menu.')
+    expect(replace).not.toHaveBeenCalled()
   })
 })

@@ -230,20 +230,33 @@ export async function setItemOptionGroups(itemId: string, groupIds: string[]): P
   return { ok: true }
 }
 
+/**
+ * Archive is a draft like every other edit: the item leaves the published
+ * menu only when the owner publishes, and Restore undoes it until then.
+ */
 export async function archiveMenuItem(id: string) {
   await requireOwner()
   const db = await getServerClient()
 
-  const { error } = await db
-    .from('menu_items')
-    .update({ is_archived: true, is_available: false })
-    .eq('id', id)
+  const { error } = await db.from('menu_items').update({ is_archived: true }).eq('id', id)
 
   if (error) throw new Error(`Could not archive the drink: ${error.message}`)
 
   revalidatePath('/admin/menu')
-  revalidatePath('/')
   revalidatePath('/admin', 'layout')
+}
+
+/** Undo an archive. A draft too: it reaches customers on the next publish. */
+export async function unarchiveMenuItem(id: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  const staff = await getCurrentStaff()
+  if (staff?.role !== 'owner') return { ok: false, message: 'Only the owner can change the menu.' }
+
+  const db = await getServerClient()
+  const { error } = await db.from('menu_items').update({ is_archived: false }).eq('id', id)
+  if (error) return { ok: false, message: `Could not restore the item: ${error.message}` }
+
+  revalidatePath('/admin', 'layout')
+  return { ok: true }
 }
 
 export async function uploadMenuImage(itemId: string, file: File) {
@@ -253,12 +266,6 @@ export async function uploadMenuImage(itemId: string, file: File) {
   const bytes = new Uint8Array(await file.arrayBuffer())
   const check = validateImage(bytes, file.size)
   if (!check.ok) throw new Error(check.error)
-
-  const { data: existing } = await db
-    .from('menu_items')
-    .select('image_path')
-    .eq('id', itemId)
-    .maybeSingle()
 
   // A fresh UUID per upload, so a replacement never collides with a
   // CDN-cached predecessor and the new photo shows immediately.
@@ -280,9 +287,8 @@ export async function uploadMenuImage(itemId: string, file: File) {
     throw new Error(`Could not attach the image: ${updateError.message}`)
   }
 
-  if (existing?.image_path) {
-    await db.storage.from(IMAGE_BUCKET).remove([existing.image_path])
-  }
+  // The old object is kept: the published snapshot may still point at it.
+  // Orphans are cleaned up later.
 
   revalidatePath('/admin/menu')
   revalidatePath('/')
@@ -293,21 +299,14 @@ export async function removeMenuImage(itemId: string) {
   await requireOwner()
   const db = await getServerClient()
 
-  const { data: existing } = await db
-    .from('menu_items')
-    .select('image_path')
-    .eq('id', itemId)
-    .maybeSingle()
-
   const { error } = await db
     .from('menu_items')
     .update({ image_path: null })
     .eq('id', itemId)
   if (error) throw new Error(`Could not remove the image: ${error.message}`)
 
-  if (existing?.image_path) {
-    await db.storage.from(IMAGE_BUCKET).remove([existing.image_path])
-  }
+  // The object is kept: the published snapshot may still point at it.
+  // Orphans are cleaned up later.
 
   revalidatePath('/admin/menu')
   revalidatePath('/')

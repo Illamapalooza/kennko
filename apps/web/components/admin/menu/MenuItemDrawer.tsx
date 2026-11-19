@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { archiveMenuItem, saveMenuItemDraft, setItemOptionGroups } from '@/app/admin/menu/actions'
+import { archiveMenuItem, saveMenuItemDraft, setItemOptionGroups, unarchiveMenuItem } from '@/app/admin/menu/actions'
 import { CategoryPriceFields } from '../CategoryPriceFields'
 import { ImageUploadField } from '../ImageUploadField'
 import type { CategoryKind } from '@/app/admin/menu/format'
@@ -82,6 +82,7 @@ export function MenuItemDrawer({ item, categories, optionGroups, isOwner }: Menu
 
   function onArchive() {
     if (!item) return
+    if (!window.confirm(`Archive "${item.name}"? It disappears from the menu after you publish.`)) return
     setError(null)
     startTransition(async () => {
       try {
@@ -90,6 +91,16 @@ export function MenuItemDrawer({ item, categories, optionGroups, isOwner }: Menu
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Could not archive the item')
       }
+    })
+  }
+
+  function onRestore() {
+    if (!item) return
+    setError(null)
+    startTransition(async () => {
+      const restored = await unarchiveMenuItem(item.id)
+      if (!restored.ok) return setError(restored.message)
+      router.replace(CLOSE_TO)
     })
   }
 
@@ -182,7 +193,11 @@ export function MenuItemDrawer({ item, categories, optionGroups, isOwner }: Menu
             <button className="btn btn-primary" type="submit" disabled={pending}>
               Save
             </button>
-            {item ? (
+            {item?.isArchived ? (
+              <button className="btn btn-secondary" type="button" disabled={pending} onClick={onRestore}>
+                Restore
+              </button>
+            ) : item ? (
               <button className="btn btn-secondary" type="button" disabled={pending} onClick={onArchive}>
                 Archive
               </button>
