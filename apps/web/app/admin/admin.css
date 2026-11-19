@@ -340,3 +340,24 @@
 }
 .menu-chip, .star-toggle, .menu-toggles label { min-height: var(--tap); }
 .menu-chip, .menu-toggles label { display: inline-flex; align-items: center; }
+
+/* Menu item drawer: full screen on phones, a right-side panel from 920px. */
+.menu-drawer-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(10, 20, 40, 0.4); }
+.menu-drawer {
+  position: absolute; inset: 0; overflow-y: auto; padding: var(--space-4);
+  background: var(--white); color: var(--ink);
+}
+.menu-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.menu-drawer-head h2 { margin: 0; font-size: 1.25rem; }
+.menu-drawer-close { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--blue); font-size: 1.25rem; cursor: pointer; }
+.menu-drawer-groups { border: 0; padding: 0; margin: 0 0 12px; display: grid; gap: 4px; }
+.menu-drawer-groups legend { font-weight: 700; padding: 0; margin-bottom: 6px; }
+.menu-drawer-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 700; }
+.menu-drawer .admin-field.menu-drawer-check input,
+.menu-drawer-check input { width: 22px; min-height: 22px; height: 22px; margin-right: 8px; }
+.menu-drawer-actions { display: flex; gap: var(--space-3); margin: var(--space-3) 0; }
+.menu-drawer .btn-secondary { background: var(--white); color: var(--blue); border: 2px solid var(--blue); }
+.menu-drawer .btn-primary { background: var(--blue); color: var(--white); }
+@media (min-width: 921px) {
+  .menu-drawer { left: auto; width: min(480px, 100%); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15); }
+}

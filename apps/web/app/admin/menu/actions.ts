@@ -1,6 +1,5 @@
 'use server'
 
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { getServerClient } from '@/lib/supabase/server'
 import { requireStaff, requireOwner, getCurrentStaff } from '@/lib/auth/session'
@@ -11,8 +10,6 @@ import { VARIANT_META, parsePriceInput, parseVariantPrices, variantCodesFor, typ
 import type { AdminMenu, VariantCode } from '@/lib/menu/types'
 
 const IMAGE_BUCKET = 'menu-images'
-
-const ALL_CODES = Object.keys(VARIANT_META) as VariantCode[]
 
 export async function publishMenuNow(): Promise<{ ok: true; version: number } | { ok: false; message: string }> {
   await requireOwner()
@@ -113,9 +110,12 @@ export async function setAvailability(itemId: string, isAvailable: boolean) {
   revalidatePath('/admin', 'layout')
 }
 
-export async function saveMenuItem(formData: FormData) {
-  await requireOwner()
-  const db = await getServerClient()
+/** Saves an item as a draft: no publish, no redirect. New items need a price; existing items keep theirs (prices are edited in the table). */
+export async function saveMenuItemDraft(
+  formData: FormData,
+): Promise<{ ok: true; id: string } | { ok: false; message: string }> {
+  const staff = await getCurrentStaff()
+  if (staff?.role !== 'owner') return { ok: false, message: 'Only the owner can edit menu items.' }
 
   const id = String(formData.get('id') ?? '') || null
   const name = String(formData.get('name') ?? '').trim()
@@ -123,20 +123,28 @@ export async function saveMenuItem(formData: FormData) {
   const description = String(formData.get('description') ?? '').trim() || null
   const isBestseller = formData.get('is_bestseller') === 'on'
 
-  if (!name) throw new Error('Enter a name for the drink')
-  if (!categoryId) throw new Error('Choose a category')
+  if (!name) return { ok: false, message: 'Enter a name' }
+  if (!categoryId) return { ok: false, message: 'Choose a category' }
 
+  const db = await getServerClient()
   const { data: category, error: categoryError } = await db
     .from('menu_categories')
     .select('kind')
     .eq('id', categoryId)
     .single()
-  if (categoryError || !category) throw new Error('Choose a category')
+  if (categoryError || !category) return { ok: false, message: 'Choose a category' }
   const kind = category.kind as CategoryKind
 
-  const prices = parseVariantPrices(formData, kind)
-  if (Object.values(prices).every((v) => v === null)) {
-    throw new Error(kind === 'food' ? 'Set a price' : 'Set a price for at least one size')
+  let prices: ReturnType<typeof parseVariantPrices> | null = null
+  if (!id) {
+    try {
+      prices = parseVariantPrices(formData, kind)
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Enter a valid price' }
+    }
+    if (Object.values(prices).every((v) => v === null)) {
+      return { ok: false, message: kind === 'food' ? 'Set a price' : 'Set a price for at least one size' }
+    }
   }
 
   const row = {
@@ -150,54 +158,60 @@ export async function saveMenuItem(formData: FormData) {
   const { data: saved, error } = id
     ? await db.from('menu_items').update(row).eq('id', id).select('id').single()
     : await db.from('menu_items').insert(row).select('id').single()
+  if (error || !saved) return { ok: false, message: `Could not save the item: ${error?.message ?? 'not found'}` }
 
-  if (error) throw new Error(`Could not save the drink: ${error.message}`)
-
-  // A new drink gets the drink add-on groups, or checkout would refuse every add-on on it. Food gets none.
-  if (!id && kind === 'drink') {
-    const { data: linked, error: linkedError } = await db
-      .from('item_option_groups')
-      .select('group_id, sort_order, menu_items!inner ( is_archived, menu_categories!inner ( kind ) )')
-    if (linkedError) throw new Error(`Could not load the add-on groups: ${linkedError.message}`)
-    const links = drinkGroupLinksFor(saved.id, (linked ?? []) as unknown as DrinkGroupLinkRow[])
-    if (links.length > 0) {
-      const { error: linkError } = await db.from('item_option_groups').insert(links)
-      if (linkError) throw new Error(`Could not attach the add-ons: ${linkError.message}`)
+  if (!id && prices) {
+    // A new drink gets the drink add-on groups, or checkout would refuse every add-on on it. Food gets none.
+    if (kind === 'drink') {
+      const { data: linked, error: linkedError } = await db
+        .from('item_option_groups')
+        .select('group_id, sort_order, menu_items!inner ( is_archived, menu_categories!inner ( kind ) )')
+      if (linkedError) return { ok: false, message: `Could not load the add-on groups: ${linkedError.message}` }
+      const links = drinkGroupLinksFor(saved.id, (linked ?? []) as unknown as DrinkGroupLinkRow[])
+      if (links.length > 0) {
+        const { error: linkError } = await db.from('item_option_groups').insert(links)
+        if (linkError) return { ok: false, message: `Could not attach the add-ons: ${linkError.message}` }
+      }
     }
+
+    const toUpsert = variantCodesFor(kind)
+      .filter((code) => prices[code] !== null)
+      .map((code) => ({
+        item_id: saved.id,
+        code,
+        label: VARIANT_META[code].label,
+        price_centavos: prices[code] as number,
+        temperature: VARIANT_META[code].temperature,
+        sort_order: VARIANT_META[code].sortOrder,
+        is_archived: false,
+        updated_at: new Date().toISOString(),
+      }))
+    const { error: upsertError } = await db.from('menu_variants').upsert(toUpsert, { onConflict: 'item_id,code' })
+    if (upsertError) return { ok: false, message: `Could not save prices: ${upsertError.message}` }
   }
 
-  // A blank price archives the variant rather than deleting it, so history and a later re-price keep working.
-  const offered = variantCodesFor(kind).filter((code) => prices[code] !== null)
-  const toUpsert = offered.map((code) => ({
-    item_id: saved.id,
-    code,
-    label: VARIANT_META[code].label,
-    price_centavos: prices[code] as number,
-    temperature: VARIANT_META[code].temperature,
-    sort_order: VARIANT_META[code].sortOrder,
-    is_archived: false,
-    updated_at: new Date().toISOString(),
-  }))
-  const toArchive = ALL_CODES.filter((code) => !offered.includes(code))
-
-  if (toUpsert.length > 0) {
-    const { error: upsertError } = await db
-      .from('menu_variants')
-      .upsert(toUpsert, { onConflict: 'item_id,code' })
-    if (upsertError) throw new Error(`Could not save prices: ${upsertError.message}`)
-  }
-
-  const { error: archiveError } = await db
-    .from('menu_variants')
-    .update({ is_archived: true, updated_at: new Date().toISOString() })
-    .eq('item_id', saved.id)
-    .in('code', toArchive)
-  if (archiveError) throw new Error(`Could not clear prices: ${archiveError.message}`)
-
-  revalidatePath('/admin/menu')
-  revalidatePath('/')
   revalidatePath('/admin', 'layout')
-  redirect('/admin/menu')
+  return { ok: true, id: saved.id }
+}
+
+/** Replaces the add-on groups an item offers. */
+export async function setItemOptionGroups(itemId: string, groupIds: string[]): Promise<ActionResult> {
+  const staff = await getCurrentStaff()
+  if (staff?.role !== 'owner') return { ok: false, message: 'Only the owner can change add-ons.' }
+
+  const db = await getServerClient()
+  const { error: deleteError } = await db.from('item_option_groups').delete().eq('item_id', itemId)
+  if (deleteError) return { ok: false, message: `Could not update add-ons: ${deleteError.message}` }
+
+  if (groupIds.length > 0) {
+    const { error } = await db
+      .from('item_option_groups')
+      .insert(groupIds.map((group_id, sort_order) => ({ item_id: itemId, group_id, sort_order })))
+    if (error) return { ok: false, message: `Could not update add-ons: ${error.message}` }
+  }
+
+  revalidatePath('/admin', 'layout')
+  return { ok: true }
 }
 
 export async function archiveMenuItem(id: string) {

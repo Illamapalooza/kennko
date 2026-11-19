@@ -60,3 +60,27 @@ describe('updateVariantPrice', () => {
     expect(upsert).not.toHaveBeenCalled()
   })
 })
+
+describe('setItemOptionGroups', () => {
+  it('refuses a barista', async () => {
+    getCurrentStaff.mockResolvedValue({ role: 'barista' })
+    const { setItemOptionGroups } = await import('./actions')
+    expect(await setItemOptionGroups('i1', ['g1'])).toEqual({ ok: false, message: 'Only the owner can change add-ons.' })
+  })
+})
+
+describe('saveMenuItemDraft', () => {
+  it('refuses a barista and returns a result instead of throwing', async () => {
+    getCurrentStaff.mockResolvedValue({ role: 'barista' })
+    const { saveMenuItemDraft } = await import('./actions')
+    const fd = new FormData()
+    fd.set('name', 'x')
+    expect(await saveMenuItemDraft(fd)).toEqual({ ok: false, message: 'Only the owner can edit menu items.' })
+  })
+
+  it('returns a message for a missing name', async () => {
+    getCurrentStaff.mockResolvedValue({ role: 'owner' })
+    const { saveMenuItemDraft } = await import('./actions')
+    expect(await saveMenuItemDraft(new FormData())).toEqual({ ok: false, message: 'Enter a name' })
+  })
+})
