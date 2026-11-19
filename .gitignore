@@ -45,6 +45,10 @@ next-env.d.ts
 # keep the documented env template committed
 !.env.local.example
 
+# supabase CLI link state
+/apps/api/supabase/.temp/
+/apps/web/supabase/.temp/
+
 # playwright mcp scratch output
 .playwright-mcp/
 

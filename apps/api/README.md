@@ -13,9 +13,23 @@ No secret goes in the repo. Keep passwords and tokens in the Vercel dashboard an
 
 ## Order matters (Plan 1)
 
-1. Apply 0012 **before** deploying the website from this branch. The new admin and checkout need the new tables.
-2. Between applying 0012 and deploying the new website, do **not** edit the menu in admin. The old admin writes the old tables.
-3. Apply 0013 (drop the old tables) only after the new website is live and one checkout has been tried.
+Do the steps below in this order:
+
+1. Database (apply 0012)
+2. API on Vercel
+3. Website deploy with `KENNKO_API_URL`
+4. First Publish menu
+5. One test checkout
+6. Publish lock check
+7. Till config
+8. Later: 0013 (drop the old tables)
+
+Hazards:
+
+- Apply 0012 **before** deploying the website from this branch. The new admin and checkout need the new tables.
+- Between applying 0012 and deploying the new website (step 3), do **not** edit the menu in admin. The old admin writes the old tables.
+- Publish menu and the lock check need the **new** website, so they come after step 3.
+- Apply 0013 only after the new website is live and one checkout has been tried.
 
 ## 1. Database
 
@@ -24,23 +38,53 @@ Run inside `apps/api`. Keep the existing migrations.
 ```sh
 cd apps/api
 npx supabase init            # creates supabase/config.toml; answer no to the IDE prompts
+npx supabase login           # opens the browser
 npx supabase link --project-ref <kennko ref>
-npx supabase db push         # applies 0012
 ```
 
-Do not commit `supabase/.temp/`.
+`link` asks for the database password (Supabase dashboard, Project Settings, Database). Type it at the prompt. It never goes in a file or in chat.
 
-## 2. API login
+Check what would be applied first:
 
-Migration 0012 creates the role `kennko_api` with `nologin`. In the Supabase SQL editor run:
+```sh
+npx supabase db push --dry-run
+```
+
+Stop if it lists anything other than 0012. If it lists 0001 to 0011, they were probably applied outside the CLI. Mark the ones already applied, then dry-run again:
+
+```sh
+npx supabase migration repair --status applied <version> [<version> ...]
+```
+
+When the dry run lists only 0012, apply it:
+
+```sh
+npx supabase db push
+```
+
+0013 does not exist yet. A later step adds it; run the push again then.
+
+`supabase/.temp/` is git-ignored. Do not commit it.
+
+## 2. API on Vercel
+
+First give the API its database login. Migration 0012 creates the role `kennko_api` with `nologin`. Generate a password:
+
+```sh
+openssl rand -hex 24
+```
+
+In the Supabase SQL editor run:
 
 ```sql
-alter role kennko_api with login password '<generated, 32+ chars>';
+alter role kennko_api with login password '<the generated password>';
 ```
 
-Build `DATABASE_URL` from the dashboard's **transaction pooler** string (Connect, Transaction pooler). Change the user to `kennko_api.<project ref>` and the password to the one above. URL-encode any special characters in the password (or generate letters and digits only).
+Then delete the saved query from the SQL editor's history, so the password is not kept there.
 
-## 3. Vercel
+Build `DATABASE_URL` from the dashboard's **transaction pooler** string (Connect, Transaction pooler). Change the user to `kennko_api.<project ref>` and the password to the one above. A hex password needs no URL-encoding.
+
+Then in Vercel:
 
 1. Create the project from the repo with **root directory `apps/api`**, on the Pro team. Zero config: `src/index.ts` default-exports the app.
 2. Set the function region to the Supabase project's region (see the project's dashboard).
@@ -51,7 +95,12 @@ Build `DATABASE_URL` from the dashboard's **transaction pooler** string (Connect
 curl <api>/health        # {"ok":true}
 ```
 
-## 4. First snapshot
+## 3. Website deploy
+
+1. Set `KENNKO_API_URL` to the API's URL on the website's Vercel project (`kennko`, team `illamapaloozas-projects`) and in `apps/web/.env.local`.
+2. Deploy the website from this branch.
+
+## 4. First Publish menu
 
 1. Sign in to admin as the owner and press **Publish menu**.
 2. Check the result lists the drinks and Food:
@@ -60,41 +109,50 @@ curl <api>/health        # {"ok":true}
 curl <api>/v1/menu
 ```
 
-## 5. Owner token for curl checks
+## 5. One test checkout
 
-`POST /v1/menu/publish` needs the owner's access token. Do not paste it into shared places (chat, tickets, commits, synced shell history).
-
-- Browser: sign in to admin, open DevTools, Application, Cookies or Local Storage for the site, and copy the `access_token` value from the `sb-...-auth-token` entry.
-- Or Supabase's auth API (type the email and password at the prompts, not in the command):
-
-```sh
-read -r EMAIL; read -rs PW
-curl -s "$SUPABASE_URL/auth/v1/token?grant_type=password" \
-  -H "apikey: <anon key>" -H "Content-Type: application/json" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"$PW\"}"
-```
-
-Keep the token in a shell variable only (`read -rs TOKEN`) and use `-H "Authorization: Bearer $TOKEN"`. Tokens expire after about an hour.
+Place one order on the live site and confirm it goes through. Only after this is it safe to apply 0013 later.
 
 ## 6. Verify the publish lock
 
 The test database (PGlite) cannot prove the publish lock, so check it against the real API.
 
+First get the owner's access token. Do not paste it into shared places (chat, tickets, commits, synced shell history).
+
+- Easiest: sign in to Supabase's auth API. Get the anon key from Dashboard, Project Settings, API. Type the email and password at the prompts:
+
+```sh
+read -r EMAIL; read -rs PW; read -r ANON
+curl -s "<SUPABASE_URL>/auth/v1/token?grant_type=password" \
+  -H "apikey: $ANON" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PW\"}"
+```
+
+  Copy `access_token` from the JSON reply.
+- Or from the browser: sign in to admin, DevTools, Application, Local Storage or Cookies, the `sb-...-auth-token` entry, `access_token`.
+
+Keep it in a shell variable only (`read -rs TOKEN`). Tokens expire after about an hour.
+
+Then:
+
 1. In admin, change one price (do not publish).
 2. Start two publishes at the same moment:
 
 ```sh
-curl -s -X POST <api>/v1/menu/publish -H "Authorization: Bearer $TOKEN" &
-curl -s -X POST <api>/v1/menu/publish -H "Authorization: Bearer $TOKEN" &
-wait
+curl -s -X POST <api>/v1/menu/publish -H "Authorization: Bearer $TOKEN" > a.json &
+curl -s -X POST <api>/v1/menu/publish -H "Authorization: Bearer $TOKEN" > b.json &
+wait; cat a.json b.json
 ```
 
-3. Confirm both responses carry the **same version** and exactly one has `"created": true`. If both are `true`, or the versions differ, stop and fix before going further.
+3. Both replies must show the **same version**. One should show `"created":true` and the other `"created":false`. If both are `true`, or the versions differ, stop and fix before going further.
+4. Delete `a.json` and `b.json`.
 
-## 7. Apps
+## 7. Till config
 
-1. Set `KENNKO_API_URL` on the website's Vercel project and in `apps/web/.env.local`, then deploy the website.
-2. Try one checkout on the live site.
-3. On the till, set `"api": { "url": "<api url>" }` in the shop's `apps/pos/config.json` (or set `KENNKO_API_URL`). The till no longer reads `apps/web/.env.local`. Without this, Menu, Update does not appear. Restart the till.
-4. On the till, run **Menu, Update** with the manager PIN.
-5. After the checkout works, apply 0013.
+1. Set `"api": { "url": "<api url>" }` in the shop's `apps/pos/config.json` (or set `KENNKO_API_URL`). The till no longer reads `apps/web/.env.local`.
+2. Restart the till. **Menu, Update from website** appears once `api.url` is set.
+3. Run it with the manager PIN.
+
+## 8. Later: 0013
+
+A later step adds 0013 (drop the old tables). Run the push again then, after the new website has been live and a checkout has worked.
