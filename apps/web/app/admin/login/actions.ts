@@ -24,7 +24,7 @@ export async function signIn(
   // enumerate which addresses are staff.
   if (error) return { error: 'Those details did not match. Try again.' }
 
-  redirect('/admin/menu')
+  redirect('/admin')
 }
 
 export async function signOut() {
