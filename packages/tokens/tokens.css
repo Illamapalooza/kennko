@@ -29,6 +29,36 @@
   --green: #0f9d63;       /* success, available, positive amounts */
   --green-soft: #e2f7ee;
 
+  /*
+   * Retro sticker layer, taken from the 2026 food-menu flyers (brand/assets/food-menu/).
+   * Marketing and print surfaces only: the website's landing sections, menus, posters, the wall.
+   * The POS, the order flow and admin stay on the plain blue-and-white set above.
+   */
+  --cream: #fff5f0;       /* warm paper: page background behind sticker panels */
+  --peach: #ffe6dc;       /* text panel inside a sticker card (where names and prices sit) */
+  --sun: #ffcc00;         /* smiley and sticker yellow; illustration only, never UI */
+  --plate-pink: #f77293;  /* food plates and illustration fills, never UI states */
+  --plate-orange: #eb5d1b;
+  --plate-yellow: #fdc631;
+  --sky: #90bcf6;         /* pattern stripe */
+  --gingham-paper: #fff6d1;   /* paper under --pattern-gingham */
+  --checker: #4b85cd;     /* checker strip, on --gingham-paper */
+
+  /* Outlines: the flyer's black keyline, drawn in --ink so the "no black" rule holds */
+  --outline: 3px;         /* sticker frames and big panels */
+  --outline-thin: 2px;    /* cells, chips and rows inside a frame */
+  --shadow-hard: 0 6px 0 var(--ink);   /* sticker lift; replaces --shadow on a sticker card */
+
+  /* Patterns: background-image values. Pair with background-color: var(--cream) or var(--gingham-paper). */
+  --pattern-grid:
+    linear-gradient(rgba(30, 70, 164, 0.22) 2px, transparent 2px) 0 0 / 56px 56px,
+    linear-gradient(90deg, rgba(30, 70, 164, 0.22) 2px, transparent 2px) 0 0 / 56px 56px;
+  --pattern-stripes: repeating-linear-gradient(90deg, var(--sky) 0 14px, transparent 14px 32px);
+  --pattern-gingham:   /* translucent bands, darker where they cross, like woven cloth */
+    linear-gradient(90deg, rgba(252, 212, 92, 0.32) 50%, transparent 50%) 0 0 / 48px 48px,
+    linear-gradient(rgba(252, 212, 92, 0.32) 50%, transparent 50%) 0 0 / 48px 48px;
+  --pattern-checker: conic-gradient(var(--checker) 25%, transparent 0 50%, var(--checker) 0 75%, transparent 0) 0 0 / 48px 48px;
+
   /* Type */
   --font: 'Nunito Variable', 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --weight-body: 600;
@@ -43,6 +73,7 @@
   --text-xl: 2.2rem;      /* page titles in apps */
   --text-display: clamp(2rem, 4vw, 3.4rem);   /* marketing section headings */
   --text-hero: clamp(3rem, 7vw, 5.8rem);      /* marketing hero only */
+  --text-price: clamp(2rem, 4.5vw, 3.2rem);   /* the big price on a sticker menu card */
 
   --leading-tight: 1.1;   /* headings */
   --leading-body: 1.45;
@@ -86,3 +117,43 @@
  *   640px  below this, phone layout
  * Verify at 375, 768, 1024 and 1440px.
  */
+
+/*
+ * Retro sticker helpers. Opt-in classes for marketing surfaces; see "Retro sticker layer" in brand/DESIGN.md.
+ */
+.k-sticker {
+  background: var(--blue);
+  color: var(--white);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hard);
+}
+.k-sticker-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--peach);
+  color: var(--ink);
+  border: var(--outline-thin) solid var(--ink);
+}
+.k-sticker-row > :first-child { background: var(--cream); border-right: var(--outline-thin) solid var(--ink); }
+.k-outlined {
+  /* Cream letters with an ink keyline, like the flyer titles. Use on blue, at display sizes only. */
+  color: var(--cream);
+  -webkit-text-stroke: 0.06em var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 0.06em 0 var(--ink);
+}
+.k-price {
+  font-size: var(--text-price);
+  font-weight: var(--weight-heading);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--ink);
+}
+.k-paper-grid { background: var(--pattern-grid), var(--cream); }
+.k-paper-stripes { background: var(--pattern-stripes), var(--cream); }
+.k-paper-gingham { background: var(--pattern-gingham), var(--gingham-paper); }
+@media (max-width: 640px) {
+  .k-sticker-row { grid-template-columns: 1fr; }
+  .k-sticker-row > :first-child { border-right: 0; border-bottom: var(--outline-thin) solid var(--ink); }
+}

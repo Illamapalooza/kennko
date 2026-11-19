@@ -28,6 +28,11 @@ Vanilla Milk
 
 *Hojicha is not offered in XL.*
 
+### Food
+Cookies (Original, Chocolate, Red Velvet) · Empanada (Chicken) · Fries (Original, Cheese, BBQ, Sour Cream)
+
+*From the 2026 food-menu flyer (`assets/food-menu/`). Not in the ordering system yet.*
+
 ### Modifiers
 - **Add-ons** (choose any): Espresso Shots, Milk, Sugar Syrup, Milk Syrup, Flavor Sauce
 - **Milk of Choice** (choose one): Oat Milk, Soy Milk
@@ -73,4 +78,6 @@ Check `assets/` folder for:
 - `kennko perks card.jpg` — loyalty card photo
 - `kennco people.jpg` — people/lifestyle photo
 - `KENNKO_2.png` through `KENNKO_10.png` — additional brand graphics
+- `food-menu/` — 2026 food-menu flyer in three papers (grid, stripes, gingham), plus cropped food illustrations
+  and mascot stickers. Source of the retro sticker layer in `DESIGN.md`.
 - Product photos: egg coffee, coconut series, salted caramel oat latte, sea salt caramel oat latte, strawberry cloud soda, vanilla milk cloud foam
