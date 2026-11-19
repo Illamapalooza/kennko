@@ -124,16 +124,17 @@ export async function saveMenuItemDraft(
   const isBestseller = formData.get('is_bestseller') === 'on'
 
   if (!name) return { ok: false, message: 'Enter a name' }
-  if (!categoryId) return { ok: false, message: 'Choose a category' }
+  if (!id && !categoryId) return { ok: false, message: 'Choose a category' }
 
   const db = await getServerClient()
-  const { data: category, error: categoryError } = await db
-    .from('menu_categories')
-    .select('kind')
-    .eq('id', categoryId)
-    .single()
-  if (categoryError || !category) return { ok: false, message: 'Choose a category' }
-  const kind = category.kind as CategoryKind
+  // An existing item keeps its stored category: the category is not editable after creation.
+  const { data: category, error: categoryError } = id
+    ? await db.from('menu_items').select('menu_categories!inner ( kind )').eq('id', id).maybeSingle()
+    : await db.from('menu_categories').select('kind').eq('id', categoryId).single()
+  if (categoryError || !category) return { ok: false, message: id ? 'Item not found.' : 'Choose a category' }
+  const rawKind = (category as unknown as { kind?: CategoryKind; menu_categories?: { kind: CategoryKind } | { kind: CategoryKind }[] })
+  const kind = (rawKind.kind ??
+    (Array.isArray(rawKind.menu_categories) ? rawKind.menu_categories[0] : rawKind.menu_categories)?.kind) as CategoryKind
 
   let prices: ReturnType<typeof parseVariantPrices> | null = null
   if (!id) {
@@ -149,7 +150,6 @@ export async function saveMenuItemDraft(
 
   const row = {
     name,
-    category_id: categoryId,
     description,
     is_bestseller: isBestseller,
     updated_at: new Date().toISOString(),
@@ -157,7 +157,7 @@ export async function saveMenuItemDraft(
 
   const { data: saved, error } = id
     ? await db.from('menu_items').update(row).eq('id', id).select('id').single()
-    : await db.from('menu_items').insert(row).select('id').single()
+    : await db.from('menu_items').insert({ ...row, category_id: categoryId }).select('id').single()
   if (error || !saved) return { ok: false, message: `Could not save the item: ${error?.message ?? 'not found'}` }
 
   if (!id && prices) {
@@ -194,21 +194,37 @@ export async function saveMenuItemDraft(
   return { ok: true, id: saved.id }
 }
 
-/** Replaces the add-on groups an item offers. */
+/** Replaces the add-on groups an item offers. Upserts first, then prunes, so a failure never leaves an item with none. */
 export async function setItemOptionGroups(itemId: string, groupIds: string[]): Promise<ActionResult> {
   const staff = await getCurrentStaff()
   if (staff?.role !== 'owner') return { ok: false, message: 'Only the owner can change add-ons.' }
 
+  const ids = [...new Set(groupIds)]
   const db = await getServerClient()
-  const { error: deleteError } = await db.from('item_option_groups').delete().eq('item_id', itemId)
-  if (deleteError) return { ok: false, message: `Could not update add-ons: ${deleteError.message}` }
 
-  if (groupIds.length > 0) {
-    const { error } = await db
+  // Archived items are allowed: that is how an item is un-archived.
+  const { data: item } = await db.from('menu_items').select('id').eq('id', itemId).maybeSingle()
+  if (!item) return { ok: false, message: 'Item not found.' }
+
+  if (ids.length > 0) {
+    const { data: found, error: groupsError } = await db.from('option_groups').select('id').in('id', ids)
+    if (groupsError) return { ok: false, message: `Could not update add-ons: ${groupsError.message}` }
+    if ((found ?? []).length !== ids.length) {
+      return { ok: false, message: 'One of those add-on groups no longer exists.' }
+    }
+
+    const { error: upsertError } = await db
       .from('item_option_groups')
-      .insert(groupIds.map((group_id, sort_order) => ({ item_id: itemId, group_id, sort_order })))
-    if (error) return { ok: false, message: `Could not update add-ons: ${error.message}` }
+      .upsert(ids.map((group_id, sort_order) => ({ item_id: itemId, group_id, sort_order })), {
+        onConflict: 'item_id,group_id',
+      })
+    if (upsertError) return { ok: false, message: `Could not update add-ons: ${upsertError.message}` }
   }
+
+  let prune = db.from('item_option_groups').delete().eq('item_id', itemId)
+  if (ids.length > 0) prune = prune.not('group_id', 'in', `(${ids.join(',')})`)
+  const { error: pruneError } = await prune
+  if (pruneError) return { ok: false, message: `Could not update add-ons: ${pruneError.message}` }
 
   revalidatePath('/admin', 'layout')
   return { ok: true }

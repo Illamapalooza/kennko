@@ -16,6 +16,7 @@ export default async function AdminMenuPage({
   const found = edit ? menu.categories.flatMap((c) => c.items).find((i) => i.id === edit) : undefined
   const drawerItem = found ? { ...found, imageUrl: menuImageUrl(found.imagePath) } : null
   const showDrawer = isOwner && (found !== undefined || (isNew === '1' && !edit))
+  const missing = isOwner && Boolean(edit) && found === undefined
 
   return (
     <>
@@ -24,6 +25,12 @@ export default async function AdminMenuPage({
       {denied === 'owner-only' ? (
         <p className="admin-notice" role="alert">
           Only the owner can edit menu items and prices. You can still mark items sold out.
+        </p>
+      ) : null}
+
+      {missing ? (
+        <p className="admin-notice" role="alert">
+          That item no longer exists.
         </p>
       ) : null}
 
