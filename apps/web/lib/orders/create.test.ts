@@ -2,18 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 
-type Tables = Record<string, unknown[]>
-let tables: Tables = {}
+// The published menu the checkout prices from.
+let snapshot: unknown = null
+vi.mock('@/lib/menu/api', () => ({ fetchMenuSnapshot: async () => snapshot }))
 
-// The fake refuses a select that leaves out the columns repricing depends on.
-const REQUIRED: Record<string, string[]> = {
-  menu_items: ['is_available', 'is_archived', 'menu_variants', 'price_centavos', 'code'],
-  options: ['is_available', 'is_archived', 'group_id', 'price_centavos'],
-  item_option_groups: ['item_id', 'group_id'],
-}
-
-// Per-test failure injection: a select error by table, an insert error by table, and the proof upload result.
-let selectErrors: Record<string, string> = {}
+// Per-test failure injection: an insert error by table, and the proof upload result.
 let insertErrors: Record<string, string> = {}
 let uploadError: { message: string } | null = { message: 'stop here' }
 let deleted: string[] = []
@@ -31,18 +24,9 @@ vi.mock('@/lib/supabase/admin', () => ({
       }),
     },
     from: (table: string) => ({
-      select: (cols: string) => {
-        for (const col of REQUIRED[table] ?? []) {
-          if (!cols.includes(col)) throw new Error(`${table} select is missing ${col}`)
-        }
-        return {
-          in: async () => ({
-            data: selectErrors[table] ? null : (tables[table] ?? []),
-            error: selectErrors[table] ? { message: selectErrors[table] } : null,
-          }),
-          eq: () => ({ maybeSingle: async () => ({ data: null }) }),
-        }
-      },
+      select: () => ({
+        eq: () => ({ maybeSingle: async () => ({ data: null }) }),
+      }),
       insert: () => {
         const error = insertErrors[table] ? { message: insertErrors[table] } : null
         const result = { data: null, error }
@@ -70,12 +54,51 @@ const PNG = new File(
   { type: 'image/png' },
 )
 
-const variant = (code: string, price: number, over: Record<string, unknown> = {}) => ({
+const variant = (code: string, priceCentavos: number, isAvailable = true) => ({
+  id: `v-${code}`,
   code,
-  price_centavos: price,
-  is_available: true,
-  is_archived: false,
-  ...over,
+  label: code,
+  priceCentavos,
+  temperature: 'none',
+  isAvailable,
+})
+
+const makeSnapshot = (variants = [variant('M', 8000), variant('L', 9000, false), variant('REG', 5000)]) => ({
+  version: 1,
+  publishedAt: '2026-11-20T00:00:00.000Z',
+  categories: [
+    {
+      id: 'c1',
+      name: 'Coffee',
+      kind: 'drink',
+      items: [
+        {
+          id: 'i1',
+          name: 'Americano',
+          description: null,
+          imagePath: null,
+          isBestseller: false,
+          isAvailable: true,
+          variants,
+          optionGroupIds: ['g-milk'],
+        },
+      ],
+    },
+  ],
+  optionGroups: [
+    {
+      id: 'g-milk',
+      name: 'Milk',
+      minSelect: 0,
+      maxSelect: 1,
+      options: [
+        { id: 'o1', name: 'Oat Milk', priceCentavos: 4000, isAvailable: true },
+        { id: 'o2', name: 'Soy Milk', priceCentavos: 3500, isAvailable: false },
+      ],
+    },
+    { id: 'g-fries', name: 'Sauce', minSelect: 0, maxSelect: 1, options: [{ id: 'o3', name: 'BBQ', priceCentavos: 0, isAvailable: true }] },
+  ],
+  discountPresets: [],
 })
 
 const order = (size: string, modifierIds: string[] = []): SubmittedOrder =>
@@ -96,45 +119,26 @@ const order = (size: string, modifierIds: string[] = []): SubmittedOrder =>
   }) as SubmittedOrder
 
 beforeEach(() => {
-  selectErrors = {}
   insertErrors = {}
   uploadError = { message: 'stop here' }
   deleted = []
   removedProofs = 0
-  tables = {
-    menu_items: [
-      {
-        id: 'i1',
-        name: 'Americano',
-        is_available: true,
-        is_archived: false,
-        menu_variants: [variant('M', 8000), variant('L', 9000, { is_archived: true }), variant('REG', 5000)],
-      },
-    ],
-    options: [
-      { id: 'o1', group_id: 'g-milk', name: 'Oat Milk', price_centavos: 4000, is_available: true, is_archived: false },
-      { id: 'o2', group_id: 'g-milk', name: 'Soy Milk', price_centavos: 3500, is_available: false, is_archived: false },
-      { id: 'o3', group_id: 'g-fries', name: 'BBQ', price_centavos: 0, is_available: true, is_archived: false },
-    ],
-    item_option_groups: [{ item_id: 'i1', group_id: 'g-milk' }],
-  }
+  snapshot = makeSnapshot()
 })
 
-describe('createOrder repricing from variants', () => {
+describe('createOrder repricing from the published menu', () => {
   it('refuses a REG variant until Plan 2', async () => {
     const r = await createOrder(order('REG' as never), PNG)
     expect(r).toMatchObject({ ok: false, status: 409, code: 'SIZE_UNAVAILABLE' })
   })
 
-  it('refuses an archived variant', async () => {
+  it('refuses a sold-out size', async () => {
     const r = await createOrder(order('L'), PNG)
     expect(r).toMatchObject({ ok: false, code: 'SIZE_UNAVAILABLE' })
   })
 
   it('refuses an unavailable variant', async () => {
-    ;(tables.menu_items[0] as { menu_variants: unknown[] }).menu_variants = [
-      variant('M', 8000, { is_available: false }),
-    ]
+    snapshot = makeSnapshot([variant('M', 8000, false)])
     const r = await createOrder(order('M'), PNG)
     expect(r).toMatchObject({ ok: false, code: 'SIZE_UNAVAILABLE' })
   })
@@ -164,10 +168,23 @@ describe('createOrder repricing from variants', () => {
 })
 
 describe('createOrder failure handling', () => {
-  it('returns LOOKUP_FAILED when the item_option_groups lookup errors', async () => {
-    selectErrors.item_option_groups = 'link lookup down'
-    const r = await createOrder(order('M', ['o1']), PNG)
-    expect(r).toMatchObject({ ok: false, status: 500, code: 'LOOKUP_FAILED' })
+  it('returns 503 MENU_UNAVAILABLE when there is no published menu', async () => {
+    snapshot = null
+    const r = await createOrder(order('M'), PNG)
+    expect(r).toMatchObject({
+      ok: false,
+      status: 503,
+      code: 'MENU_UNAVAILABLE',
+      errors: ["The menu can't load right now. Please try again in a minute."],
+    })
+  })
+
+  it('a draft price in the tables does not cause PRICE_CHANGED', async () => {
+    const o = order('M')
+    o.claimedTotalCentavos = 8000
+    const r = await createOrder(o, PNG)
+    expect(r).not.toMatchObject({ code: 'PRICE_CHANGED' })
+    expect(r).toMatchObject({ ok: false, code: 'UPLOAD_FAILED' })
   })
 
   it('rolls the order back when the order_item_modifiers insert fails', async () => {

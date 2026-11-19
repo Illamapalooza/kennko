@@ -7,6 +7,9 @@ import { normaliseIce, iceSummary, type IceLevel, type IceServe } from '@/lib/ca
 import { ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
 import { verifyPin } from '@/lib/delivery/verify'
 import type { DrinkSize } from '@/lib/menu/types'
+import type { MenuSnapshot } from '@kennko/core'
+import { fetchMenuSnapshot } from '@/lib/menu/api'
+import { priceLineFromSnapshot } from './price-from-snapshot'
 
 export type SubmittedLine = {
   menuItemId: string
@@ -48,7 +51,6 @@ export type CreateResult =
   | { ok: false; status: number; code: string; errors: string[] }
 
 const PROOF_BUCKET = 'payment-proofs'
-const SELLABLE_CODES = ['M', 'L', 'XL', 'HOT']
 
 export async function createOrder(
   submitted: SubmittedOrder,
@@ -72,41 +74,19 @@ export async function createOrder(
 
   const db = getAdminClient()
 
-  // ---- Reprice from the database. The client total is never trusted. ----
-  const itemIds = [...new Set(submitted.lines.map((l) => l.menuItemId))]
-  const modifierIds = [...new Set(submitted.lines.flatMap((l) => l.modifierIds))]
-
-  const { data: items, error: itemsError } = await db
-    .from('menu_items')
-    .select('id, name, is_available, is_archived, menu_variants ( code, price_centavos, is_available, is_archived )')
-    .in('id', itemIds)
-  if (itemsError) {
-    return { ok: false, status: 500, code: 'LOOKUP_FAILED', errors: [itemsError.message] }
+  // ---- Reprice from the published menu. The client total is never trusted. ----
+  let snapshot: MenuSnapshot | null
+  try {
+    snapshot = await fetchMenuSnapshot()
+  } catch {
+    snapshot = null
   }
-
-  const modifiers = modifierIds.length
-    ? (
-        await db
-          .from('options')
-          .select('id, group_id, name, price_centavos, is_available, is_archived')
-          .in('id', modifierIds)
-      ).data ?? []
-    : []
-
-  // An option is only valid on items whose option groups include it (food flavours are options too).
-  const itemGroups = new Map<string, Set<string>>()
-  if (modifierIds.length) {
-    const { data: links, error: linksError } = await db
-      .from('item_option_groups')
-      .select('item_id, group_id')
-      .in('item_id', itemIds)
-    if (linksError) {
-      return { ok: false, status: 500, code: 'LOOKUP_FAILED', errors: [linksError.message] }
-    }
-    for (const link of links ?? []) {
-      const set = itemGroups.get(link.item_id) ?? new Set<string>()
-      set.add(link.group_id)
-      itemGroups.set(link.item_id, set)
+  if (!snapshot) {
+    return {
+      ok: false,
+      status: 503,
+      code: 'MENU_UNAVAILABLE',
+      errors: ["The menu can't load right now. Please try again in a minute."],
     }
   }
 
@@ -120,56 +100,16 @@ export async function createOrder(
   }[] = []
 
   for (const line of submitted.lines) {
-    const item = items?.find((i) => i.id === line.menuItemId)
-    if (!item || item.is_archived || !item.is_available) {
-      return {
-        ok: false,
-        status: 409,
-        code: 'ITEM_UNAVAILABLE',
-        errors: ['One of the drinks in your cart is no longer available.'],
-      }
+    const result = priceLineFromSnapshot(snapshot, line)
+    if (!result.ok) {
+      return { ok: false, status: result.status, code: result.code, errors: [result.message] }
     }
-
-    // Only M/L/XL/HOT are accepted until Plan 2 teaches the cart about other variants.
-    const price = (item.menu_variants ?? []).find(
-      (v: { code: string; is_available: boolean; is_archived: boolean }) =>
-        v.code === line.size &&
-        SELLABLE_CODES.includes(v.code) &&
-        v.is_available &&
-        !v.is_archived,
-    )
-    if (!price) {
-      return {
-        ok: false,
-        status: 409,
-        code: 'SIZE_UNAVAILABLE',
-        errors: [`${item.name} is not offered in size ${line.size}.`],
-      }
-    }
-
-    const mods = line.modifierIds.map((id) => {
-      const m = modifiers.find((x) => x.id === id)
-      return m &&
-        m.is_available &&
-        !m.is_archived &&
-        itemGroups.get(line.menuItemId)?.has(m.group_id)
-        ? { id: m.id, name: m.name, priceCentavos: m.price_centavos }
-        : null
-    })
-    if (mods.some((m) => m === null)) {
-      return {
-        ok: false,
-        status: 409,
-        code: 'MODIFIER_UNAVAILABLE',
-        errors: ['One of the add-ons you chose is no longer available.'],
-      }
-    }
-    const resolvedMods = mods as { id: string; name: string; priceCentavos: number }[]
+    const resolvedMods = result.modifiers
 
     let total: number
     try {
       total = lineTotal({
-        basePriceCentavos: price.price_centavos,
+        basePriceCentavos: result.basePriceCentavos,
         modifiers: resolvedMods,
         quantity: line.quantity,
       })
@@ -188,8 +128,8 @@ export async function createOrder(
 
     priced.push({
       line,
-      name: item.name,
-      basePrice: price.price_centavos,
+      name: result.name,
+      basePrice: result.basePriceCentavos,
       mods: resolvedMods,
       total,
       ice,
