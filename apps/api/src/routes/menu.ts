@@ -4,6 +4,7 @@ import { requireStaff, type AppEnv } from '../auth.js'
 import { apiError } from '../http.js'
 import { readLatestMenu, readMenuVersion } from '../menu/read.js'
 import { publishMenu } from '../menu/snapshot.js'
+import { menuStatus } from '../menu/status.js'
 
 export function menuRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>()
@@ -25,6 +26,11 @@ export function menuRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post('/publish', requireStaff(deps, 'owner'), async (c) => {
     return c.json(await publishMenu(deps.sql, c.get('staff').id))
+  })
+
+  // Registered before '/:version' so "status" is not parsed as a version.
+  app.get('/status', requireStaff(deps), async (c) => {
+    return c.json(await menuStatus(deps.sql), 200, { 'Cache-Control': 'no-store' })
   })
 
   app.get('/:version', async (c) => {
