@@ -27,6 +27,11 @@ async function transact(deps: AppDeps, fn: (tx: Tx) => Promise<ActionResult>): P
     return (await deps.sql.begin(fn)) as ActionResult
   } catch (e) {
     if (e instanceof Abort) return e.result
+    // Deadlock or serialization failure: another action won the race. Tell the caller to refresh.
+    const code = (e as { code?: unknown } | null)?.code
+    if (code === '40P01' || code === '40001') {
+      return fail(409, 'STATUS_CHANGED', 'This order was changed by someone else. Refresh and try again.')
+    }
     throw e
   }
 }
@@ -131,7 +136,8 @@ export function cancelOrder(
 
     await tx`
       insert into order_events (order_id, kind, from_value, to_value, staff_id, reason)
-      values (${orderId}, 'cancelled', ${order.prep_status}, 'cancelled', ${staffId}, ${reason})`
+      values (${orderId}, 'cancelled', ${order.prep_status}, 'cancelled', ${staffId},
+              ${`${reason} (payment ${outcome.order})`})`
     return { ok: true, prepStatus: 'cancelled', paymentStatus: outcome.order }
   })
 }
@@ -145,9 +151,13 @@ export function decidePayment(
   if (!UUID.test(paymentId)) return Promise.resolve(notFound())
 
   return transact(deps, async (tx) => {
-    const [existing] = await tx<{ order_id: string }[]>`select order_id from payments where id = ${paymentId}`
+    // Lock the order first, the same order as cancelOrder (orders, then payments), so a verify
+    // racing a cancel waits instead of deadlocking.
+    const [existing] = await tx<{ id: string }[]>`
+      select o.id from orders o join payments p on p.order_id = o.id
+      where p.id = ${paymentId} for update of o`
     if (!existing) return notFound()
-    const orderId = existing.order_id
+    const orderId = existing.id
     const verifying = input.decision === 'verify'
 
     const [pay] = verifying

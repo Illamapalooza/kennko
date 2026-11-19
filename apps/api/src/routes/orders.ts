@@ -2,9 +2,9 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import type { AppDeps } from '../create-app.js'
-import type { Context } from 'hono'
 import { optionalUser, requireStaff, type AppEnv } from '../auth.js'
-import { cancelOrder, patchOrder, type ActionResult } from '../orders/actions.js'
+import { invalid, respond } from '../http.js'
+import { cancelOrder, patchOrder } from '../orders/actions.js'
 import { createOnlineOrder, type SubmittedOrder } from '../orders/create.js'
 
 const lineSchema = z.object({
@@ -40,18 +40,6 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024 + 64 * 1024
 
 function malformed() {
   return Response.json({ code: 'MALFORMED', message: MALFORMED, errors: [MALFORMED] }, { status: 400 })
-}
-
-/** 400 in the order-route error shape. Unknown body keys are ignored (zod's default strip). */
-export function invalid(message: string) {
-  return Response.json({ code: 'INVALID', message, errors: [message] }, { status: 400 })
-}
-
-export function respond(c: Context<AppEnv>, result: ActionResult) {
-  if (!result.ok) {
-    return c.json({ code: result.code, message: result.errors[0], errors: result.errors }, result.status)
-  }
-  return c.json({ prepStatus: result.prepStatus, paymentStatus: result.paymentStatus })
 }
 
 const patchSchema = z

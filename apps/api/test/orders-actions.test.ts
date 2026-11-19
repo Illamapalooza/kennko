@@ -281,7 +281,7 @@ describe('staff order and payment actions', () => {
     })
     expect((await orderRow(orderId)).cancelled_at).not.toBeNull()
     const [e] = await events(orderId, 'cancelled')
-    expect(e).toMatchObject({ from_value: 'preparing', to_value: 'cancelled', staff_id: OWNER, reason: 'out of beans' })
+    expect(e).toMatchObject({ from_value: 'preparing', to_value: 'cancelled', staff_id: OWNER, reason: 'out of beans (payment refunded)' })
   })
 
   it('cancel a pending order -> cancelled + rejected, payment rejected', async () => {
@@ -290,6 +290,7 @@ describe('staff order and payment actions', () => {
     expect(r.body).toEqual({ prepStatus: 'cancelled', paymentStatus: 'rejected' })
     expect((await paymentRow(paymentId)).status).toBe('rejected')
     expect((await orderRow(orderId)).payment_status).toBe('rejected')
+    expect((await events(orderId, 'cancelled'))[0]!.reason).toBe('out of beans (payment rejected)')
   })
 
   it('cancel twice / a completed order -> 409 BAD_TRANSITION', async () => {

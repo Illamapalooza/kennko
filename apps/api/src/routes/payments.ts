@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { AppDeps } from '../create-app.js'
 import { requireStaff, type AppEnv } from '../auth.js'
 import { decidePayment } from '../orders/actions.js'
-import { invalid, respond } from './orders.js'
+import { invalid, respond } from '../http.js'
 
 const rejectSchema = z.object({ reason: z.string().trim().min(1).max(300) })
 
