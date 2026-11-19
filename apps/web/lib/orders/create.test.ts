@@ -12,10 +12,23 @@ const REQUIRED: Record<string, string[]> = {
   item_option_groups: ['item_id', 'group_id'],
 }
 
+// Per-test failure injection: a select error by table, an insert error by table, and the proof upload result.
+let selectErrors: Record<string, string> = {}
+let insertErrors: Record<string, string> = {}
+let uploadError: { message: string } | null = { message: 'stop here' }
+let deleted: string[] = []
+let removedProofs = 0
+
 vi.mock('@/lib/supabase/admin', () => ({
   getAdminClient: () => ({
     storage: {
-      from: () => ({ upload: async () => ({ error: { message: 'stop here' } }) }),
+      from: () => ({
+        upload: async () => ({ error: uploadError }),
+        remove: async () => {
+          removedProofs += 1
+          return { error: null }
+        },
+      }),
     },
     from: (table: string) => ({
       select: (cols: string) => {
@@ -23,10 +36,28 @@ vi.mock('@/lib/supabase/admin', () => ({
           if (!cols.includes(col)) throw new Error(`${table} select is missing ${col}`)
         }
         return {
-          in: async () => ({ data: tables[table] ?? [], error: null }),
+          in: async () => ({
+            data: selectErrors[table] ? null : (tables[table] ?? []),
+            error: selectErrors[table] ? { message: selectErrors[table] } : null,
+          }),
           eq: () => ({ maybeSingle: async () => ({ data: null }) }),
         }
       },
+      insert: () => {
+        const error = insertErrors[table] ? { message: insertErrors[table] } : null
+        const result = { data: null, error }
+        return {
+          select: () => ({ single: async () => ({ data: error ? null : { id: `${table}-1` }, error }) }),
+          then: (resolve: (v: typeof result) => unknown, reject: (e: unknown) => unknown) =>
+            Promise.resolve(result).then(resolve, reject),
+        }
+      },
+      delete: () => ({
+        eq: async () => {
+          deleted.push(table)
+          return { error: null }
+        },
+      }),
     }),
   }),
 }))
@@ -65,6 +96,11 @@ const order = (size: string, modifierIds: string[] = []): SubmittedOrder =>
   }) as SubmittedOrder
 
 beforeEach(() => {
+  selectErrors = {}
+  insertErrors = {}
+  uploadError = { message: 'stop here' }
+  deleted = []
+  removedProofs = 0
   tables = {
     menu_items: [
       {
@@ -124,5 +160,31 @@ describe('createOrder repricing from variants', () => {
     const o = order('M', ['o1'])
     o.claimedTotalCentavos = 11999
     expect(await createOrder(o, PNG)).toMatchObject({ ok: false, code: 'PRICE_CHANGED' })
+  })
+})
+
+describe('createOrder failure handling', () => {
+  it('returns LOOKUP_FAILED when the item_option_groups lookup errors', async () => {
+    selectErrors.item_option_groups = 'link lookup down'
+    const r = await createOrder(order('M', ['o1']), PNG)
+    expect(r).toMatchObject({ ok: false, status: 500, code: 'LOOKUP_FAILED' })
+  })
+
+  it('rolls the order back when the order_item_modifiers insert fails', async () => {
+    uploadError = null
+    insertErrors.order_item_modifiers = 'modifier insert failed'
+    const o = order('M', ['o1'])
+    o.claimedTotalCentavos = 12000
+    const r = await createOrder(o, PNG)
+    expect(r).toMatchObject({ ok: false, status: 500, code: 'ORDER_FAILED' })
+    expect(deleted).toContain('orders')
+    expect(removedProofs).toBe(1)
+  })
+
+  it('completes when every insert succeeds', async () => {
+    uploadError = null
+    const o = order('M', ['o1'])
+    o.claimedTotalCentavos = 12000
+    expect(await createOrder(o, PNG)).toMatchObject({ ok: true, totalCentavos: 12000 })
   })
 })

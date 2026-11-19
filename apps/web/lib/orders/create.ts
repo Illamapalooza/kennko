@@ -96,10 +96,13 @@ export async function createOrder(
   // An option is only valid on items whose option groups include it (food flavours are options too).
   const itemGroups = new Map<string, Set<string>>()
   if (modifierIds.length) {
-    const { data: links } = await db
+    const { data: links, error: linksError } = await db
       .from('item_option_groups')
       .select('item_id, group_id')
       .in('item_id', itemIds)
+    if (linksError) {
+      return { ok: false, status: 500, code: 'LOOKUP_FAILED', errors: [linksError.message] }
+    }
     for (const link of links ?? []) {
       const set = itemGroups.get(link.item_id) ?? new Set<string>()
       set.add(link.group_id)
@@ -348,7 +351,7 @@ export async function createOrder(
     }
 
     if (entry.mods.length > 0) {
-      await db.from('order_item_modifiers').insert(
+      const { error: modsError } = await db.from('order_item_modifiers').insert(
         entry.mods.map((m) => ({
           order_item_id: item.id,
           modifier_id: m.id,
@@ -356,6 +359,12 @@ export async function createOrder(
           price_centavos: m.priceCentavos,
         })),
       )
+      if (modsError) {
+        // Same rollback as a failed line: the order and its lines cascade away with the order row.
+        await db.from('orders').delete().eq('id', order.id)
+        await db.storage.from(PROOF_BUCKET).remove([proofPath])
+        return { ok: false, status: 500, code: 'ORDER_FAILED', errors: [modsError.message] }
+      }
     }
   }
 
