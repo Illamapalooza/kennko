@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { updateVariantPrice } from '@/app/admin/menu/actions'
 import { formatPesos } from '@/lib/money'
+import { clearDirty, markDirty } from '@/lib/admin/dirty'
 import type { VariantCode } from '@/lib/menu/types'
 
 type Props = {
@@ -30,6 +31,26 @@ export function PriceCell({ itemId, itemName, code, label, initialCentavos, edit
 
   const dirty = value !== savedText
   const warn = status === 'saving' || (status === 'error' && dirty)
+  const busy = dirty || status === 'saving'
+  const dirtyId = `price:${itemId}:${code}`
+
+  // Holds off the admin's background refresh while this cell has unsaved text or a save in flight.
+  useEffect(() => {
+    if (!busy) return
+    markDirty(dirtyId)
+    return () => clearDirty(dirtyId)
+  }, [busy, dirtyId])
+
+  // A refresh can bring a new price (another device, a publish). Show it, but
+  // only when the cell is idle: never over a save in flight or unsaved text.
+  useEffect(() => {
+    const next = toInput(initialCentavos)
+    if (inFlight.current || valueRef.current !== savedRef.current || next === savedRef.current) return
+    savedRef.current = next
+    valueRef.current = next
+    setSavedText(next)
+    setValue(next)
+  }, [initialCentavos])
 
   useEffect(() => {
     if (!warn) return

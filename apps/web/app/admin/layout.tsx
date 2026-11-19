@@ -5,6 +5,7 @@ import { getCurrentStaff } from '@/lib/auth/session'
 import { SignOutButton } from '@/components/admin/SignOutButton'
 import { AdminNav } from '@/components/admin/AdminNav'
 import { PublishBar } from '@/components/admin/PublishBar'
+import { AutoRefresh } from '@/components/admin/AutoRefresh'
 import { getMenuStatus, type MenuStatus } from '@/lib/menu/status'
 import { countOrdersToCheck } from '@/lib/admin/overview-data'
 import './admin.css'
@@ -36,7 +37,7 @@ export default async function AdminLayout({
   // Someone already signed in has no use for the sign-in form, and rendering
   // it inside the admin chrome puts a Sign in and a Sign out button on screen
   // at once.
-  if (isLoginRoute) redirect('/admin/menu')
+  if (isLoginRoute) redirect('/admin')
 
   const isOwner = staff.role === 'owner'
   // Chrome data fails soft: a broken count must not take down every admin page.
@@ -50,6 +51,7 @@ export default async function AdminLayout({
 
   return (
     <div className="admin-shell">
+      <AutoRefresh />
       <aside className="admin-side">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="admin-wordmark" src="/brand/wordmark-white.png" alt="Kennko Coffee" />
