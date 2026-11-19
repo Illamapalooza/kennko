@@ -1,0 +1,72 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { createServer } from 'node:net'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { PGlite } from '@electric-sql/pglite'
+import { PGLiteSocketServer } from '@electric-sql/pglite-socket'
+import postgres from 'postgres'
+
+const here = fileURLToPath(new URL('.', import.meta.url))
+const migrationsDir = join(here, '..', 'supabase', 'migrations')
+
+export type TestDb = {
+  sql: postgres.Sql
+  url: string
+  stop(): Promise<void>
+}
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.once('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address() as { port: number }
+      srv.close(() => resolve(port))
+    })
+  })
+}
+
+/** Fresh in-memory Postgres with Supabase stubs and every migration applied. */
+export async function startTestDb(): Promise<TestDb> {
+  const pg = new PGlite()
+  await pg.waitReady
+  await pg.exec(readFileSync(join(here, 'supabase-stubs.sql'), 'utf8'))
+  for (const file of readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort()) {
+    try {
+      await pg.exec(readFileSync(join(migrationsDir, file), 'utf8'))
+    } catch (err) {
+      throw new Error(`migration ${file} failed: ${(err as Error).message}`)
+    }
+  }
+
+  const port = await freePort()
+  const server = new PGLiteSocketServer({ db: pg, port, host: '127.0.0.1' })
+  await server.start()
+
+  const url = `postgres://postgres:postgres@127.0.0.1:${port}/postgres`
+  // PGlite serves one connection at a time and has no prepared-statement pool.
+  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} })
+
+  return {
+    sql,
+    url,
+    async stop() {
+      await sql.end({ timeout: 1 })
+      await server.stop()
+      await pg.close()
+    },
+  }
+}
+
+/** Run `fn` in a transaction as an RLS role: `authenticated` with a user id, or `anon`. */
+export async function asUser<T>(
+  sql: postgres.Sql,
+  userId: string | null,
+  fn: (tx: postgres.TransactionSql) => Promise<T>,
+): Promise<T> {
+  return (await sql.begin(async (tx) => {
+    await tx.unsafe(`set local role ${userId === null ? 'anon' : 'authenticated'}`)
+    await tx`select set_config('request.jwt.claim.sub', ${userId ?? ''}, true)`
+    return fn(tx)
+  })) as T
+}

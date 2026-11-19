@@ -5,6 +5,7 @@ Everything Kennko Coffee runs on, in one repo. CT. Montalban St., Villa Kananga,
 | Where | What | Start it |
 |---|---|---|
 | `apps/web` | Website: landing page, online ordering (`/order`) and admin (`/admin`). Next.js on Vercel, Supabase | `npm run dev` |
+| `apps/api` | Backend API (Hono on Vercel) and the Supabase migrations; database tests run on PGlite | `npm test -w @kennko/api` |
 | `apps/pos` | The till for the shop tablets, with a local sales database | `npm run pos` |
 | `wall` | Cat cafe scene for the shop projector, with its own order pad | `npm run wall` |
 | `packages/core` | Prices, discounts, ice and order rules shared by the website and the till | |

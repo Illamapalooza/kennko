@@ -18,7 +18,7 @@ The brand is the electric blue `#0055FF` identity. `../../brand/Kennko Menu.png`
 - `app/` — routes and layout
 - `components/site/` — marketing page sections
 - `lib/` — money formatting, Supabase clients, menu queries
-- `supabase/migrations/` — schema, applied with `npx supabase db push`
+- Database migrations live in `apps/api/supabase/migrations/`; apply them from `apps/api` with `npx supabase db push`
 - `supabase/seed/` — menu seed data, loaded with `npm run seed` (the menu list itself lives in `packages/core/src/seed-menu.ts`, shared with the till)
 - `public/brand/` — brand assets served by the app (lowercase kebab-case names)
 

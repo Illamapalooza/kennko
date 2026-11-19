@@ -1,0 +1,27 @@
+{
+  "name": "@kennko/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/dev.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kennko/core": "*",
+    "hono": "^4.13.0",
+    "jose": "^6.2.0",
+    "postgres": "^4.1.0",
+    "zod": "^4.6.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.0",
+    "@electric-sql/pglite-socket": "^0.2.0",
+    "@hono/node-server": "^2.1.0",
+    "@types/node": "^24",
+    "tsx": "^4.23.12",
+    "typescript": "^5",
+    "vitest": "^4.1.11"
+  }
+}
