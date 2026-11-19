@@ -90,7 +90,9 @@ export function foodFromSnapshot(s: MenuSnapshot | null): FoodItem[] {
   return s.categories
     .filter((c) => c.kind === 'food')
     .flatMap((c) => c.items)
-    .map((item) => {
+    .flatMap((item): FoodItem[] => {
+      const reg = item.variants.find((v) => v.code === 'REG')
+      if (!reg) return []
       const group = item.optionGroupIds
         .map((id) => groups.get(id))
         .find((g) => g !== undefined && g.minSelect >= 1)
@@ -99,14 +101,15 @@ export function foodFromSnapshot(s: MenuSnapshot | null): FoodItem[] {
         : item.description
           ? [item.description]
           : []
-      const reg = item.variants.find((v) => v.code === 'REG')
-      return {
-        id: item.id,
-        name: item.name,
-        options,
-        priceCentavos: reg?.priceCentavos ?? 0,
-        isAvailable: item.isAvailable && (reg?.isAvailable ?? false),
-      }
+      return [
+        {
+          id: item.id,
+          name: item.name,
+          options,
+          priceCentavos: reg.priceCentavos,
+          isAvailable: item.isAvailable && reg.isAvailable,
+        },
+      ]
     })
 }
 

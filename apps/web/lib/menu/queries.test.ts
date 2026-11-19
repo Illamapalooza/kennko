@@ -146,6 +146,25 @@ describe('foodFromSnapshot', () => {
     const empanada = foodFromSnapshot(snapshot).find((f) => f.name === 'Empanada')
     expect(empanada?.options).toEqual(['Chicken'])
   })
+
+  it('skips a food item with no REG variant instead of showing 0', () => {
+    const noReg: MenuSnapshot = {
+      ...snapshot,
+      categories: snapshot.categories.map((c) =>
+        c.kind === 'food'
+          ? {
+              ...c,
+              items: c.items.map((i) =>
+                i.name === 'Empanada' ? { ...i, variants: i.variants.filter((v) => v.code !== 'REG') } : i,
+              ),
+            }
+          : c,
+      ),
+    }
+    const names = foodFromSnapshot(noReg).map((f) => f.name)
+    expect(names).not.toContain('Empanada')
+    expect(names).toContain('Cookies')
+  })
 })
 
 describe('mapMenuRows', () => {
