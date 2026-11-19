@@ -10,3 +10,5 @@ apps/pos/config.json
 brand/assets
 wall/music
 *.pem
+wall/data
+apps/pos/dist
