@@ -88,10 +88,24 @@ export async function createOrder(
     ? (
         await db
           .from('options')
-          .select('id, name, price_centavos, is_available, is_archived')
+          .select('id, group_id, name, price_centavos, is_available, is_archived')
           .in('id', modifierIds)
       ).data ?? []
     : []
+
+  // An option is only valid on items whose option groups include it (food flavours are options too).
+  const itemGroups = new Map<string, Set<string>>()
+  if (modifierIds.length) {
+    const { data: links } = await db
+      .from('item_option_groups')
+      .select('item_id, group_id')
+      .in('item_id', itemIds)
+    for (const link of links ?? []) {
+      const set = itemGroups.get(link.item_id) ?? new Set<string>()
+      set.add(link.group_id)
+      itemGroups.set(link.item_id, set)
+    }
+  }
 
   const priced: {
     line: SubmittedLine
@@ -132,7 +146,10 @@ export async function createOrder(
 
     const mods = line.modifierIds.map((id) => {
       const m = modifiers.find((x) => x.id === id)
-      return m && m.is_available && !m.is_archived
+      return m &&
+        m.is_available &&
+        !m.is_archived &&
+        itemGroups.get(line.menuItemId)?.has(m.group_id)
         ? { id: m.id, name: m.name, priceCentavos: m.price_centavos }
         : null
     })

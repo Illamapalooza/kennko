@@ -5,13 +5,28 @@ vi.mock('server-only', () => ({}))
 type Tables = Record<string, unknown[]>
 let tables: Tables = {}
 
+// The fake refuses a select that leaves out the columns repricing depends on.
+const REQUIRED: Record<string, string[]> = {
+  menu_items: ['is_available', 'is_archived', 'menu_variants', 'price_centavos', 'code'],
+  options: ['is_available', 'is_archived', 'group_id', 'price_centavos'],
+  item_option_groups: ['item_id', 'group_id'],
+}
+
 vi.mock('@/lib/supabase/admin', () => ({
   getAdminClient: () => ({
+    storage: {
+      from: () => ({ upload: async () => ({ error: { message: 'stop here' } }) }),
+    },
     from: (table: string) => ({
-      select: () => ({
-        in: async () => ({ data: tables[table] ?? [], error: null }),
-        eq: () => ({ maybeSingle: async () => ({ data: null }) }),
-      }),
+      select: (cols: string) => {
+        for (const col of REQUIRED[table] ?? []) {
+          if (!cols.includes(col)) throw new Error(`${table} select is missing ${col}`)
+        }
+        return {
+          in: async () => ({ data: tables[table] ?? [], error: null }),
+          eq: () => ({ maybeSingle: async () => ({ data: null }) }),
+        }
+      },
     }),
   }),
 }))
@@ -61,9 +76,11 @@ beforeEach(() => {
       },
     ],
     options: [
-      { id: 'o1', name: 'Oat Milk', price_centavos: 4000, is_available: true },
-      { id: 'o2', name: 'Soy Milk', price_centavos: 3500, is_available: false },
+      { id: 'o1', group_id: 'g-milk', name: 'Oat Milk', price_centavos: 4000, is_available: true, is_archived: false },
+      { id: 'o2', group_id: 'g-milk', name: 'Soy Milk', price_centavos: 3500, is_available: false, is_archived: false },
+      { id: 'o3', group_id: 'g-fries', name: 'BBQ', price_centavos: 0, is_available: true, is_archived: false },
     ],
+    item_option_groups: [{ item_id: 'i1', group_id: 'g-milk' }],
   }
 })
 
@@ -91,8 +108,21 @@ describe('createOrder repricing from variants', () => {
     expect(r).toMatchObject({ ok: false, status: 409, code: 'MODIFIER_UNAVAILABLE' })
   })
 
-  it('prices from the variant and option: a wrong claimed total is PRICE_CHANGED', async () => {
-    const r = await createOrder(order('M', ['o1']), PNG)
-    expect(r).toMatchObject({ ok: false, code: 'PRICE_CHANGED' })
+  it('refuses an option from a group not attached to the item', async () => {
+    const r = await createOrder(order('M', ['o3']), PNG)
+    expect(r).toMatchObject({ ok: false, status: 409, code: 'MODIFIER_UNAVAILABLE' })
+  })
+
+  it('accepts the exact repriced total (variant 8000 + option 4000)', async () => {
+    const o = order('M', ['o1'])
+    o.claimedTotalCentavos = 12000
+    // Past the price check the fake storage stops the order, proving the total matched.
+    expect(await createOrder(o, PNG)).toMatchObject({ ok: false, code: 'UPLOAD_FAILED' })
+  })
+
+  it('rejects a total that is off by one centavo', async () => {
+    const o = order('M', ['o1'])
+    o.claimedTotalCentavos = 11999
+    expect(await createOrder(o, PNG)).toMatchObject({ ok: false, code: 'PRICE_CHANGED' })
   })
 })

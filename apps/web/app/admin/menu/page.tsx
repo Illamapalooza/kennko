@@ -2,15 +2,17 @@ import Link from 'next/link'
 import { getCurrentStaff } from '@/lib/auth/session'
 import { getAdminMenu } from './actions'
 import { priceRange } from './format'
+import { readPublishNotice } from './publish-notice'
 import { AvailabilityToggle } from '@/components/admin/AvailabilityToggle'
 import { PublishMenuButton } from '@/components/admin/PublishMenuButton'
 
 export default async function AdminMenuPage({
   searchParams,
 }: {
-  searchParams: Promise<{ denied?: string }>
+  searchParams: Promise<{ denied?: string; publish?: string; reason?: string }>
 }) {
-  const { denied } = await searchParams
+  const { denied, publish, reason } = await searchParams
+  const publishNotice = readPublishNotice({ publish, reason })
   const staff = await getCurrentStaff()
   const categories = await getAdminMenu()
   const isOwner = staff?.role === 'owner'
@@ -23,6 +25,12 @@ export default async function AdminMenuPage({
         <p className="admin-notice" role="alert">
           Only the owner can edit menu items and prices. You can still mark items
           sold out.
+        </p>
+      ) : null}
+
+      {publishNotice ? (
+        <p className="admin-notice" role="alert">
+          {publishNotice}
         </p>
       ) : null}
 
