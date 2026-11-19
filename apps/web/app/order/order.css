@@ -554,3 +554,110 @@
 @media (min-width: 641px) {
   .done-actions { grid-template-columns: 1fr 1fr; }
 }
+
+/* ══ Sticker theme ════════════════════════════════════════════════════════════
+   The ordering pages wear the landing page's retro sticker layer (brand/DESIGN.md):
+   grid paper, blue sticker boards, ink outlines, hard shadows and perched cats.
+   Form controls stay plain and readable inside the sticker panels.          */
+
+.order-shell { background: var(--pattern-grid), var(--cream); }
+
+/* Masthead: a blue sticker board with an outlined title */
+.order-masthead { background: none; color: var(--white); border-radius: 0; padding: 104px 16px var(--space-5); margin-bottom: var(--space-5); }
+.order-masthead-inner.k-sticker { position: relative; max-width: 1180px; margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-5); }
+.order-masthead h1 { font-weight: 900; letter-spacing: .01em; font-size: clamp(2.2rem, 7vw, 3.8rem); margin: 6px 0 12px; }
+.order-masthead p { font-weight: 600; opacity: 1; }
+.order-eyebrow { border: var(--outline-thin) solid var(--ink); transform: rotate(-2deg); letter-spacing: .1em; }
+.masthead-link {
+  background: var(--white); color: var(--blue); border: var(--outline-thin) solid var(--ink);
+  border-radius: var(--radius-pill); padding: 6px 14px; box-shadow: 0 3px 0 var(--ink);
+}
+.masthead-link:hover { color: var(--blue); border-bottom-color: var(--ink); transform: translateY(-1px); }
+.order-perch-left { left: 6%; }
+.order-perch-right { right: 8%; }
+
+/* Category heads: cream labels on the grid, with a cat perched on each */
+.order-cat { margin-bottom: var(--space-7); }
+.order-cat-head {
+  position: relative; align-items: center;
+  background: var(--cream); border: var(--outline) solid var(--ink); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-hard); padding: var(--space-3) var(--space-5); margin: var(--space-7) 0 var(--space-5);
+}
+.order-cat-head h2 { font-size: var(--text-lg); font-weight: 900; letter-spacing: .02em; color: var(--blue); }
+.order-cat-count {
+  margin-left: 0; margin-right: 150px; background: var(--peach); color: var(--ink);
+  border: var(--outline-thin) solid var(--ink); border-radius: var(--radius-pill); padding: 2px 10px;
+}
+
+/* Drink cards: outlined stickers with the drawn cup on a cream frame */
+.drink-grid { gap: var(--space-4); }
+.drink {
+  border: var(--outline) solid var(--ink); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-hard);
+}
+.drink:hover { transform: translateY(-3px); box-shadow: 0 9px 0 var(--ink); border-color: var(--ink); }
+.drink.is-sold-out:hover { box-shadow: var(--shadow-hard); border-color: var(--ink); }
+.drink-frame { background: var(--cream); border-bottom: var(--outline) solid var(--ink); }
+.drink-art { display: grid; place-items: center; padding: 12%; }
+.drink-art svg { width: 100%; height: 100%; transition: transform var(--ease); }
+.drink:hover .drink-art svg { transform: rotate(-5deg) scale(1.04); }
+.drink-flag, .drink-out { border: var(--outline-thin) solid var(--ink); }
+.drink-name { font-weight: 900; text-transform: uppercase; letter-spacing: .01em; color: var(--blue); }
+.ladder-row:hover:not([disabled]) { background: var(--peach); }
+.ladder-size { color: var(--ink); }
+.ladder-price { color: var(--blue); }
+
+/* Customise sheet */
+.sheet, .order-sheet-card { border: var(--outline) solid var(--ink); box-shadow: 0 8px 0 var(--ink); }
+.sheet-head { background: var(--cream); border-bottom: var(--outline) solid var(--ink); }
+.sheet-thumb { border: var(--outline-thin) solid var(--ink); background: var(--cream); }
+.sheet-thumb .drink-art { padding: 6%; }
+.sheet-title h2 { font-weight: 900; text-transform: uppercase; color: var(--blue); }
+.sheet-close { border: var(--outline-thin) solid var(--ink); background: var(--white); }
+.sheet-foot { border-top: var(--outline) solid var(--ink); background: var(--cream); }
+.chips button { border: var(--outline-thin) solid var(--ink); }
+.chips button[aria-pressed='true'] { box-shadow: 0 3px 0 var(--ink); border-color: var(--ink); }
+.stepper { border: var(--outline-thin) solid var(--ink); background: var(--white); }
+.sheet-add, .order-cart-bar button, .done-secondary, .pin-btn {
+  border: var(--outline-thin) solid var(--ink); box-shadow: 0 4px 0 var(--ink);
+  text-transform: uppercase; letter-spacing: .03em; font-weight: 900;
+  transition: transform var(--ease), box-shadow var(--ease);
+}
+.sheet-add:active, .order-cart-bar button:active, .done-secondary:active, .pin-btn:active { transform: translateY(4px); box-shadow: none; }
+
+/* Cart bar: a blue strip with an ink top edge */
+.order-cart-bar { border-top: var(--outline) solid var(--ink); box-shadow: none; }
+
+/* Checkout: white sticker panels; the questions inside stay plain */
+.checkout-head h1 { font-weight: 900; color: var(--blue); }
+.link-back {
+  background: var(--white); border: var(--outline-thin) solid var(--ink); border-radius: var(--radius-pill);
+  padding: 6px 14px; box-shadow: 0 3px 0 var(--ink);
+}
+.link-back:hover { text-decoration: none; transform: translateY(-1px); }
+.panel, .order-card, .done, .account-card {
+  border: var(--outline) solid var(--ink); border-radius: var(--radius-lg); box-shadow: var(--shadow-hard);
+}
+.panel-title {
+  display: inline-block; background: var(--blue-soft); color: var(--blue);
+  border: var(--outline-thin) solid var(--ink); border-radius: var(--radius-pill); padding: 2px 12px;
+}
+.panel-summary { background: var(--cream); }
+.order-choice button { border-color: var(--ink); }
+.order-choice button[aria-pressed='true'] { box-shadow: 0 3px 0 var(--ink); }
+
+/* Confirmation */
+.done { position: relative; margin-top: var(--space-8); }
+.done-mark { border: var(--outline-thin) solid var(--ink); }
+.done h1 { font-weight: 900; text-transform: uppercase; color: var(--blue); }
+.done-code { background: var(--cream); border: var(--outline-thin) dashed var(--ink); }
+
+@media (max-width: 640px) {
+  .order-masthead-inner.k-sticker { padding: var(--space-6) var(--space-4) var(--space-5); }
+  .order-cat-count { margin-right: 96px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drink-art svg, .sheet-add, .order-cart-bar button, .done-secondary, .pin-btn { transition: none; }
+  .drink:hover .drink-art svg { transform: none; }
+}

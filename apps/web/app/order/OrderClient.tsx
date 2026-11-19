@@ -11,7 +11,16 @@ import { iceSummary } from '@/lib/cart/ice'
 import { SIZE_VOLUMES } from '@/lib/menu/sizes'
 import { describeFee, ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
 import { LocationPin, type SharedPin } from '@/components/order/LocationPin'
+import { CatToon, type CatCoat, type CatPose } from '@/components/site/CatToon'
 import type { MenuCategoryWithItems, MenuItemWithPrices, DrinkSize } from '@/lib/menu/types'
+
+// A cat from the wall's cast perches on each category label, cycling through the poses.
+const CATEGORY_CATS: { coat: CatCoat; pose: CatPose; spot: string }[] = [
+  { coat: 'calico', pose: 'nap', spot: 'perch-nap perch-right' },
+  { coat: 'tabby', pose: 'peek', spot: 'perch-peek perch-right' },
+  { coat: 'cream', pose: 'sit', spot: 'perch-sit perch-right' },
+  { coat: 'black', pose: 'peek', spot: 'perch-peek perch-right' },
+]
 
 export type ModifierGroup = {
   id: string
@@ -277,14 +286,16 @@ export function OrderClient({
       {step === 'menu' ? (
         <>
           <header className="order-masthead">
-            <div className="order-masthead-inner">
+            <div className="order-masthead-inner k-sticker">
+              <CatToon coat="ginger" pose="peek" className="perch perch-peek order-perch-left" />
+              <CatToon coat="tuxedo" pose="wave" className="perch perch-sit order-perch-right" />
               <div className="masthead-top">
                 <span className="order-eyebrow">Pickup or delivery</span>
                 <a className="masthead-link" href={customer ? '/orders' : '/account'}>
                   {customer ? 'Your orders' : 'Sign in'}
                 </a>
               </div>
-              <h1>The Kennko catalog</h1>
+              <h1 className="k-outlined">The Kennko catalog</h1>
               <p>
                 Every drink, every size, priced the way it is on the board.
                 Tap a size to start your order.
@@ -293,9 +304,14 @@ export function OrderClient({
           </header>
 
           <div className="order-main">
-            {categories.map((category) => (
+            {categories.map((category, index) => (
               <section className="order-cat" key={category.id}>
                 <div className="order-cat-head">
+                  <CatToon
+                    coat={CATEGORY_CATS[index % CATEGORY_CATS.length].coat}
+                    pose={CATEGORY_CATS[index % CATEGORY_CATS.length].pose}
+                    className={`perch ${CATEGORY_CATS[index % CATEGORY_CATS.length].spot}`}
+                  />
                   <h2>{category.name}</h2>
                   <span className="order-cat-count">{category.items.length} drinks</span>
                 </div>
@@ -640,6 +656,7 @@ function DoneStep({
 
   return (
     <div className="done">
+      <CatToon coat="calico" pose="wave" className="perch perch-sit perch-right" />
       <div className="done-mark" aria-hidden="true">✓</div>
       <h1>Order received</h1>
       <p className="done-sub">Keep this code — it is how you and the cafe find your order.</p>

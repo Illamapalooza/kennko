@@ -15,7 +15,7 @@ export function DrinkCard({
   imageUrl: string | null
   onPick: (item: MenuItemWithPrices, size: DrinkSize) => void
 }) {
-  const photo = drinkPhoto(item.name, imageUrl)
+  const photo = drinkPhoto(imageUrl)
   const soldOut = !item.isAvailable || item.prices.length === 0
 
   return (

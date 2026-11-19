@@ -19,15 +19,17 @@ theme, no black and no grey.
 
 | Layer | Where | Feel |
 |---|---|---|
-| **Core** | POS, order flow, account, admin, receipts | Calm, fast, blue and white. Soft shadows, no outlines, no patterns. |
-| **Retro sticker** | Website landing sections, printed menus and posters, social graphics, the wall | Loud and fun. Ink outlines, hard shadows, cream paper, patterns, mascots. |
+| **Core** | POS, admin, receipts | Calm, fast, blue and white. Soft shadows, no outlines, no patterns. |
+| **Retro sticker** | The whole public website (landing, ordering, account, order tracking), printed menus and posters, social graphics, the wall | Loud and fun. Ink outlines, hard shadows, cream paper, patterns, perched cats. |
 
-The core layer is the default. Only use the sticker layer where people browse or look, never where staff or
-customers are doing a task: no stickers in a checkout, a form or the till. A screen uses one layer.
+Staff tools (the till, admin) stay core: speed beats charm there. **Customer-facing pages wear the sticker layer,
+ordering included** (Julius, 2026-11-20), with one guard: form controls (inputs, selects, the location pin) stay plain
+and high-contrast inside sticker panels, so checkout is as easy to fill in as before.
 
 **The website's landing page is fully sticker layer** (`apps/web/app/landing.css`, scoped under `.landing`): one
 tiled grid paper behind everything, blue sticker boards, cream section labels, a ticker strip under the hero.
-`/order`, `/orders`, `/account` and `/admin` stay core.
+The ordering pages share the look through the "Sticker theme" block at the end of `apps/web/app/order/order.css`;
+`/admin` stays core. The cat perch rules (`.perch-*`) live in `apps/web/app/globals.css` so every page can use them.
 
 ## Colour
 

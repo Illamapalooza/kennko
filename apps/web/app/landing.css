@@ -7,20 +7,6 @@
 
 .landing { min-height: 100vh; overflow-x: clip; }
 
-/* ---------- Perching cats ----------
-   CatToon draws each pose so the edge it rests on sits on a known line of its viewBox; these
-   rules pin that line to the card's edge. The card must be position: relative. */
-.perch { position: absolute; z-index: 3; height: auto; pointer-events: none; transition: transform var(--ease); }
-.perch-left { left: 10%; }
-.perch-right { right: 10%; }
-/* peek: edge at y 84 of 92 */
-.perch-peek { top: 0; width: 84px; transform: translateY(calc(-84 / 92 * 100%)); }
-/* sit / wave: edge at y 146 of 150 */
-.perch-sit { top: 0; width: 70px; transform: translateY(calc(-146 / 150 * 100%)); }
-/* nap: edge at y 70 of 110 */
-.perch-nap { top: 0; width: 120px; transform: translateY(calc(-70 / 110 * 100%)); }
-/* climb: a peeking cat turned on its side, gripping the right edge */
-.perch-climb { top: 38%; right: 0; width: 96px; transform: translateX(calc(50% + 34px)) rotate(90deg); }
 .landing .menu-card:hover .perch-peek,
 .landing .stamp-card:hover .perch-peek { transform: translateY(calc(-84 / 92 * 100% - 6px)); }
 .landing main section { padding: var(--space-6) 0; }
@@ -441,12 +427,6 @@
   text-transform: uppercase;
 }
 .footer-fine { width: 100%; font-size: var(--text-sm); opacity: 0.85; }
-
-/* The climbing cat hangs off the food board's side; below this width there is no room beside it,
-   so it peeks over the top instead. */
-@media (max-width: 1200px) {
-  .perch-climb { top: 0; right: 14%; width: 84px; transform: translateY(calc(-84 / 92 * 100%)); }
-}
 
 /* ---------- Tablet ---------- */
 @media (max-width: 920px) {

@@ -1,33 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { drinkPhoto, LOCAL_DRINK_PHOTOS } from './drinkImage'
+import { drinkPhoto } from './drinkImage'
+import { cupFlavourFor } from './DrinkPlaceholder'
 
 describe('drinkPhoto', () => {
-  it('prefers an admin upload over the local map', () => {
-    expect(drinkPhoto('Egg Coffee', 'https://cdn/uploaded.jpg')).toBe(
-      'https://cdn/uploaded.jpg',
-    )
+  it('uses an admin upload', () => {
+    expect(drinkPhoto('https://cdn/uploaded.jpg')).toBe('https://cdn/uploaded.jpg')
   })
 
-  it('falls back to local photography when nothing is uploaded', () => {
-    expect(drinkPhoto('Egg Coffee', null)).toBe('/brand/egg-coffee.jpg')
+  it('returns null without an upload, so the drawn cup renders', () => {
+    expect(drinkPhoto(null)).toBeNull()
   })
+})
 
-  it('returns null for a drink with no photo, so a placeholder renders', () => {
-    expect(drinkPhoto('Hojicha', null)).toBeNull()
-  })
-
-  it('only claims photos for drinks still on the menu', () => {
-    // Guards against re-adding shots of discontinued drinks like Strawberry
-    // Cloud Soda, which would show customers something they cannot order.
-    const current = [
-      'Americano', 'Café Latte', 'Vanilla Latte', 'Hazelnut Latte', 'Spanish Latte',
-      'White Café Mocha', 'Dark Café Mocha', 'Caramel Macchiato', 'Vietnamese Coffee',
-      'Egg Coffee', 'Coconut Coffee', 'Sea Salt Caramel Oat', 'Honey Oat Latte',
-      'Strawberry Milk', 'Strawberry Matcha', 'Signature Choco', 'Choco-Coconut',
-      'Vanilla Milk', 'Matcha', 'Matcha Coco', 'Dirty Matcha', 'Hojicha',
-    ]
-    for (const name of Object.keys(LOCAL_DRINK_PHOTOS)) {
-      expect(current).toContain(name)
-    }
+describe('cupFlavourFor', () => {
+  it.each([
+    ['Strawberry Matcha', 'strawberry'],
+    ['Dirty Matcha', 'matcha'],
+    ['Dark Café Mocha', 'choco'],
+    ['Signature Choco', 'choco'],
+    ['Sea Salt Caramel Oat', 'caramel'],
+    ['Hojicha', 'caramel'],
+    ['Americano', 'coffee'],
+  ])('%s gets a %s cup', (name, flavour) => {
+    expect(cupFlavourFor(name)).toBe(flavour)
   })
 })

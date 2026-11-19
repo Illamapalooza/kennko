@@ -65,7 +65,7 @@ export function CustomiseSheet({
   const chosen = groups.flatMap((g) => g.modifiers).filter((m) => modIds.includes(m.id))
   const unit = base + chosen.reduce((sum, m) => sum + m.priceCentavos, 0)
   const total = lineTotal({ basePriceCentavos: base, modifiers: chosen, quantity: qty })
-  const photo = drinkPhoto(item.name, null)
+  const photo = drinkPhoto(null)
 
   function toggle(group: ModifierGroup, id: string) {
     setModIds((current) => {
