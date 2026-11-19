@@ -5,9 +5,9 @@ import { apiError } from './http.js'
 
 export type StaffRole = 'owner' | 'barista'
 
-/** Hono context typing for routes that sit behind `requireStaff`. */
+/** Hono context typing: `staff` behind `requireStaff`, `userId` behind `optionalUser`. */
 export type AppEnv = {
-  Variables: { staff: { id: string; role: StaffRole } }
+  Variables: { staff: { id: string; role: StaffRole }; userId: string | null }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -37,13 +37,34 @@ export function createUserVerifier(supabaseUrl: string): VerifyUser {
   return verifierFromJwks(jwks, `${base}/auth/v1`)
 }
 
+const bearer = (header: string | undefined) => /^Bearer\s+(\S+)$/i.exec(header ?? '')?.[1] ?? null
+
+/**
+ * Links a signed-in customer when the token verifies. A missing, invalid or expired token is a
+ * guest, never a refusal (Ruling 4).
+ */
+export function optionalUser(deps: AppDeps): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const token = bearer(c.req.header('Authorization'))
+    let userId: string | null = null
+    if (token) {
+      try {
+        userId = (await deps.verifyUser(token)).userId
+      } catch {
+        userId = null
+      }
+    }
+    c.set('userId', userId)
+    await next()
+  }
+}
+
 export function requireStaff(deps: AppDeps, role?: 'owner'): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    const header = c.req.header('Authorization') ?? ''
-    const match = /^Bearer\s+(\S+)$/i.exec(header)
-    if (!match) throw apiError(401, 'UNAUTHENTICATED', 'Missing bearer token')
+    const token = bearer(c.req.header('Authorization'))
+    if (!token) throw apiError(401, 'UNAUTHENTICATED', 'Missing bearer token')
 
-    const { userId } = await deps.verifyUser(match[1]!)
+    const { userId } = await deps.verifyUser(token)
 
     // Re-checked on every request so deactivation takes effect immediately.
     const [row] = await deps.sql<{ role: StaffRole; is_active: boolean }[]>`

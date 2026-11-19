@@ -1,6 +1,6 @@
 # Kennko API
 
-Hono app on Vercel. It owns the published menu: `GET /v1/menu`, `GET /v1/menu/:version`, `POST /v1/menu/publish` (owner only), and `GET /health`. Migrations live in `supabase/migrations`.
+Hono app on Vercel. It owns the published menu: `GET /v1/menu`, `GET /v1/menu/:version`, `POST /v1/menu/publish` (owner only), online checkout `POST /v1/orders` (multipart: `order` JSON + `proof` image), and `GET /health`. Migrations live in `supabase/migrations`.
 
 Environment variables (see `src/config.ts`):
 
@@ -8,6 +8,7 @@ Environment variables (see `src/config.ts`):
 | --- | --- |
 | `DATABASE_URL` | Supabase **transaction pooler** URL, user `kennko_api.<project ref>`, port 6543 |
 | `SUPABASE_URL` | `https://<project ref>.supabase.co` (used to verify owner tokens) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key. Used **only** by `src/storage.ts` to upload, remove and sign payment proofs in the private `payment-proofs` bucket. SQL never uses it. |
 
 No secret goes in the repo. Keep passwords and tokens in the Vercel dashboard and your shell only.
 

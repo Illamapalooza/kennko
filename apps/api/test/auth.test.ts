@@ -3,6 +3,7 @@ import type { Hono } from 'hono'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../src/create-app.js'
 import { requireStaff, verifierFromJwks, type AppEnv } from '../src/auth.js'
+import { fakeProofs } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 const SUPABASE_URL = 'http://supabase.test'
@@ -54,7 +55,7 @@ describe('staff auth', () => {
         .setExpirationTime(opts.expiresIn ?? '5m')
         .sign(opts.key ?? privateKey)
 
-    const deps = { sql: db.sql, verifyUser }
+    const deps = { sql: db.sql, verifyUser, proofs: fakeProofs(), now: () => new Date() }
     app = createApp(deps)
     app.get('/owner-only', requireStaff(deps, 'owner'), (c) => c.json(c.get('staff')))
     app.get('/any-staff', requireStaff(deps), (c) => c.json(c.get('staff')))

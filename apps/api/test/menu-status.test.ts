@@ -3,6 +3,7 @@ import type { Hono } from 'hono'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../src/create-app.js'
 import { verifierFromJwks, type AppEnv } from '../src/auth.js'
+import { fakeProofs } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 const ISSUER = 'http://supabase.test/auth/v1'
@@ -34,7 +35,12 @@ describe('menu status', () => {
       .setIssuedAt()
       .setExpirationTime('5m')
       .sign(privateKey)
-    app = createApp({ sql: db.sql, verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER) })
+    app = createApp({
+      sql: db.sql,
+      verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
+      proofs: fakeProofs(),
+      now: () => new Date(),
+    })
 
     const [cat] = await db.sql`insert into menu_categories (name, sort_order) values ('Coffee', 0) returning id`
     const [item] = await db.sql`insert into menu_items (category_id, name) values (${cat!.id}, 'Americano') returning id`
