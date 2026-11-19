@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception'
 import type postgres from 'postgres'
 import type { AppEnv } from './auth.ts'
 import { apiError } from './http.ts'
+import { menuRoutes } from './routes/menu.ts'
 
 export type AppDeps = {
   sql: postgres.Sql
@@ -26,6 +27,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     await deps.sql`select 1`
     return c.json({ ok: true })
   })
+
+  app.route('/v1/menu', menuRoutes(deps))
 
   return app
 }
