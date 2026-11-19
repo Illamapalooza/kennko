@@ -7,7 +7,6 @@ import { requireStaff, requireOwner } from '@/lib/auth/session'
 import { mapMenuRows } from '@/lib/menu/queries'
 import { validateImage } from '@/lib/images/validate'
 import { publishMenu } from '@/lib/menu/publish'
-import { publishFailedUrl } from './publish-notice'
 import { drinkGroupLinksFor, type DrinkGroupLinkRow } from './drink-groups'
 import { VARIANT_META, parseVariantPrices, variantCodesFor, type CategoryKind } from './format'
 import type { AdminMenuCategory, VariantCode } from '@/lib/menu/types'
@@ -16,19 +15,13 @@ const IMAGE_BUCKET = 'menu-images'
 
 const ALL_CODES = Object.keys(VARIANT_META) as VariantCode[]
 
-/**
- * Publishes after a save. Next hides the text of errors thrown by server actions in production, so a
- * failure redirects to the menu page with the reason, where it shows as a banner.
- */
-async function publishAfterSave() {
-  const result = await publishMenu()
-  if (!result.ok) redirect(publishFailedUrl(result.message))
-}
-
 export async function publishMenuNow(): Promise<{ ok: true; version: number } | { ok: false; message: string }> {
   await requireOwner()
   const result = await publishMenu()
-  if (result.ok) revalidatePath('/')
+  if (result.ok) {
+    revalidatePath('/')
+    revalidatePath('/admin', 'layout')
+  }
   return result
 }
 
@@ -148,7 +141,7 @@ export async function saveMenuItem(formData: FormData) {
 
   revalidatePath('/admin/menu')
   revalidatePath('/')
-  await publishAfterSave()
+  revalidatePath('/admin', 'layout')
   redirect('/admin/menu')
 }
 
@@ -165,7 +158,7 @@ export async function archiveMenuItem(id: string) {
 
   revalidatePath('/admin/menu')
   revalidatePath('/')
-  await publishAfterSave()
+  revalidatePath('/admin', 'layout')
 }
 
 export async function uploadMenuImage(itemId: string, file: File) {

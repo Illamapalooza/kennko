@@ -2,20 +2,20 @@ import Link from 'next/link'
 import { getCurrentStaff } from '@/lib/auth/session'
 import { getAdminMenu } from './actions'
 import { priceRange } from './format'
-import { readPublishNotice } from './publish-notice'
 import { AvailabilityToggle } from '@/components/admin/AvailabilityToggle'
-import { PublishMenuButton } from '@/components/admin/PublishMenuButton'
+import { PublishBar } from '@/components/admin/PublishBar'
+import { getMenuStatus } from '@/lib/menu/status'
 
 export default async function AdminMenuPage({
   searchParams,
 }: {
-  searchParams: Promise<{ denied?: string; publish?: string; reason?: string }>
+  searchParams: Promise<{ denied?: string }>
 }) {
-  const { denied, publish, reason } = await searchParams
+  const { denied } = await searchParams
   const staff = await getCurrentStaff()
   const categories = await getAdminMenu()
   const isOwner = staff?.role === 'owner'
-  const publishNotice = isOwner ? readPublishNotice({ publish, reason }) : null
+  const status = await getMenuStatus()
 
   return (
     <>
@@ -28,18 +28,11 @@ export default async function AdminMenuPage({
         </p>
       ) : null}
 
-      {publishNotice ? (
-        <p className="admin-notice" role="alert">
-          {publishNotice}
-        </p>
-      ) : null}
-
       {isOwner ? (
         <p>
           <Link className="btn btn-primary" href="/admin/menu/new">
             Add a drink
-          </Link>{' '}
-          <PublishMenuButton />
+          </Link>
         </p>
       ) : null}
 
@@ -95,6 +88,8 @@ export default async function AdminMenuPage({
           </table>
         </section>
       ))}
+
+      <PublishBar status={status} isOwner={isOwner} />
     </>
   )
 }
