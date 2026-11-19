@@ -103,6 +103,7 @@ describe('menu routes', () => {
       const b = (await (await app.request('/v1/menu')).json()) as Snap & { optionGroups: { options: { id: string; isAvailable: boolean }[] }[] }
       return { item: b.categories.flatMap((c) => c.items).find((i) => i.id === item!.id)!.isAvailable, opt: b.optionGroups.flatMap((g) => g.options).find((o) => o.id === opt!.id)?.isAvailable }
     }
+    const etag0 = (await app.request('/v1/menu')).headers.get('ETag')
     await db.sql`update menu_items set is_available = false where id = ${item!.id}`
     await db.sql`update options set is_available = false where id = ${opt.id}`
     const off = await flat()
@@ -110,7 +111,10 @@ describe('menu routes', () => {
     expect(off.opt).toBe(false)
     await db.sql`update menu_items set is_available = true where id = ${item!.id}`
     await db.sql`update options set is_available = true where id = ${opt.id}`
-    expect((await flat()).item).toBe(true)
+    const back = await flat()
+    expect(back.item).toBe(true)
+    expect(back.opt).toBe(true)
+    expect((await app.request('/v1/menu')).headers.get('ETag')).toBe(etag0)
   })
 
   it('a version endpoint ignores later sold-out marks', async () => {
