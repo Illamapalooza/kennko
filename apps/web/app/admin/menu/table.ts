@@ -8,10 +8,15 @@ export type MenuFilterOptions = {
   soldOutOnly: boolean
 }
 
-export type RowCell = { code: VariantCode; label: string; priceCentavos: number | null }
+export type RowCell = { code: VariantCode; label: string; priceCentavos: number | null; isAvailable: boolean }
 
 function fold(text: string): string {
-  return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+/** Sold out means the item, or any size still on sale, is switched off. */
+function isSoldOut(item: AdminTableItem): boolean {
+  return !item.isAvailable || item.prices.some((p) => !p.isArchived && !p.isAvailable)
 }
 
 export function filterMenu(menu: AdminMenu, opts: MenuFilterOptions): AdminMenu {
@@ -23,7 +28,7 @@ export function filterMenu(menu: AdminMenu, opts: MenuFilterOptions): AdminMenu 
       items: c.items.filter(
         (i) =>
           (opts.showArchived || !i.isArchived) &&
-          (!opts.soldOutOnly || !i.isAvailable) &&
+          (!opts.soldOutOnly || isSoldOut(i)) &&
           (query === '' || fold(i.name).includes(query)),
       ),
     }))
@@ -38,6 +43,7 @@ export function rowCells(item: AdminTableItem, kind: 'drink' | 'food'): RowCell[
       code,
       label: kind === 'food' ? 'Single price' : code,
       priceCentavos: price ? price.priceCentavos : null,
+      isAvailable: price ? price.isAvailable : true,
     }
   })
 }

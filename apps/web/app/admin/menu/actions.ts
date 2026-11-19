@@ -35,8 +35,8 @@ export async function getAdminMenu(): Promise<AdminMenu> {
         `id, name, kind, sort_order,
          menu_items ( id, category_id, name, description, image_path, is_bestseller,
                       is_available, is_archived, sort_order,
-                      menu_variants ( code, price_centavos, is_archived, sort_order ),
-                      item_option_groups ( group_id ) )`,
+                      menu_variants ( code, price_centavos, is_archived, is_available, sort_order ),
+                      item_option_groups ( group_id, sort_order ) )`,
       )
       .order('sort_order'),
     db.from('option_groups').select('id, name, min_select, max_select, sort_order').order('sort_order'),
@@ -59,8 +59,8 @@ export async function getAdminMenu(): Promise<AdminMenu> {
       is_available: boolean
       is_archived: boolean
       sort_order: number
-      menu_variants: { code: VariantCode; price_centavos: number; is_archived: boolean; sort_order: number }[]
-      item_option_groups: { group_id: string }[]
+      menu_variants: { code: VariantCode; price_centavos: number; is_archived: boolean; is_available: boolean; sort_order: number }[]
+      item_option_groups: { group_id: string; sort_order: number }[]
     }[]
   }
 
@@ -82,8 +82,10 @@ export async function getAdminMenu(): Promise<AdminMenu> {
           categoryId: item.category_id,
           prices: [...item.menu_variants]
             .sort((a, b) => a.sort_order - b.sort_order)
-            .map((v) => ({ code: v.code, priceCentavos: v.price_centavos, isArchived: v.is_archived })),
-          optionGroupIds: item.item_option_groups.map((g) => g.group_id),
+            .map((v) => ({ code: v.code, priceCentavos: v.price_centavos, isArchived: v.is_archived, isAvailable: v.is_available })),
+          optionGroupIds: [...item.item_option_groups]
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map((g) => g.group_id),
         })),
     })),
     optionGroups: (groupsResult.data ?? []).map((g) => ({

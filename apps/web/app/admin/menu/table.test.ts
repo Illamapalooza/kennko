@@ -10,7 +10,7 @@ function item(over: Partial<AdminTableItem> & { id: string; name: string }): Adm
     isAvailable: true,
     isArchived: false,
     categoryId: 'c1',
-    prices: [{ code: 'M', priceCentavos: 8000, isArchived: false }],
+    prices: [{ code: 'M', priceCentavos: 8000, isArchived: false, isAvailable: true }],
     optionGroupIds: [],
     ...over,
   }
@@ -26,7 +26,7 @@ const menu: AdminMenu = {
       items: [
         item({ id: 'i1', name: 'Café Latte' }),
         item({ id: 'i2', name: 'Americano', isAvailable: false }),
-        item({ id: 'i3', name: 'Old Brew', isArchived: true }),
+        item({ id: 'i3', name: 'Old Brew', isArchived: true, isAvailable: true }),
       ],
     },
     { id: 'c2', name: 'Food', kind: 'food', items: [item({ id: 'i4', name: 'Toast', categoryId: 'c2' })] },
@@ -50,6 +50,31 @@ describe('filterMenu', () => {
   it('sold-out only', () => {
     expect(names(filterMenu(menu, { ...base, soldOutOnly: true }))).toEqual(['Americano'])
   })
+  it('sold-out includes an item with one size sold out', () => {
+    const m: AdminMenu = {
+      optionGroups: [],
+      categories: [
+        {
+          id: 'c1',
+          name: 'Coffee',
+          kind: 'drink',
+          items: [
+            item({
+              id: 'z',
+              name: 'Mocha',
+              prices: [
+                { code: 'M', priceCentavos: 8000, isArchived: false, isAvailable: true },
+                { code: 'XL', priceCentavos: 10000, isArchived: false, isAvailable: false },
+              ],
+            }),
+            item({ id: 'y', name: 'Mild' }),
+          ],
+        },
+      ],
+    }
+    expect(names(filterMenu(m, { ...base, soldOutOnly: true }))).toEqual(['Mocha'])
+    expect(rowCells(m.categories[0].items[0], 'drink')[2]).toMatchObject({ code: 'XL', isAvailable: false })
+  })
   it('drops empty categories', () => {
     expect(filterMenu(menu, { ...base, query: 'toast' }).categories.map((c) => c.id)).toEqual(['c2'])
   })
@@ -61,19 +86,19 @@ describe('rowCells', () => {
       id: 'x',
       name: 'x',
       prices: [
-        { code: 'M', priceCentavos: 8000, isArchived: false },
-        { code: 'L', priceCentavos: 9000, isArchived: true },
+        { code: 'M', priceCentavos: 8000, isArchived: false, isAvailable: true },
+        { code: 'L', priceCentavos: 9000, isArchived: true, isAvailable: true },
       ],
     })
     expect(rowCells(i, 'drink')).toEqual([
-      { code: 'M', label: 'M', priceCentavos: 8000 },
-      { code: 'L', label: 'L', priceCentavos: null },
-      { code: 'XL', label: 'XL', priceCentavos: null },
-      { code: 'HOT', label: 'HOT', priceCentavos: null },
+      { code: 'M', label: 'M', priceCentavos: 8000, isAvailable: true },
+      { code: 'L', label: 'L', priceCentavos: null, isAvailable: true },
+      { code: 'XL', label: 'XL', priceCentavos: null, isAvailable: true },
+      { code: 'HOT', label: 'HOT', priceCentavos: null, isAvailable: true },
     ])
   })
   it('gives food one Single price cell', () => {
-    const i = item({ id: 'x', name: 'x', prices: [{ code: 'REG', priceCentavos: 12000, isArchived: false }] })
-    expect(rowCells(i, 'food')).toEqual([{ code: 'REG', label: 'Single price', priceCentavos: 12000 }])
+    const i = item({ id: 'x', name: 'x', prices: [{ code: 'REG', priceCentavos: 12000, isArchived: false, isAvailable: true }] })
+    expect(rowCells(i, 'food')).toEqual([{ code: 'REG', label: 'Single price', priceCentavos: 12000, isAvailable: true }])
   })
 })

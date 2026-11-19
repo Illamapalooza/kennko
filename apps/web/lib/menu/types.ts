@@ -45,7 +45,7 @@ export type AdminTableItem = {
   isAvailable: boolean
   isArchived: boolean
   categoryId: string
-  prices: { code: VariantCode; priceCentavos: number; isArchived: boolean }[]
+  prices: { code: VariantCode; priceCentavos: number; isArchived: boolean; isAvailable: boolean }[]
   optionGroupIds: string[]
 }
 
