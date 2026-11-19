@@ -2,8 +2,12 @@
   "name": "kennko",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
+    "all": "node scripts/dev-all.mjs",
     "dev": "npm run dev -w @kennko/web",
     "build": "npm run build -w @kennko/web",
     "pos": "npm run dev -w @kennko/pos",
