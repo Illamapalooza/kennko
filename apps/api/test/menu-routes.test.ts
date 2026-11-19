@@ -101,15 +101,15 @@ describe('menu routes', () => {
     const [item] = await db.sql`select id from menu_items limit 1`
     const flat = async () => {
       const b = (await (await app.request('/v1/menu')).json()) as Snap & { optionGroups: { options: { id: string; isAvailable: boolean }[] }[] }
-      return { item: b.categories.flatMap((c) => c.items).find((i) => i.id === item!.id)!.isAvailable, opt: b.optionGroups.flatMap((g) => g.options).find((o) => o.id === opt?.id)?.isAvailable }
+      return { item: b.categories.flatMap((c) => c.items).find((i) => i.id === item!.id)!.isAvailable, opt: b.optionGroups.flatMap((g) => g.options).find((o) => o.id === opt!.id)?.isAvailable }
     }
     await db.sql`update menu_items set is_available = false where id = ${item!.id}`
-    if (opt) await db.sql`update options set is_available = false where id = ${opt.id}`
+    await db.sql`update options set is_available = false where id = ${opt.id}`
     const off = await flat()
     expect(off.item).toBe(false)
-    if (opt) expect(off.opt).toBe(false)
+    expect(off.opt).toBe(false)
     await db.sql`update menu_items set is_available = true where id = ${item!.id}`
-    if (opt) await db.sql`update options set is_available = true where id = ${opt.id}`
+    await db.sql`update options set is_available = true where id = ${opt.id}`
     expect((await flat()).item).toBe(true)
   })
 
