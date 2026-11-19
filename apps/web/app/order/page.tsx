@@ -11,27 +11,31 @@ import './order.css'
 
 export const dynamic = 'force-dynamic'
 
+function MenuUnavailable() {
+  return (
+    <div className="order-shell">
+      <div className="order-card">
+        <h1>The menu can&rsquo;t load right now</h1>
+        <p>Please try again in a minute, or message us on Facebook.</p>
+        <p>
+          <Link href="/">Back to the home page</Link>
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default async function OrderPage() {
   if (process.env.NEXT_PUBLIC_ORDERING_ENABLED !== 'true') notFound()
 
   const db = getPublicClient()
-  let snapshot: MenuSnapshot | null
+  let snapshot: MenuSnapshot | null = null
   try {
     snapshot = await fetchMenuSnapshot()
   } catch (err) {
     console.error('Could not load the menu for /order', err)
-    return (
-      <div className="order-shell">
-        <div className="order-card">
-          <h1>The menu can&rsquo;t load right now</h1>
-          <p>Please try again in a minute, or message us on Facebook.</p>
-          <p>
-            <Link href="/">Back to the home page</Link>
-          </p>
-        </div>
-      </div>
-    )
   }
+  if (!snapshot) return <MenuUnavailable />
   const categories = menuFromSnapshot(snapshot)
   const customer = await getCurrentCustomer()
 
@@ -42,16 +46,14 @@ export default async function OrderPage() {
     .order('sort_order')
 
   // An unavailable modifier is never offered.
-  const modifierGroups: ModifierGroup[] = snapshot
-    ? liveDrinkMenu(snapshot, Date.now()).modifierGroups.map((g) => ({
-        id: g.id,
-        name: g.name,
-        isMultiSelect: g.isMultiSelect,
-        modifiers: g.modifiers
-          .filter((m) => m.isAvailable)
-          .map((m) => ({ id: m.id, name: m.name, priceCentavos: m.priceCentavos })),
-      }))
-    : []
+  const modifierGroups: ModifierGroup[] = liveDrinkMenu(snapshot, Date.now()).modifierGroups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    isMultiSelect: g.isMultiSelect,
+    modifiers: g.modifiers
+      .filter((m) => m.isAvailable)
+      .map((m) => ({ id: m.id, name: m.name, priceCentavos: m.priceCentavos })),
+  }))
 
   // Quoted with the same function the server charges with, so the price shown
   // before payment is the price recomputed after it.
