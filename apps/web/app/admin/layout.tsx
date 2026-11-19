@@ -4,7 +4,7 @@ import { getCurrentStaff } from '@/lib/auth/session'
 import { SignOutButton } from '@/components/admin/SignOutButton'
 import { AdminNav } from '@/components/admin/AdminNav'
 import { PublishBar } from '@/components/admin/PublishBar'
-import { getMenuStatus } from '@/lib/menu/status'
+import { getMenuStatus, type MenuStatus } from '@/lib/menu/status'
 import { countOrdersToCheck } from '@/lib/admin/overview-data'
 import './admin.css'
 
@@ -32,7 +32,14 @@ export default async function AdminLayout({
   if (isLoginRoute) redirect('/admin/menu')
 
   const isOwner = staff.role === 'owner'
-  const [ordersToCheck, status] = await Promise.all([countOrdersToCheck(), getMenuStatus()])
+  // Chrome data fails soft: a broken count must not take down every admin page.
+  const [ordersToCheck, status] = await Promise.all([
+    countOrdersToCheck().catch((e) => {
+      console.error('admin layout: orders count failed', e)
+      return 0
+    }),
+    getMenuStatus().catch((): MenuStatus => ({ ok: false })),
+  ])
 
   return (
     <div className="admin-shell">

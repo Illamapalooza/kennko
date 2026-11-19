@@ -75,6 +75,7 @@ export async function confirmPayment(orderId: string) {
   }
 
   revalidatePath('/admin/orders')
+  revalidatePath('/admin', 'layout')
 }
 
 export async function rejectPayment(orderId: string, reason: string) {
@@ -100,6 +101,7 @@ export async function rejectPayment(orderId: string, reason: string) {
   }
 
   revalidatePath('/admin/orders')
+  revalidatePath('/admin', 'layout')
 }
 
 export async function advanceStatus(orderId: string, to: OrderStatus) {
@@ -110,6 +112,7 @@ export async function advanceStatus(orderId: string, to: OrderStatus) {
   if (error) throw new Error(`Could not update the order: ${error.message}`)
 
   revalidatePath('/admin/orders')
+  revalidatePath('/admin', 'layout')
 }
 
 /** Short-lived signed URL. The bucket is private; staff never get a raw path. */

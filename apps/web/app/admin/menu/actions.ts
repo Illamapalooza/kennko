@@ -56,6 +56,7 @@ export async function setAvailability(itemId: string, isAvailable: boolean) {
 
   revalidatePath('/admin/menu')
   revalidatePath('/')
+  revalidatePath('/admin', 'layout')
 }
 
 export async function saveMenuItem(formData: FormData) {
@@ -201,6 +202,7 @@ export async function uploadMenuImage(itemId: string, file: File) {
 
   revalidatePath('/admin/menu')
   revalidatePath('/')
+  revalidatePath('/admin', 'layout')
 }
 
 export async function removeMenuImage(itemId: string) {
@@ -225,4 +227,5 @@ export async function removeMenuImage(itemId: string) {
 
   revalidatePath('/admin/menu')
   revalidatePath('/')
+  revalidatePath('/admin', 'layout')
 }
