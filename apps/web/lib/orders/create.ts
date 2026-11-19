@@ -77,7 +77,7 @@ export async function createOrder(
   // ---- Reprice from the published menu. The client total is never trusted. ----
   let snapshot: MenuSnapshot | null
   try {
-    snapshot = await fetchMenuSnapshot()
+    snapshot = await fetchMenuSnapshot({ fresh: true })
   } catch {
     snapshot = null
   }

@@ -4,7 +4,15 @@ vi.mock('server-only', () => ({}))
 
 // The published menu the checkout prices from.
 let snapshot: unknown = null
-vi.mock('@/lib/menu/api', () => ({ fetchMenuSnapshot: async () => snapshot }))
+let snapshotError: Error | null = null
+const fetchCalls: unknown[] = []
+vi.mock('@/lib/menu/api', () => ({
+  fetchMenuSnapshot: async (opts?: unknown) => {
+    fetchCalls.push(opts)
+    if (snapshotError) throw snapshotError
+    return snapshot
+  },
+}))
 
 // Per-test failure injection: an insert error by table, and the proof upload result.
 let insertErrors: Record<string, string> = {}
@@ -124,6 +132,8 @@ beforeEach(() => {
   deleted = []
   removedProofs = 0
   snapshot = makeSnapshot()
+  snapshotError = null
+  fetchCalls.length = 0
 })
 
 describe('createOrder repricing from the published menu', () => {
@@ -177,6 +187,17 @@ describe('createOrder failure handling', () => {
       code: 'MENU_UNAVAILABLE',
       errors: ["The menu can't load right now. Please try again in a minute."],
     })
+  })
+
+  it('returns 503 MENU_UNAVAILABLE when the menu fetch throws or times out', async () => {
+    snapshotError = new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+    const r = await createOrder(order('M'), PNG)
+    expect(r).toMatchObject({ ok: false, status: 503, code: 'MENU_UNAVAILABLE' })
+  })
+
+  it('prices against a fresh (uncached) menu', async () => {
+    await createOrder(order('M'), PNG)
+    expect(fetchCalls).toEqual([{ fresh: true }])
   })
 
   it('a draft price in the tables does not cause PRICE_CHANGED', async () => {

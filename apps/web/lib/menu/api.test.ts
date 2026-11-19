@@ -41,6 +41,24 @@ describe('fetchMenuSnapshot', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 
+  it('uses the 30s cache by default', async () => {
+    const fetchMock = vi.fn(async () => json(snapshot))
+    vi.stubGlobal('fetch', fetchMock)
+    await (await load())()
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit & { next?: unknown }])[1]
+    expect(init.next).toEqual({ revalidate: 30 })
+    expect(init.cache).toBeUndefined()
+  })
+
+  it("bypasses the cache with cache: 'no-store' when fresh", async () => {
+    const fetchMock = vi.fn(async () => json(snapshot))
+    vi.stubGlobal('fetch', fetchMock)
+    await (await load())({ fresh: true })
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit & { next?: unknown }])[1]
+    expect(init.cache).toBe('no-store')
+    expect(init.next).toBeUndefined()
+  })
+
   it('returns null on 404 NO_MENU', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ code: 'NO_MENU' }, 404)))
     expect(await (await load())()).toBeNull()
