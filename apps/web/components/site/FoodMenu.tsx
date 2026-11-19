@@ -1,5 +1,5 @@
 import { formatPesos } from '@/lib/money'
-import { CatToon } from './CatToon'
+import { CatToon } from '@kennko/cats'
 
 // Food is not in the ordering system yet, so it lives here, copied from the 2026 food-menu flyer
 // (brand/assets/food-menu/). Move it into packages/core once food can be ordered or rung up on the till.

@@ -1,0 +1,13 @@
+{
+  "name": "@kennko/cats",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/CatToon.tsx",
+    "./cats.css": "./cats.css"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  }
+}

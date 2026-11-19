@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fontsource-variable/nunito": "^5.2.7",
+    "@kennko/cats": "*",
     "@kennko/core": "*",
     "@kennko/tokens": "*",
     "react": "19.2.8",

@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kennko/cats": "*",
     "@kennko/core": "*",
     "@kennko/tokens": "*",
     "@supabase/ssr": "^0.12.4",

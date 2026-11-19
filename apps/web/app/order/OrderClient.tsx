@@ -11,7 +11,7 @@ import { iceSummary } from '@/lib/cart/ice'
 import { SIZE_VOLUMES } from '@/lib/menu/sizes'
 import { describeFee, ridingDistanceKm, deliveryFeeCentavos } from '@/lib/delivery/distance'
 import { LocationPin, type SharedPin } from '@/components/order/LocationPin'
-import { CatToon, type CatCoat, type CatPose } from '@/components/site/CatToon'
+import { CatToon, type CatCoat, type CatPose } from '@kennko/cats'
 import type { MenuCategoryWithItems, MenuItemWithPrices, DrinkSize } from '@/lib/menu/types'
 
 // A cat from the wall's cast perches on each category label, cycling through the poses.

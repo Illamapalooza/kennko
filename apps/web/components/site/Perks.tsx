@@ -1,4 +1,4 @@
-import { CatToon } from './CatToon'
+import { CatToon } from '@kennko/cats'
 
 // Stamps on the drawn card: 1 to 3 already collected, 4 is the free upsize, 8 the free drink.
 const STAMPS = [1, 2, 3, 4, 5, 6, 7, 8] as const

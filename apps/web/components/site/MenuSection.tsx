@@ -1,7 +1,7 @@
 import { formatPesos } from '@/lib/money'
 import type { MenuCategoryWithItems, MenuItemWithPrices } from '@/lib/menu/types'
 import { CupSticker, type CupFlavour, type CupPlate } from './CupSticker'
-import { CatToon, type CatCoat, type CatPose } from './CatToon'
+import { CatToon, type CatCoat, type CatPose } from '@kennko/cats'
 
 // Each category gets a drawn cup on its own plate colour, in the food-menu flyer's style.
 // A category added in admin without an entry here falls back to a plain coffee cup.

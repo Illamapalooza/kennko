@@ -1,5 +1,5 @@
 import { CupSticker } from './CupSticker'
-import { CatToon } from './CatToon'
+import { CatToon } from '@kennko/cats'
 
 const TICKER = ['Premium coffee', 'Sweet sips', 'Matcha series', 'Cookies & fries', 'Free upsize at 4 stamps', 'Made with love']
 
