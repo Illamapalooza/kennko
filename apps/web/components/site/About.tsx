@@ -3,42 +3,39 @@ export function About() {
     <section id="about">
       <div className="container">
         <div className="section-head">
-          <h2>Built for coffee runs, catch-ups, and cravings.</h2>
+          <h2>Built for coffee runs, catch-ups and cravings.</h2>
           <p>
-            Founded in 2023, Kennko Coffee is all about serving premium drinks in
-            a bold, approachable space — whether you want your daily latte, a
-            creamy specialty favorite, or something sweet and refreshing.
+            Founded in 2023 by Kenn Baliling, Kennko serves premium drinks in a bold, easy-going space.
+            Come for your daily latte, a creamy specialty, or something sweet and cold.
           </p>
         </div>
 
         <div className="about-grid">
-          <article className="section-card blue">
-            <span className="kicker">Why people come back</span>
+          <article className="about-card about-card-blue">
+            <span className="about-kicker">Why people come back</span>
             <p>
-              The menu keeps things exciting: familiar coffee classics,
-              non-coffee comfort picks, and standout specialty drinks that feel
-              fun without trying too hard.
+              Familiar coffee classics, non-coffee comfort picks and standout specialty drinks that are
+              fun without trying too hard. Now with cookies, empanada and fries on the side.
             </p>
-            <div className="pill-row">
-              <span className="pill">Premium coffee</span>
-              <span className="pill">Non-coffee favorites</span>
-              <span className="pill">Specialty series</span>
-              <span className="pill">Youthful atmosphere</span>
-            </div>
+            <ul className="tag-row">
+              <li>Premium coffee</li>
+              <li>Non-coffee favourites</li>
+              <li>Matcha series</li>
+              <li>Snacks</li>
+            </ul>
           </article>
 
-          <article className="section-card">
-            <span className="kicker">Cafe personality</span>
+          <article className="about-card">
+            <span className="about-kicker">Cafe personality</span>
             <p>
-              Bold. Playful. Friendly. Kennko’s look leans bright, upbeat, and
-              easy to remember — the kind of spot that works for quick coffee
-              breaks, casual hangs, and repeat visits.
+              Bold. Playful. Friendly. Bright blue, loud stickers and good music: the kind of spot that
+              works for a quick coffee break, a long catch-up or a study session.
             </p>
-            <div className="pill-row">
-              <span className="pill">Founded in 2023</span>
-              <span className="pill">Villa Kananga</span>
-              <span className="pill">Fun and approachable</span>
-            </div>
+            <ul className="tag-row">
+              <li>Since 2023</li>
+              <li>Villa Kananga</li>
+              <li>Fun and approachable</li>
+            </ul>
           </article>
         </div>
       </div>

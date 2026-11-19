@@ -1,12 +1,19 @@
 import { formatPesos } from '@/lib/money'
 import type { MenuCategoryWithItems, MenuItemWithPrices } from '@/lib/menu/types'
+import { CupSticker, type CupFlavour, type CupPlate } from './CupSticker'
+import { CatToon, type CatCoat, type CatPose } from './CatToon'
 
-const CATEGORY_IMAGES: Record<string, string> = {
-  'Premium Classics': '/brand/egg-coffee.jpg',
-  "Barista's Choice": '/brand/sea-salt-caramel-oat-latte.jpg',
-  'Sweet Sips': '/brand/strawberry-cloud-soda.jpg',
-  'Matcha Series': '/brand/coconut-series.jpg',
+// Each category gets a drawn cup on its own plate colour, in the food-menu flyer's style.
+// A category added in admin without an entry here falls back to a plain coffee cup.
+// A cat from the wall's cast perches on each card: peeking over it, standing on it, napping on it.
+type Perch = { coat: CatCoat; pose: CatPose; spot: string }
+const CATEGORY_ART: Record<string, { flavour: CupFlavour; plate: CupPlate; cat: Perch }> = {
+  'Premium Classics': { flavour: 'coffee', plate: 'yellow', cat: { coat: 'ginger', pose: 'peek', spot: 'perch-peek perch-right' } },
+  "Barista's Choice": { flavour: 'caramel', plate: 'orange', cat: { coat: 'tuxedo', pose: 'wave', spot: 'perch-sit perch-left' } },
+  'Sweet Sips': { flavour: 'strawberry', plate: 'pink', cat: { coat: 'calico', pose: 'nap', spot: 'perch-nap perch-right' } },
+  'Matcha Series': { flavour: 'matcha', plate: 'sky', cat: { coat: 'tabby', pose: 'peek', spot: 'perch-peek perch-left' } },
 }
+const DEFAULT_ART = { flavour: 'coffee', plate: 'yellow', cat: null } as const
 
 const CATEGORY_BLURBS: Record<string, string> = {
   'Premium Classics': 'Rich, smooth, and made for everyday coffee drinkers.',
@@ -40,38 +47,41 @@ export function MenuSection({ categories }: { categories: MenuCategoryWithItems[
         </div>
 
         <div className="menu-grid">
-          {categories.map((category) => (
-            <article className="menu-card" key={category.id}>
-              {CATEGORY_IMAGES[category.name] ? (
-                <img
-                  src={CATEGORY_IMAGES[category.name]}
-                  alt={`${category.name} from Kennko`}
-                />
-              ) : null}
-              <div className="menu-card-body">
-                <h3>{category.name}</h3>
-                {CATEGORY_BLURBS[category.name] ? (
-                  <p>{CATEGORY_BLURBS[category.name]}</p>
+          {categories.map((category) => {
+            const art = CATEGORY_ART[category.name] ?? DEFAULT_ART
+            return (
+              <article className="menu-card" key={category.id}>
+                {art.cat ? (
+                  <CatToon coat={art.cat.coat} pose={art.cat.pose} className={`perch ${art.cat.spot}`} />
                 ) : null}
-                <ul className="menu-list">
-                  {category.items.map((item) => (
-                    <li
-                      key={item.id}
-                      className={item.isAvailable ? undefined : 'is-unavailable'}
-                    >
-                      <span>
-                        {item.name}
-                        {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
-                      </span>
-                      <span className="menu-price">
-                        {item.isAvailable ? startingPrice(item) : 'Sold out'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </article>
-          ))}
+                <div className={`menu-card-art plate-${art.plate}`}>
+                  <CupSticker flavour={art.flavour} plate={art.plate} />
+                </div>
+                <div className="menu-card-body">
+                  <h3>{category.name}</h3>
+                  {CATEGORY_BLURBS[category.name] ? (
+                    <p>{CATEGORY_BLURBS[category.name]}</p>
+                  ) : null}
+                  <ul className="menu-list">
+                    {category.items.map((item) => (
+                      <li
+                        key={item.id}
+                        className={item.isAvailable ? undefined : 'is-unavailable'}
+                      >
+                        <span>
+                          {item.name}
+                          {item.isBestseller ? <span className="star" aria-label="Bestseller"> ★</span> : null}
+                        </span>
+                        <span className="menu-price">
+                          {item.isAvailable ? startingPrice(item) : 'Sold out'}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </article>
+            )
+          })}
         </div>
 
         {orderingOn ? (

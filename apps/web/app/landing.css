@@ -1,0 +1,511 @@
+/*
+ * Landing page: the retro sticker layer (brand/DESIGN.md).
+ * Everything sits on one tiled grid paper (.landing.k-paper-grid). Text never sits straight on the
+ * pattern: it lives on blue sticker boards or cream labels. Scoped under .landing so nothing here
+ * reaches the order, account or admin pages.
+ */
+
+.landing { min-height: 100vh; overflow-x: clip; }
+
+/* ---------- Perching cats ----------
+   CatToon draws each pose so the edge it rests on sits on a known line of its viewBox; these
+   rules pin that line to the card's edge. The card must be position: relative. */
+.perch { position: absolute; z-index: 3; height: auto; pointer-events: none; transition: transform var(--ease); }
+.perch-left { left: 10%; }
+.perch-right { right: 10%; }
+/* peek: edge at y 84 of 92 */
+.perch-peek { top: 0; width: 84px; transform: translateY(calc(-84 / 92 * 100%)); }
+/* sit / wave: edge at y 146 of 150 */
+.perch-sit { top: 0; width: 70px; transform: translateY(calc(-146 / 150 * 100%)); }
+/* nap: edge at y 70 of 110 */
+.perch-nap { top: 0; width: 120px; transform: translateY(calc(-70 / 110 * 100%)); }
+/* climb: a peeking cat turned on its side, gripping the right edge */
+.perch-climb { top: 38%; right: 0; width: 96px; transform: translateX(calc(50% + 34px)) rotate(90deg); }
+.landing .menu-card:hover .perch-peek,
+.landing .stamp-card:hover .perch-peek { transform: translateY(calc(-84 / 92 * 100% - 6px)); }
+.landing main section { padding: var(--space-6) 0; }
+.landing main section[id] { scroll-margin-top: 96px; }
+
+/* ---------- Buttons on the landing ---------- */
+.landing .btn {
+  min-height: var(--tap-lg);
+  font-weight: var(--weight-heading);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: var(--outline-thin) solid var(--ink);
+  box-shadow: 0 4px 0 var(--ink);
+  transition: transform var(--ease), box-shadow var(--ease), background var(--ease);
+}
+.landing .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--ink); }
+.landing .btn:active { transform: translateY(4px); box-shadow: none; }
+.landing .btn-primary { background: var(--amber); color: var(--ink); }
+.landing .btn-secondary { background: var(--white); color: var(--blue); }
+
+/* ---------- Nav ---------- */
+.landing .nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--cream);
+  border-bottom: var(--outline) solid var(--ink);
+}
+.landing .nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+}
+.landing .brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: var(--weight-heading);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--blue);
+}
+.landing .brand img { width: auto; height: 44px; }
+.landing .nav-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  font-weight: var(--weight-strong);
+  text-transform: uppercase;
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+}
+.landing .nav-links a:not(.nav-order):hover { color: var(--blue); text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 6px; }
+.landing .nav-order {
+  background: var(--amber);
+  color: var(--ink);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  border: var(--outline-thin) solid var(--ink);
+  box-shadow: 0 3px 0 var(--ink);
+}
+
+/* ---------- Hero ---------- */
+.landing .hero { padding: var(--space-6) 0 0; }
+.hero-board {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: var(--space-5);
+  align-items: center;
+  padding: var(--space-7) var(--space-7) var(--space-6);
+  overflow: hidden;
+}
+.hero-copy { position: relative; z-index: 1; }
+.hero-tag {
+  display: inline-block;
+  background: var(--amber);
+  color: var(--ink);
+  border: var(--outline-thin) solid var(--ink);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-heading);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  transform: rotate(-2deg);
+}
+.hero-copy h1 {
+  margin-top: var(--space-5);
+  font-size: var(--text-hero);
+  font-weight: var(--weight-heading);
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+}
+.hero-copy p {
+  margin: var(--space-5) 0 0;
+  max-width: 44ch;
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-body);
+}
+.hero-cta { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
+
+.hero-sticker { position: absolute; height: auto; pointer-events: none; }
+.hero-sticker-eyes { top: var(--space-5); right: 47%; width: 76px; transform: rotate(10deg); }
+.hero-sticker-smiley { right: 2%; bottom: 30%; width: 72px; transform: rotate(12deg); z-index: 4; }
+
+.hero-art { position: relative; min-height: 420px; }
+.hero-plate {
+  position: absolute;
+  background: var(--cream);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-hard);
+  padding: var(--space-3);
+}
+.hero-plate > svg:not(.perch), .hero-plate > img { display: block; width: 100%; height: auto; }
+
+.hero-plate-cup { width: 56%; left: 4%; top: 6%; transform: rotate(-6deg); }
+.hero-plate-cup-2 { width: 44%; right: 0; top: 34%; transform: rotate(7deg); background: var(--peach); }
+.hero-plate-food { width: 60%; left: 8%; bottom: 0; transform: rotate(3deg); padding: var(--space-2); }
+.hero-badge {
+  position: absolute;
+  right: 6%;
+  bottom: 4%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 118px;
+  height: 118px;
+  border-radius: 50%;
+  background: var(--amber);
+  color: var(--ink);
+  border: var(--outline) solid var(--ink);
+  box-shadow: 0 4px 0 var(--ink);
+  font-weight: var(--weight-heading);
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1;
+  font-size: 1.05rem;
+  transform: rotate(-12deg);
+  padding: var(--space-3);
+}
+.hero-badge small { display: block; margin-top: 4px; font-size: var(--text-xs); letter-spacing: 0.04em; }
+
+/* Ticker strip under the hero */
+.ticker {
+  margin-top: var(--space-6);
+  background: var(--ink);
+  color: var(--cream);
+  border-block: var(--outline) solid var(--ink);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ticker-track {
+  display: inline-flex;
+  gap: var(--space-6);
+  padding: var(--space-3) 0;
+  font-weight: var(--weight-heading);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  animation: ticker 36s linear infinite;
+}
+.ticker-track span:nth-child(3n + 2) { color: var(--amber); }
+@keyframes ticker { to { transform: translateX(-50%); } }
+
+/* ---------- Section heads: cream labels on the grid ---------- */
+.landing .section-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-5);
+  background: var(--cream);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hard);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-6);
+}
+.landing .section-head h2 {
+  font-size: var(--text-display);
+  font-weight: var(--weight-heading);
+  color: var(--blue);
+  line-height: var(--leading-tight);
+  max-width: 16ch;
+}
+.landing .section-head p {
+  margin: 0;
+  max-width: 48ch;
+  line-height: var(--leading-body);
+  font-weight: var(--weight-body);
+}
+
+/* ---------- About / shared sticker cards ---------- */
+.about-grid, .perks-grid, .visit-grid { display: grid; gap: var(--space-5); }
+.about-grid { grid-template-columns: 1fr 1fr; }
+
+.about-card {
+  background: var(--white);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hard);
+  padding: var(--space-6);
+}
+.about-card p { line-height: var(--leading-body); font-size: var(--text-md); }
+.about-card-blue { background: var(--blue); color: var(--white); }
+.about-kicker {
+  display: inline-block;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-heading);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--blue);
+  background: var(--blue-soft);
+  border: var(--outline-thin) solid var(--ink);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-3);
+}
+.about-card-blue .about-kicker { background: var(--amber); color: var(--ink); }
+
+.tag-row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-5) 0 0; padding: 0; list-style: none; }
+.tag-row li {
+  background: var(--peach);
+  color: var(--ink);
+  border: var(--outline-thin) solid var(--ink);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
+}
+.about-card-blue .tag-row li { background: var(--white); }
+
+/* ---------- Menu ---------- */
+.landing .menu-grid { display: grid; gap: var(--space-5); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.landing .menu-card {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  background: var(--white);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hard);
+  position: relative;
+}
+.menu-card-art {
+  border-radius: calc(var(--radius-lg) - var(--outline)) 0 0 calc(var(--radius-lg) - var(--outline));
+  display: grid;
+  place-items: center;
+  padding: var(--space-4) var(--space-3);
+  background: var(--cream);
+  border-right: var(--outline) solid var(--ink);
+}
+.menu-card-art svg { width: 100%; max-width: 132px; height: auto; transition: transform var(--ease); }
+.landing .menu-card:hover .menu-card-art svg { transform: rotate(-6deg) scale(1.04); }
+.menu-card-art.plate-pink { background: #ffe3ea; }
+.menu-card-art.plate-orange { background: #ffe3d2; }
+.menu-card-art.plate-yellow { background: #fff3c9; }
+.menu-card-art.plate-sky { background: #e3efff; }
+
+.landing .menu-card-body { padding: var(--space-5); }
+.landing .menu-card h3 { font-size: var(--text-lg); font-weight: var(--weight-heading); color: var(--blue); }
+.landing .menu-card-body > p { margin: var(--space-2) 0 0; line-height: var(--leading-body); color: var(--ink-soft); font-weight: var(--weight-body); }
+
+.landing .menu-list { margin: var(--space-4) 0 0; padding: 0; list-style: none; display: grid; gap: var(--space-2); font-weight: var(--weight-strong); }
+.landing .menu-list li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px dashed var(--line);
+}
+.landing .menu-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+.landing .menu-list li > span:first-of-type { flex: 1; }
+.landing .menu-price { color: var(--blue); font-weight: var(--weight-heading); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.landing .menu-list li.is-unavailable { opacity: 0.45; }
+.landing .menu-list li.is-unavailable .menu-price { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.landing .menu-cta { display: flex; justify-content: center; margin-top: var(--space-6); }
+
+/* ---------- Food board ---------- */
+.food-board {
+  position: relative;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-6) var(--space-6);
+}
+.food-title {
+  text-align: center;
+  font-size: var(--text-display);
+  font-weight: var(--weight-heading);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-heading);
+  margin: 0 auto var(--space-6);
+  max-width: 12ch;
+}
+.food-sticker { position: absolute; top: var(--space-5); width: clamp(56px, 11vw, 92px); height: auto; transition: transform var(--ease); }
+.food-sticker-eyes { left: var(--space-5); transform: rotate(-8deg); }
+.food-sticker-smiley { right: var(--space-5); transform: rotate(8deg); }
+.food-board:hover .food-sticker-eyes { transform: rotate(-14deg) scale(1.05); }
+.food-board:hover .food-sticker-smiley { transform: rotate(14deg) scale(1.05); }
+.food-rows { display: grid; gap: var(--space-4); }
+.food-art { display: grid; place-items: center; padding: var(--space-2); }
+.food-art img { width: 100%; height: auto; }
+.food-info { display: flex; flex-direction: column; justify-content: center; gap: var(--space-2); padding: var(--space-4) var(--space-5); }
+.food-info h3 { font-size: var(--text-lg); font-weight: var(--weight-heading); line-height: var(--leading-tight); }
+.food-info-foot { display: flex; align-items: end; justify-content: space-between; gap: var(--space-3); }
+.food-info ul { margin: 0; padding-left: 1.1em; font-size: var(--text-sm); font-weight: var(--weight-strong); text-transform: uppercase; letter-spacing: 0.02em; line-height: 1.5; }
+.food-foot { margin: var(--space-6) 0 0; text-align: center; font-size: var(--text-md); font-weight: var(--weight-heading); text-transform: uppercase; letter-spacing: var(--tracking-label); }
+
+/* ---------- Perks ---------- */
+.perks-grid { grid-template-columns: 1fr 1fr; align-items: center; }
+.perk-card h3 { margin-top: var(--space-4); font-size: var(--text-lg); font-weight: var(--weight-heading); color: var(--blue); line-height: var(--leading-tight); }
+.perk-steps { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin-top: var(--space-5); }
+.perk-card .step {
+  background: var(--amber-soft);
+  border: var(--outline-thin) solid var(--ink);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  font-weight: var(--weight-strong);
+  line-height: 1.35;
+}
+.perk-card .step strong { display: block; font-size: 2.2rem; line-height: 1; color: var(--blue); margin-bottom: var(--space-2); }
+
+.stamp-card {
+  position: relative;
+  margin: 0;
+  background: var(--blue);
+  color: var(--white);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hard);
+  padding: var(--space-6);
+  transform: rotate(2deg);
+}
+.stamp-card figcaption {
+  font-weight: var(--weight-heading);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  font-size: var(--text-md);
+  margin-bottom: var(--space-5);
+}
+.stamp-card figcaption span { display: block; font-size: var(--text-xl); letter-spacing: 0.02em; color: var(--cream); -webkit-text-stroke: 0.05em var(--ink); paint-order: stroke fill; }
+.stamp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.stamp-grid li {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: var(--outline-thin) dashed var(--white);
+  font-weight: var(--weight-heading);
+  font-size: var(--text-lg);
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+}
+.stamp-grid li.is-stamped { border-style: solid; border-color: var(--ink); background: var(--white); padding: 4px; }
+.stamp-grid li.is-stamped img { width: 100%; height: auto; transform: rotate(-10deg); }
+.stamp-grid li.is-reward {
+  border: var(--outline-thin) solid var(--ink);
+  background: var(--amber);
+  color: var(--ink);
+  font-size: var(--text-xs);
+  line-height: 1.05;
+  text-transform: uppercase;
+  padding: var(--space-1);
+}
+
+/* ---------- Visit ---------- */
+.visit-grid { grid-template-columns: 1.05fr 0.95fr; }
+.visit-address { font-size: var(--text-xl); font-weight: var(--weight-heading); line-height: var(--leading-tight); margin: var(--space-4) 0 var(--space-3); }
+.contact-stack { display: grid; gap: var(--space-4); }
+.landing .contact-card {
+  background: var(--white);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-hard);
+  padding: var(--space-5);
+}
+.landing .contact-card h3 { font-size: var(--text-md); font-weight: var(--weight-heading); color: var(--blue); }
+.landing .contact-card p { margin: var(--space-2) 0 0; line-height: var(--leading-body); }
+.contact-link { display: inline-flex; margin-top: var(--space-2); font-weight: var(--weight-heading); color: var(--blue); text-decoration: underline; text-underline-offset: 4px; }
+
+.map-card {
+  margin-top: var(--space-5);
+  background: var(--white);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hard);
+  overflow: hidden;
+}
+.map-frame { position: relative; width: 100%; aspect-ratio: 16 / 7; background: var(--blue-soft); border-bottom: var(--outline) solid var(--ink); }
+.map-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.map-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-5); }
+.map-foot p { margin: 0; font-weight: var(--weight-heading); color: var(--blue); }
+.map-foot span { display: block; font-weight: var(--weight-body); color: var(--ink-soft); font-size: var(--text-sm); max-width: 52ch; margin-top: 2px; }
+.map-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+
+/* ---------- Footer ---------- */
+.landing footer { padding: var(--space-6) 0 var(--space-7); }
+.footer-shell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+}
+.footer-logo { width: auto; height: 48px; }
+.footer-shell p { margin: var(--space-1) 0 0; line-height: var(--leading-body); }
+.footer-links { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.footer-links a {
+  background: var(--white);
+  color: var(--blue);
+  border: var(--outline-thin) solid var(--ink);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-4);
+  font-weight: var(--weight-heading);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+}
+.footer-fine { width: 100%; font-size: var(--text-sm); opacity: 0.85; }
+
+/* The climbing cat hangs off the food board's side; below this width there is no room beside it,
+   so it peeks over the top instead. */
+@media (max-width: 1200px) {
+  .perch-climb { top: 0; right: 14%; width: 84px; transform: translateY(calc(-84 / 92 * 100%)); }
+}
+
+/* ---------- Tablet ---------- */
+@media (max-width: 920px) {
+  .hero-board, .about-grid, .perks-grid, .visit-grid { grid-template-columns: 1fr; }
+  .hero-board { padding: var(--space-6) var(--space-5); }
+  .hero-sticker-eyes { right: var(--space-5); top: var(--space-4); }
+  .hero-art { min-height: 380px; max-width: 520px; width: 100%; margin: 0 auto; }
+  .landing .menu-grid { grid-template-columns: 1fr; }
+  .landing .section-head { flex-direction: column; align-items: start; }
+  .map-frame { aspect-ratio: 4 / 3; }
+  .stamp-card { transform: none; }
+}
+
+/* ---------- Phone ---------- */
+@media (max-width: 640px) {
+  .landing main section { padding: var(--space-5) 0; }
+  .landing main section[id] { scroll-margin-top: 110px; }
+  /* Logo and Order on one row, section links on the next. */
+  .landing .nav-inner { flex-wrap: wrap; row-gap: var(--space-2); column-gap: var(--space-4); }
+  .landing .brand img { height: 36px; }
+  .landing .nav-links { display: contents; }
+  .landing .nav-links a:not(.nav-order) { order: 2; }
+  .landing .nav-order { order: 1; margin-left: auto; }
+  .landing .nav-inner::after { content: ""; order: 1; flex-basis: 100%; }
+  .hero-tag { font-size: var(--text-xs); letter-spacing: 0.04em; }
+  .hero-sticker-eyes { display: none; }
+  .hero-tag-extra { display: none; }
+  .hero-board { padding: var(--space-6) var(--space-4) var(--space-5); }
+  .hero-sticker-eyes { width: 58px; }
+  .hero-art { min-height: 300px; }
+  .hero-badge { width: 96px; height: 96px; font-size: 0.9rem; }
+  .hero-sticker-smiley { width: 64px; }
+  .landing .section-head { padding: var(--space-4); }
+  .about-card, .stamp-card { padding: var(--space-5); }
+  .landing .menu-card { grid-template-columns: 1fr; }
+  .menu-card-art { border-right: 0; border-bottom: var(--outline) solid var(--ink); }
+  .menu-card-art svg { max-width: 120px; }
+  .perk-steps { grid-template-columns: 1fr; }
+  .food-board { padding: var(--space-8) var(--space-4) var(--space-5); }
+  .food-sticker { top: var(--space-3); }
+  .food-sticker-eyes { left: var(--space-3); }
+  .food-sticker-smiley { right: var(--space-3); }
+  .map-frame { aspect-ratio: 1; }
+  .map-foot .btn, .hero-cta .btn { width: 100%; }
+  .map-actions { width: 100%; }
+  .footer-shell { padding: var(--space-5); }
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track { animation: none; }
+  .landing .btn, .food-sticker, .menu-card-art svg, .perch { transition: none; }
+  .landing .menu-card:hover .menu-card-art svg { transform: none; }
+  .food-board:hover .food-sticker-eyes { transform: rotate(-8deg); }
+  .food-board:hover .food-sticker-smiley { transform: rotate(8deg); }
+}
+
+/* Room above cards that have a cat perched on them, so a cat never covers the card or text above. */
+.landing .menu-grid { row-gap: var(--space-8); }
+.landing #menu .section-head,
+.landing #perks .section-head { margin-bottom: var(--space-8); }
+.landing main section#food { padding-top: var(--space-8); }

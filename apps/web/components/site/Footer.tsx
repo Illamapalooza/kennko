@@ -1,14 +1,23 @@
 export function Footer() {
   return (
     <footer>
-      <div className="container footer-shell">
-        <div>
-          <strong style={{ display: 'block', fontSize: '1.1rem', marginBottom: '6px' }}>
-            KENNKO COFFEE
-          </strong>
-          <p>Premium coffee and playful drinks in Villa Kananga, Butuan City.</p>
+      <div className="container">
+        <div className="k-sticker footer-shell">
+          <div>
+            <img className="footer-logo" src="/brand/wordmark-white.png" alt="Kennko Coffee" width={536} height={163} />
+            <p>Premium coffee, playful drinks and snacks in Villa Kananga, Butuan City.</p>
+          </div>
+          <nav className="footer-links" aria-label="Kennko on social media">
+            <a href="https://www.facebook.com/kennco.cafebxu" target="_blank" rel="noreferrer">
+              Facebook
+            </a>
+            <a href="https://www.instagram.com/kennko.bxu/" target="_blank" rel="noreferrer">
+              Instagram
+            </a>
+            <a href="tel:09305992729">0930 599 2729</a>
+          </nav>
+          <p className="footer-fine">© 2026 Kennko Coffee. 100% made with love.</p>
         </div>
-        <p>© 2026 Kennko Coffee. Brewed with bold flavor and good energy.</p>
       </div>
     </footer>
   )

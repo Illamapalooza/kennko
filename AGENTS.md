@@ -24,7 +24,8 @@ The brand is the electric blue `#0055FF` identity. `brand/Kennko Menu.png` is a
 - Mobile, tablet, and desktop are all required. Breakpoints: 920px and 640px.
   Verify at 375, 768, 1024, and 1440px.
 - The cafe is at **CT. Montalban St., Villa Kananga, Butuan City** — it moved
-  out of SM Butuan. No file should say "SM Butuan".
+  out of SM Butuan. Never give SM Butuan as Kennko's location or address. SM City Butuan may appear
+  only as a landmark for directions (the route on the Visit map).
 
 ## Environment
 Copy `.env.local.example` to `.env.local` and fill it in. The app will not build

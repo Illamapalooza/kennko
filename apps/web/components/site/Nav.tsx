@@ -7,13 +7,13 @@ export function Nav() {
     <header className="nav">
       <div className="container nav-inner">
         <a className="brand" href="#top" aria-label="Kennko Coffee home">
-          <img src="/brand/kennko.png" alt="Kennko Coffee logo" />
-          <span>KENNKO COFFEE</span>
+          <img src="/brand/wordmark-blue.png" alt="Kennko Coffee" width={536} height={163} />
         </a>
 
         <nav className="nav-links" aria-label="Primary navigation">
           <a href="#about">About</a>
           <a href="#menu">Menu</a>
+          <a href="#food">Food</a>
           <a href="#perks">Perks</a>
           <a href="#visit">Visit</a>
           {orderingOn ? (
