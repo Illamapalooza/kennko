@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CatToon } from '@kennko/cats'
 import type { Discount, LineInput, Menu, OrderType } from '@kennko/core'
 import { api, getPin, setOnLocked, setPin, type Bootstrap, type Live } from './api.ts'
 import { ClockIcon, CupIcon, DrawerIcon, ListIcon, LockIcon, TicketIcon } from './components/Icons.tsx'
@@ -96,7 +97,8 @@ export function App() {
   if (!boot) {
     return (
       <div className="gate">
-        <img src="/brand/wordmark-white.png" alt="Kennko Coffee" className="gate-logo" />
+        <img src="/brand/wordmark-blue.png" alt="Kennko Coffee" className="gate-logo" />
+        <CatToon coat="calico" pose="nap" className="gate-cat" />
         <p className="gate-note">{bootError || 'Opening the till…'}</p>
       </div>
     )

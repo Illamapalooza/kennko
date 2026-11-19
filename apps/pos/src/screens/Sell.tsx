@@ -6,6 +6,7 @@ import {
 import type { Bootstrap, Live } from '../api.ts'
 import { EMPTY_CART, type Cart, type CartLine } from '../App.tsx'
 import { Modal } from '../components/Modal.tsx'
+import { CatToon } from '@kennko/cats'
 import { Customise } from './Customise.tsx'
 import { Pay } from './Pay.tsx'
 
@@ -91,7 +92,7 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
       <input className="input" value={cart.customerName} maxLength={24} placeholder="Customer name (optional)" aria-label="Customer name" onChange={(e) => setCart((c) => ({ ...c, customerName: e.target.value }))} />
 
       <ul className="cart-lines">
-        {priced.length === 0 ? <li className="empty">Tap a drink to start an order.</li> : null}
+        {priced.length === 0 ? <li className="empty"><CatToon coat="cream" pose="sit" className="empty-cat" />Tap a drink to start an order.</li> : null}
         {priced.map(({ line, priced: p, problem }) => {
           const item = findItem(menu, line.menuItemId)
           const extras = p ? [...p.modifiers.map((m) => m.name), iceLabel(p.iceLevel, p.iceServe), p.note].filter(Boolean).join(', ') : ''

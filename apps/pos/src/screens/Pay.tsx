@@ -5,6 +5,7 @@ import type { Cart } from '../App.tsx'
 import { Keypad } from '../components/Keypad.tsx'
 import { Modal } from '../components/Modal.tsx'
 import { Receipt } from '../components/Receipt.tsx'
+import { CatToon } from '@kennko/cats'
 
 type Props = {
   boot: Bootstrap
@@ -73,6 +74,7 @@ export function Pay({ boot, cart, totalCentavos, onPaid, onClose }: Props) {
           </>
         ) : (
           <div className="paid">
+            <CatToon coat="tuxedo" pose="wave" className="paid-cat" />
             <p className="paid-label">Order number</p>
             <p className="paid-number">#{order.number}</p>
             {order.customerName ? <p className="paid-name">{order.customerName}</p> : null}

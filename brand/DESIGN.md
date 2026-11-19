@@ -19,10 +19,12 @@ theme, no black and no grey.
 
 | Layer | Where | Feel |
 |---|---|---|
-| **Core** | POS, admin, receipts | Calm, fast, blue and white. Soft shadows, no outlines, no patterns. |
-| **Retro sticker** | The whole public website (landing, ordering, account, order tracking), printed menus and posters, social graphics, the wall | Loud and fun. Ink outlines, hard shadows, cream paper, patterns, perched cats. |
+| **Core** | Website admin, printed receipts | Calm, fast, blue and white. Soft shadows, no outlines, no patterns. |
+| **Retro sticker** | The whole public website (landing, ordering, account, order tracking), the till, the wall, printed menus and posters, social graphics | Loud and fun. Ink outlines, hard shadows, cream paper, patterns, perched cats. |
 
-Staff tools (the till, admin) stay core: speed beats charm there. **Customer-facing pages wear the sticker layer,
+Website admin stays core. **The till wears the sticker layer too** (Julius, 2026-11-20), tuned for the counter: tap
+targets and contrast are unchanged, presses give instant feedback, and the cats stay out of the selling area (they
+appear on sign-in, loading, the empty cart and the paid screen). The cats are shared through `packages/cats`. **Customer-facing pages wear the sticker layer,
 ordering included** (Julius, 2026-11-20), with one guard: form controls (inputs, selects, the location pin) stay plain
 and high-contrast inside sticker panels, so checkout is as easy to fill in as before.
 

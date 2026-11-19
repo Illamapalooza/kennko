@@ -325,3 +325,100 @@ i { font-style: normal; }
   .overlay { position: static; background: none; display: block; padding: 0; }
   .sheet { box-shadow: none; max-height: none; }
 }
+
+/* ══ Sticker theme ════════════════════════════════════════════════════════════
+   The till wears the website's retro sticker look (brand/DESIGN.md): cream grid paper, ink
+   outlines, hard shadows and the Kennko cats. Tuned for speed at the counter: tap targets and
+   contrast are unchanged, presses give instant feedback, and the cats stay out of the busy
+   selling area (sign-in, loading, empty cart and the paid screen only). Inputs stay plain. */
+
+body { background: var(--pattern-grid), var(--cream); }
+
+/* Buttons: ink keyline and a hard drop that presses flat */
+.btn { border: var(--outline-thin) solid var(--ink); box-shadow: 0 4px 0 var(--ink); transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.15s ease; }
+.btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 0 0 var(--ink); }
+.btn-primary { box-shadow: 0 4px 0 var(--ink); }
+.btn-outline { box-shadow: 0 4px 0 var(--ink); }
+.btn-amber, .btn-quiet, .btn-danger, .btn-ghost-danger { box-shadow: 0 4px 0 var(--ink); }
+.btn:disabled { box-shadow: 0 4px 0 var(--ink); }
+.icon-btn { border: var(--outline-thin) solid var(--ink); background: var(--white); }
+.chip { box-shadow: none; border: var(--outline-thin) solid var(--ink); }
+.chip:active { transform: translateY(2px); }
+
+/* Sign-in and loading: cream paper, blue logo, a white sticker card with perched cats */
+.gate { background: var(--pattern-grid), var(--cream); gap: 64px; }
+.gate-note { color: var(--ink); }
+.gate-card { position: relative; border: var(--outline) solid var(--ink); box-shadow: var(--shadow-hard); border-radius: var(--radius-lg); }
+.gate-card h1 { color: var(--blue); }
+.gate-cat { width: 150px; height: auto; margin-bottom: -40px; }
+.install-note, .install-note a { color: var(--ink); }
+.install-btn { background: var(--white); color: var(--blue); box-shadow: 0 4px 0 var(--ink); border: var(--outline-thin) solid var(--ink); }
+.pin-dots i { border: var(--outline-thin) solid var(--ink); background: var(--white); }
+.pin-dots i.on { background: var(--blue); }
+.keypad button { border: var(--outline-thin) solid var(--ink); box-shadow: 0 3px 0 var(--ink); background: var(--white); transition: transform 0.06s ease, box-shadow 0.06s ease; }
+.keypad button:active { transform: translateY(3px); box-shadow: none; background: var(--peach); }
+
+/* Rail */
+.rail { border-right: var(--outline) solid var(--ink); }
+.rail-logo { border: var(--outline-thin) solid var(--ink); }
+.rail-btn.on { border: var(--outline-thin) solid var(--ink); box-shadow: 0 3px 0 var(--ink); }
+.badge { border: 2px solid var(--ink); }
+.banner { border-bottom: var(--outline-thin) solid var(--ink); }
+.toast { border: var(--outline-thin) solid var(--white); }
+
+/* Sell: outlined category tabs and drink tiles that press down */
+.tabs button { box-shadow: none; border: var(--outline-thin) solid var(--ink); }
+.tabs button.on { box-shadow: 0 3px 0 var(--ink); }
+.drink { border: var(--outline) solid var(--ink); box-shadow: var(--shadow-hard); border-radius: var(--radius-md); transition: transform 0.06s ease, box-shadow 0.06s ease; }
+.drink:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 1px 0 var(--ink); }
+.drink:disabled { background: #efe9e4; border-color: #b9b2c4; box-shadow: none; }
+.drink-name { text-transform: uppercase; color: var(--ink); }
+.cart { background: var(--cream); border-left: var(--outline) solid var(--ink); }
+.cart-lines li { border-bottom-color: #e8d9cf; }
+.cart-lines li.empty { flex-direction: column; gap: 10px; }
+.empty-cat { width: 84px; height: auto; }
+.cart-sums { border-top: var(--outline-thin) solid var(--ink); }
+.stepper { border: var(--outline-thin) solid var(--ink); background: var(--white); }
+.stepper button { border: 2px solid var(--ink); }
+.segmented { border: var(--outline-thin) solid var(--ink); background: var(--white); }
+.segmented button.on { box-shadow: 0 3px 0 var(--ink); }
+
+/* Sheets and choices */
+.overlay { background: rgba(13, 27, 61, 0.55); }
+.sheet { border: var(--outline) solid var(--ink); box-shadow: 0 10px 0 var(--ink); }
+.sheet-head { border-bottom: var(--outline-thin) solid var(--ink); background: var(--cream); border-radius: 25px 25px 0 0; padding-bottom: 14px; }
+.sheet-foot { border-top: var(--outline-thin) solid var(--ink); background: var(--cream); border-radius: 0 0 25px 25px; }
+.choice { box-shadow: none; border: var(--outline-thin) solid var(--ink); background: var(--white); }
+.choice.on { box-shadow: 0 3px 0 var(--ink); border-color: var(--ink); }
+
+/* Pay */
+.pay-readout div { border: var(--outline-thin) solid var(--ink); background: var(--white); }
+.pay-readout .due { background: var(--amber-soft); }
+.paid-cat { width: 80px; height: auto; }
+.paid-change { border: var(--outline-thin) solid var(--ink); background: var(--white); }
+.paid-change.due { background: var(--amber); }
+
+/* Orders board: cream columns, sticker tickets */
+.column { background: var(--cream); border: var(--outline) solid var(--ink); }
+.column h2 { background: var(--cream); }
+.column-preparing, .column-preparing h2 { background: var(--amber-soft); }
+.column h2 b { border: 2px solid var(--ink); }
+.ticket { border: var(--outline-thin) solid var(--ink); box-shadow: 0 4px 0 var(--ink); }
+
+/* Pages: cards, tiles and rows as stickers */
+.card, .tile, .row { border: var(--outline-thin) solid var(--ink); box-shadow: 0 5px 0 var(--ink); }
+.row:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
+.switch { border: 2px solid var(--ink); }
+.pill { border: 2px solid var(--ink); }
+
+@media (max-width: 899px) {
+  .rail { border-right: 0; border-top: var(--outline) solid var(--ink); }
+  .cart.open { border-left: 0; }
+  .cart-bar { border: var(--outline-thin) solid var(--ink); box-shadow: 0 4px 0 var(--ink); }
+  .sheet-head { border-radius: 25px 25px 0 0; }
+  .sheet-foot { border-radius: 0; }
+}
+
+@media print {
+  body { background: #fff; }
+}
