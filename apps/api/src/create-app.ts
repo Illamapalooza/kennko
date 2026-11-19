@@ -5,6 +5,7 @@ import type { AppEnv } from './auth.js'
 import { apiError } from './http.js'
 import { menuRoutes } from './routes/menu.js'
 import { ordersRoutes } from './routes/orders.js'
+import { paymentRoutes } from './routes/payments.js'
 import type { ProofStore } from './storage.js'
 
 export type AppDeps = {
@@ -37,6 +38,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   app.route('/v1/menu', menuRoutes(deps))
   app.route('/v1/orders', ordersRoutes(deps))
+  app.route('/v1/payments', paymentRoutes(deps))
 
   return app
 }
