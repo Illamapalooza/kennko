@@ -26,8 +26,13 @@ function freePort(): Promise<number> {
   })
 }
 
+export type StartOptions = {
+  /** Apply migrations in name order, but run `sql` just before the first file whose name starts with `migration`. */
+  seedBefore?: { migration: string; sql: string }
+}
+
 /** Fresh in-memory Postgres with Supabase stubs and every migration applied. */
-export async function startTestDb(): Promise<TestDb> {
+export async function startTestDb(opts: StartOptions = {}): Promise<TestDb> {
   const pg = new PGlite()
   let server: PGLiteSocketServer | undefined
   let sql: postgres.Sql | undefined
@@ -35,6 +40,9 @@ export async function startTestDb(): Promise<TestDb> {
     await pg.waitReady
     await pg.exec(readFileSync(join(here, 'supabase-stubs.sql'), 'utf8'))
     for (const file of readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort()) {
+      if (opts.seedBefore && file.startsWith(opts.seedBefore.migration)) {
+        await pg.exec(opts.seedBefore.sql)
+      }
       try {
         await pg.exec(readFileSync(join(migrationsDir, file), 'utf8'))
       } catch (err) {
