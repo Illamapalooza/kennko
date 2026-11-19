@@ -1,0 +1,16 @@
+{
+  "name": "Kennko Pad",
+  "short_name": "Kennko Pad",
+  "description": "The counter order pad for Kennko Coffee.",
+  "id": "/pad",
+  "start_url": "/pad",
+  "scope": "/pad",
+  "display": "standalone",
+  "background_color": "#0055ff",
+  "theme_color": "#0055ff",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

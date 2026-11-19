@@ -1,3 +1,5 @@
+import { InstallAppButton } from '@/components/InstallAppButton'
+
 export function Footer() {
   return (
     <footer>
@@ -16,6 +18,7 @@ export function Footer() {
             </a>
             <a href="tel:09305992729">0930 599 2729</a>
           </nav>
+          <InstallAppButton label="Add Kennko to your home screen" className="btn btn-secondary" />
           <p className="footer-fine">© 2026 Kennko Coffee. 100% made with love.</p>
         </div>
       </div>

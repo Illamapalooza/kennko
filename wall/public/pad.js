@@ -209,3 +209,6 @@ async function start() {
   }
 }
 start();
+
+// Offline copy of the scene's files. Needs https or localhost, so on a plain LAN address the page simply runs without it.
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});

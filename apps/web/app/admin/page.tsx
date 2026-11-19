@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requireStaff } from '@/lib/auth/session'
 import { getMenuStatus } from '@/lib/menu/status'
 import { countOrdersToCheck, countSoldOut, recentOrders } from '@/lib/admin/overview-data'
+import { InstallAppButton } from '@/components/InstallAppButton'
 import { formatPesos } from '@/lib/money'
 import { statusLabel, type OrderStatus } from './orders/status'
 import { overviewTiles } from './overview'
@@ -48,6 +49,8 @@ export default async function AdminOverviewPage() {
           ))}
         </ul>
       )}
+
+      <InstallAppButton label="Install Kennko Admin" className="btn btn-primary" />
     </>
   )
 }

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { getCurrentStaff } from '@/lib/auth/session'
@@ -9,6 +10,12 @@ import { countOrdersToCheck } from '@/lib/admin/overview-data'
 import './admin.css'
 
 export const dynamic = 'force-dynamic'
+
+// Installing from any admin page installs the admin app (its own scope and start page), not the website.
+export const metadata: Metadata = {
+  manifest: '/admin/manifest.webmanifest',
+  appleWebApp: { capable: true, title: 'Kennko Admin', statusBarStyle: 'default' },
+}
 
 export default async function AdminLayout({
   children,
