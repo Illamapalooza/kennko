@@ -78,7 +78,11 @@ export function StaffRow({
       <td>{member.fullName}</td>
       <td>{member.email}</td>
       <td>{member.role}</td>
-      <td>{member.isActive ? 'Active' : 'Deactivated'}</td>
+      <td>
+        <span className={member.isActive ? 'staff-pill is-active' : 'staff-pill'}>
+          {member.isActive ? 'Active' : 'Deactivated'}
+        </span>
+      </td>
       <td>{controls}</td>
     </tr>
   )

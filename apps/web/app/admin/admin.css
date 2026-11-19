@@ -361,3 +361,20 @@
 @media (min-width: 921px) {
   .menu-drawer { left: auto; width: min(480px, 100%); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15); }
 }
+
+/* Order tabs */
+.order-tabs { display: flex; gap: 8px; overflow-x: auto; margin: 0 0 var(--space-3); padding-bottom: 4px; }
+.order-tab {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--white);
+  color: var(--ink); white-space: nowrap; text-decoration: none;
+}
+.order-tab[aria-current='page'] { background: var(--blue); color: var(--white); border-color: var(--blue); }
+
+/* Staff table, matching the menu table look */
+.staff-table th { background: var(--blue-soft); font-size: 0.85rem; }
+.staff-table td, .staff-table th { border-bottom: 1px solid var(--line); vertical-align: middle; }
+.staff-table select, .staff-table .btn { min-height: 44px; }
+.staff-pill { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: var(--amber-soft); color: var(--ink); }
+.staff-pill.is-active { background: var(--blue-soft); color: var(--blue); }
+.admin-cards select, .admin-cards .btn { min-height: 44px; }

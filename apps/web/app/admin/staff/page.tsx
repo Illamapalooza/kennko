@@ -70,13 +70,13 @@ export default async function StaffPage() {
         ))}
       </div>
 
-      <table className="admin-table">
+      <table className="admin-table staff-table">
         <thead>
           <tr>
             <th>Name</th>
             <th>Email</th>
             <th>Role</th>
-            <th>Status</th>
+            <th>Active</th>
             <th>Actions</th>
           </tr>
         </thead>

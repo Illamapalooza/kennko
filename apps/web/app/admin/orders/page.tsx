@@ -2,6 +2,8 @@ import { requireStaff } from '@/lib/auth/session'
 import { getServerClient } from '@/lib/supabase/server'
 import { OrderCard, type AdminOrder } from '@/components/admin/OrderCard'
 import { duplicateReferences, type OrderStatus, type Fulfilment } from './status'
+import Link from 'next/link'
+import { ordersForTab, tabCounts, parseTab, type OrderTab } from './tabs'
 import { iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 
 export const dynamic = 'force-dynamic'
@@ -15,6 +17,7 @@ type Row = {
   fulfil_at: string; subtotal_centavos: number; delivery_fee_centavos: number
   total_centavos: number; gcash_reference: string; payment_proof_path: string
   customer_note: string | null
+  created_at: string
   order_items: {
     name_snapshot: string; size: string; quantity: number
     ice_level: string | null; ice_serve: string | null; item_note: string | null
@@ -28,7 +31,12 @@ const RANK: Record<string, number> = {
   ready: 3, out_for_delivery: 3, completed: 4, rejected: 5, cancelled: 5,
 }
 
-export default async function AdminOrdersPage() {
+export default async function AdminOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
+  const { tab: tabParam } = await searchParams
   await requireStaff()
   const db = await getServerClient()
 
@@ -39,7 +47,7 @@ export default async function AdminOrdersPage() {
        customer_email, delivery_address, delivery_barangay,
        delivery_lat, delivery_lng, delivery_distance_km, fulfil_at,
        subtotal_centavos, delivery_fee_centavos, total_centavos,
-       gcash_reference, payment_proof_path, customer_note,
+       gcash_reference, payment_proof_path, customer_note, created_at,
        order_items ( name_snapshot, size, quantity, ice_level, ice_serve, item_note,
                      order_item_modifiers ( name_snapshot ) )`,
     )
@@ -70,6 +78,7 @@ export default async function AdminOrdersPage() {
       gcashReference: r.gcash_reference,
       paymentProofPath: r.payment_proof_path,
       customerNote: r.customer_note,
+      createdAt: r.created_at,
       items: (r.order_items ?? []).map((i) => ({
         name: i.name_snapshot,
         size: i.size,
@@ -84,37 +93,59 @@ export default async function AdminOrdersPage() {
     }))
     .sort((a, b) => RANK[a.status] - RANK[b.status])
 
+  const now = new Date()
+  const counts = tabCounts(orders, now)
+  const tab: OrderTab =
+    parseTab(tabParam) ?? (counts.check > 0 ? 'check' : 'progress')
+  const visible = ordersForTab(orders, tab, now)
+
   const dupes = duplicateReferences(
     orders.map((o) => ({ gcashReference: o.gcashReference, status: o.status })),
   )
-  const unverified = orders.filter((o) => o.status === 'awaiting_verification').length
+  const unverified = counts.check
+  const tabs: { id: OrderTab; label: string }[] = [
+    { id: 'check', label: `Needs checking (${counts.check})` },
+    { id: 'progress', label: `In progress (${counts.progress})` },
+    { id: 'done', label: 'Done' },
+  ]
 
   return (
     <>
       <title>{unverified > 0 ? `(${unverified}) Kennko Admin` : 'Kennko Admin'}</title>
       <h1>Orders</h1>
 
-      {orders.length === 0 ? (
-        <p className="admin-notice">No orders yet.</p>
-      ) : (
-        <>
-          {unverified > 0 ? (
-            <p className="admin-notice">
-              {unverified} order(s) awaiting a payment check. Verify the GCash
-              reference before anyone starts making drinks.
-            </p>
-          ) : null}
+      <nav className="order-tabs" aria-label="Order views">
+        {tabs.map((t) => (
+          <Link
+            key={t.id}
+            href={`/admin/orders?tab=${t.id}`}
+            className="order-tab"
+            aria-current={t.id === tab ? 'page' : undefined}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </nav>
 
-          <div className="admin-order-list">
-            {orders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                isDuplicateReference={dupes.has(order.gcashReference.toUpperCase())}
-              />
-            ))}
-          </div>
-        </>
+      {unverified > 0 && tab === 'check' ? (
+        <p className="admin-notice">
+          {unverified} order(s) awaiting a payment check. Verify the GCash
+          reference before anyone starts making drinks.
+        </p>
+      ) : null}
+
+      {visible.length === 0 ? (
+        <p className="admin-notice">No orders here.</p>
+      ) : (
+        <div className="admin-order-list">
+          {visible.map((order) => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              isDuplicateReference={dupes.has(order.gcashReference.toUpperCase())}
+            />
+          ))}
+        </div>
       )}
     </>
   )

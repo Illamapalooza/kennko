@@ -8,6 +8,7 @@ import { nextStatus, statusLabel, type OrderStatus, type Fulfilment } from '@/ap
 export type AdminOrder = {
   id: string
   orderCode: string
+  createdAt: string
   status: OrderStatus
   fulfilment: Fulfilment
   customerName: string
