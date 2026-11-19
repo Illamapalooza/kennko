@@ -75,3 +75,58 @@ body.ambient .board, body.ambient .banner { display: none; }
   main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
   .board { max-height: 42vh; }
 }
+
+/* ══ Sticker theme ════════════════════════════════════════════════════════════
+   The wall wears the website's retro sticker look (brand/DESIGN.md): cream grid paper, ink
+   outlines, hard shadows and the Kennko cats. The wall is zero-dependency, so it keeps its own
+   copy of the colours and gets the cats as static SVGs (packages/cats: npm run export-wall). */
+:root { --cream: #fff5f0; --peach: #ffe6dc; --line-grid: rgba(30, 70, 164, 0.22); --outline: .45vh; }
+
+body {
+  background:
+    linear-gradient(var(--line-grid) 2px, transparent 2px) 0 0 / 5.6vh 5.6vh,
+    linear-gradient(90deg, var(--line-grid) 2px, transparent 2px) 0 0 / 5.6vh 5.6vh,
+    var(--cream);
+}
+.bar { border-bottom: var(--outline) solid var(--ink); }
+.pill { border: .3vh solid var(--ink); }
+
+/* The cafe scene hangs like a sticker on the paper */
+.stage { overflow: visible; padding-top: 6vh; }
+.frame { box-shadow: 0 0 0 var(--px) var(--ink), 0 calc(var(--px) * 3) 0 var(--px) var(--ink); }
+
+/* Board: a blue sticker panel with an ink keyline, a hard drop and a cat sitting on top */
+main { padding: 0 2vw 2.4vh 0; gap: 2vw; }
+.board {
+  position: relative; overflow: visible; margin-top: 9vh;
+  border: var(--outline) solid var(--ink); border-radius: 3vh;
+  box-shadow: 0 1.2vh 0 var(--ink);
+}
+.board h2 { border-bottom-color: rgba(255, 255, 255, .35); }
+.chips span { border: .3vh solid var(--ink); }
+.closed-cat { width: 18vh; height: auto; justify-self: center; }
+
+/* Perched cats: each SVG's viewBox puts the edge it rests on at a known line */
+.perch { position: absolute; height: auto; pointer-events: none; z-index: 2; }
+.perch-peek { top: 0; transform: translateY(calc(-84 / 92 * 100%)); }
+.perch-sit { top: 0; transform: translateY(calc(-146 / 150 * 100%)); }
+.perch-frame { width: calc(26 * var(--px)); right: 8%; }
+.perch-board { width: 9vh; right: 12%; }
+
+/* Start screen: paper, a white sticker button, cats perched on it */
+.start {
+  background:
+    linear-gradient(var(--line-grid) 2px, transparent 2px) 0 0 / 5.6vh 5.6vh,
+    linear-gradient(90deg, var(--line-grid) 2px, transparent 2px) 0 0 / 5.6vh 5.6vh,
+    var(--cream);
+}
+.start button { position: relative; border: .6vh solid var(--ink); box-shadow: 0 1.4vh 0 var(--ink); border-radius: 4vh; }
+.start-cat-left { width: 14vh; left: 10%; }
+.start-cat-right { width: 12vh; right: 10%; }
+.pad-hint { color: var(--ink); }
+.pad-hint b { color: var(--blue); }
+
+@media (max-aspect-ratio: 1/1) {
+  main { padding: 0 2vw 2vh; }
+  .board { margin-top: 8vh; }
+}

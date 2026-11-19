@@ -83,3 +83,9 @@ and the wall gains an order board with numbers. Open the pad address the termina
 ## Tests
 
 `node --test wall/test/*.test.mjs`
+
+## Look
+
+The wall wears the website's sticker theme (`brand/DESIGN.md`): cream grid paper, ink outlines and the Kennko cats.
+It stays zero-dependency, so the cats are static SVGs in `public/brand/cats/`, exported from `packages/cats`.
+After changing the cat drawings, run `npm run export-wall -w @kennko/cats` from the repo root.

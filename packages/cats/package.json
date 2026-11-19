@@ -9,5 +9,8 @@
   },
   "peerDependencies": {
     "react": ">=19"
+  },
+  "scripts": {
+    "export-wall": "tsx scripts/export-wall-svgs.tsx"
   }
 }
