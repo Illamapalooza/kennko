@@ -58,6 +58,9 @@ export default async function AdminOrdersPage({
       .gte('created_at', q.doneSince)
       .order('created_at', { ascending: false }).limit(100),
   ])
+  const loadFailed = Boolean(openRes.error || doneRes.error)
+  if (openRes.error) console.error('Admin orders: open query failed', openRes.error)
+  if (doneRes.error) console.error('Admin orders: done query failed', doneRes.error)
   const data = [...(openRes.data ?? []), ...(doneRes.data ?? [])]
 
   const rows = (data ?? []) as Row[]
@@ -117,6 +120,12 @@ export default async function AdminOrdersPage({
     <>
       <title>{counts.check > 0 ? `(${counts.check}) Kennko Admin` : 'Kennko Admin'}</title>
       <h1>Orders</h1>
+
+      {loadFailed ? (
+        <p className="admin-error" role="alert">
+          Couldn&apos;t load all orders. Refresh the page; if it keeps happening, check the internet connection.
+        </p>
+      ) : null}
 
       <nav className="order-tabs" aria-label="Order views">
         {tabs.map((t) => (
