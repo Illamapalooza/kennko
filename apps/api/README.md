@@ -8,7 +8,7 @@ Environment variables (see `src/config.ts`):
 | --- | --- |
 | `DATABASE_URL` | Supabase **transaction pooler** URL, user `kennko_api.<project ref>`, port 6543 |
 | `SUPABASE_URL` | `https://<project ref>.supabase.co` (used to verify owner tokens) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key. Used **only** by `src/storage.ts` to upload, remove and sign payment proofs in the private `payment-proofs` bucket. SQL never uses it. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase secret key (`sb_secret_…`). Used **only** by `src/storage.ts` (upload, remove and sign payment proofs in the private `payment-proofs` bucket) and `src/auth-admin.ts` (the staff invite). SQL never uses it, and the website never has it. |
 
 No secret goes in the repo. Keep passwords and tokens in the Vercel dashboard and your shell only.
 
@@ -525,6 +525,15 @@ select conname from pg_constraint where conrelid = 'sync_events'::regclass and c
 
 Expect `sync_events_result_check` (and the kind check). If `sync_events_result_check` is missing, stop and ask.
 
+Also see how much Needs a look will open with. Each row needs a click (Discard, Try again now or Mark seen), and each list shows at most 200:
+
+```sql
+select kind, reason, count(*) from sync_events where result = 'held' group by 1, 2;
+select count(*) from orders where flags_seen_at is null and cardinality(array_remove(flags,'legacy')) > 0;
+```
+
+The second is the flagged orders (any flag other than `legacy`). If either is in the hundreds, plan time to work through it, or ask before deploying.
+
 From `apps/api`, dry run first. It must list only 0018:
 
 ```sh
@@ -547,7 +556,7 @@ openssl rand -hex 32
 
 2. Add it as `KENNKO_WEB_KEY` to the API's Vercel project (Production). It must be at least 32 characters after trimming, or the API stops at boot. The API keeps `SUPABASE_SERVICE_ROLE_KEY` (storage and the staff invite).
 3. Deploy. Smoke checks:
-   - `GET /health` returns 200.
+   - `GET /health` returns 200. If it doesn't, open the deployment's runtime logs in Vercel (a boot error names the missing or invalid variable) and fix that before going on.
    - `GET /v1/orders/by-code/KNK-XXXXXX` returns 404 JSON.
    - `GET /v1/staff/alert-emails` without the key header returns 401.
    - `GET /v1/reports/day/<today>` without a token returns 401.
@@ -558,7 +567,11 @@ openssl rand -hex 32
 1. Add the same `KENNKO_WEB_KEY` value to the website's Vercel project (`kennko`), Production. Deploy.
 2. Only once that deploy works, delete `SUPABASE_SERVICE_ROLE_KEY` from the `kennko` project (Production, Preview and Development) and redeploy.
 3. Check the fresh deployment's build log and runtime show no "Missing … SERVICE_ROLE_KEY" error.
-4. Recommended: rotate the Supabase secret key, because the old one lived on the website. Create a new secret key in Supabase, set it as `SUPABASE_SERVICE_ROLE_KEY` on **kennko-api only**, redeploy the API, then revoke the old key.
+4. Recommended: rotate the Supabase secret key, because the old one lived on the website. The project uses Supabase's new API keys (secret keys `sb_secret_…`, the website's `sb_publishable_…`), so each secret key is revoked on its own: revoking the old one does not touch the publishable key or anyone's sign-in.
+   1. In Supabase › Project Settings › API Keys, create a new secret key.
+   2. Set it as `SUPABASE_SERVICE_ROLE_KEY` on **kennko-api only** (the API project) and redeploy the API. `GET /health` returns 200.
+   3. Verify before revoking: in admin › Orders, press **View receipt** on an order with a payment (storage) and the proof opens; in admin › Staff, send a test invite to a spare email (auth admin) and it arrives. Deactivate that test staff member afterwards.
+   4. Only when both work, revoke the old secret key. If either fails, keep the old key, put it back on kennko-api, redeploy, and ask.
 5. `apps/web/.env.local` keeps `SUPABASE_SERVICE_ROLE_KEY` for the local scripts only (`seed`, `seed-zones`, `create-owner`); update it there after rotating.
 
 ### 4. Till (shop computer)
@@ -591,7 +604,7 @@ Admin › Needs a look (owner only):
 
 - It lists the held rows the Plan 4 query showed (`select kind, reason, count(*) from sync_events where result = 'held' group by 1, 2;`).
 - **Discard** one test row with a note: it moves to **Resolved** (Open and Resolved tabs). **Mark seen** is the same for flagged receipts and orders.
-- A stuck open shift shows under Open shifts with **Close this shift** (see the Plan 4 runbook above).
+- A stuck open shift shows under Open shifts with **Close this shift** when it is blocking sync or its till is disconnected; other open shifts are listed without the button (see the Plan 4 runbook above).
 
 Wall with the till:
 
