@@ -8,6 +8,7 @@ import { SIZE_VOLUMES } from '@/lib/menu/sizes'
 import { statusLabel } from '@/app/admin/orders/status'
 import type { OrderStage } from '@kennko/core'
 import type { DrinkSize } from '@/lib/menu/types'
+import { OrderNav } from '@/components/order/OrderNav'
 import '../order/order.css'
 
 export const dynamic = 'force-dynamic'
@@ -26,6 +27,9 @@ export default async function OrdersPage() {
 
   return (
     <div className="order-shell">
+      <div className="order-main order-main-nav">
+        <OrderNav place="orders" signedIn customerName={customer.name} />
+      </div>
       <div className="checkout">
         <div className="checkout-head account-head">
           <div>

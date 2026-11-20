@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatPesos } from '@/lib/money'
 import { withManilaOffset } from '@/lib/format/time'
 import { lineTotal, cartSubtotal } from '@/lib/cart/total'
@@ -12,6 +12,9 @@ import { iceSummary } from '@/lib/cart/ice'
 import { SIZE_VOLUMES } from '@/lib/menu/sizes'
 import { LocationPin, type SharedPin } from '@/components/order/LocationPin'
 import { CatToon, type CatCoat, type CatPose } from '@kennko/cats'
+import { OrderNav } from '@/components/order/OrderNav'
+import { StepBar } from '@/components/order/StepBar'
+import { backTarget, resolveStep, type Step as FlowStep } from '@/components/order/nav'
 import { groupsForItem } from '@/lib/menu/item-groups'
 import type { MenuCategoryWithItems, MenuItemWithPrices, DrinkSize } from '@/lib/menu/types'
 
@@ -40,15 +43,12 @@ export type Zone = {
 const STORAGE_KEY = 'kennko-cart-v1'
 const CHECKOUT_KEY = 'kennko-checkout-v1'
 
-type Step = 'menu' | 'checkout' | 'pay' | 'done'
-const STEPS: Step[] = ['menu', 'checkout', 'pay', 'done']
+type Step = FlowStep | 'done'
 
-function readStepFromUrl(): { step: Step; code: string | null } {
-  if (typeof window === 'undefined') return { step: 'menu', code: null }
+function readStepFromUrl(): { raw: string | null; code: string | null } {
+  if (typeof window === 'undefined') return { raw: null, code: null }
   const params = new URLSearchParams(window.location.search)
-  const raw = params.get('step')
-  const step = STEPS.includes(raw as Step) ? (raw as Step) : 'menu'
-  return { step, code: params.get('code') }
+  return { raw: params.get('step'), code: params.get('code') }
 }
 
 export function OrderClient({
@@ -81,6 +81,9 @@ export function OrderClient({
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [orderCode, setOrderCode] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  // Read by the popstate handler, which is registered once.
+  const cartCountRef = useRef(0)
 
   // Cart survives a refresh mid-order.
   useEffect(() => {
@@ -111,16 +114,18 @@ export function OrderClient({
 
     // The step lives in the URL, so a refresh or a back button lands where the
     // customer was rather than dumping them at the top of the menu.
-    const { step: urlStep, code } = readStepFromUrl()
-    if (urlStep === 'done' && code) {
+    const { raw, code } = readStepFromUrl()
+    if (raw === 'done' && code) {
       setOrderCode(code)
       setStepState('done')
-    } else if (urlStep !== 'menu' && restored.length === 0) {
-      // Nothing to check out; do not strand them on an empty form.
-      setStepState('menu')
-      window.history.replaceState(null, '', '/order')
     } else {
-      setStepState(urlStep)
+      // Nothing to check out; do not strand them on an empty form.
+      const resolved = resolveStep(raw, restored.length)
+      setStepState(resolved.step)
+      setNotice(resolved.note)
+      if (resolved.step === 'menu' && raw !== null && raw !== 'menu') {
+        window.history.replaceState(null, '', '/order')
+      }
     }
 
     setHydrated(true)
@@ -150,9 +155,15 @@ export function OrderClient({
   // Browser back and forward move between steps, not out of the order.
   useEffect(() => {
     function onPop() {
-      const { step: urlStep, code } = readStepFromUrl()
-      if (code) setOrderCode(code)
-      setStepState(urlStep)
+      const { raw, code } = readStepFromUrl()
+      if (raw === 'done' && code) {
+        setOrderCode(code)
+        setStepState('done')
+        return
+      }
+      const resolved = resolveStep(raw, cartCountRef.current)
+      setStepState(resolved.step)
+      setNotice(resolved.note)
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
@@ -160,6 +171,7 @@ export function OrderClient({
 
   function setStep(next: Step, code?: string) {
     setStepState(next)
+    setNotice(null)
     const query =
       next === 'menu'
         ? ''
@@ -170,6 +182,7 @@ export function OrderClient({
   }
 
   const subtotal = useMemo(() => cartSubtotal(lines), [lines])
+  cartCountRef.current = lines.length
   const zone = zones.find((z) => z.barangay === form.barangay)
 
   // Quoted with the same functions the server charges with. When a pin is
@@ -267,6 +280,7 @@ export function OrderClient({
   if (step === 'done' && orderCode) {
     return (
       <div className="order-main">
+        <OrderNav place="menu" signedIn={Boolean(customer)} customerName={customer?.name} />
         <DoneStep
           orderCode={orderCode}
           signedIn={Boolean(customer)}
@@ -284,6 +298,11 @@ export function OrderClient({
 
   return (
     <>
+      <div className="order-main order-main-nav">
+        <OrderNav place="menu" signedIn={Boolean(customer)} customerName={customer?.name} />
+        {step !== 'done' ? <StepBar current={step} onGo={(s) => setStep(s)} /> : null}
+      </div>
+
       {step === 'menu' ? (
         <>
           <header className="order-masthead">
@@ -292,9 +311,6 @@ export function OrderClient({
               <CatToon coat="tuxedo" pose="wave" className="perch perch-sit order-perch-right" />
               <div className="masthead-top">
                 <span className="order-eyebrow">Pickup or delivery</span>
-                <a className="masthead-link" href={customer ? '/orders' : '/account'}>
-                  {customer ? 'Your orders' : 'Sign in'}
-                </a>
               </div>
               <h1 className="k-outlined">The Kennko catalog</h1>
               <p>
@@ -305,6 +321,7 @@ export function OrderClient({
           </header>
 
           <div className="order-main">
+            {notice ? <p className="order-notice" role="status">{notice}</p> : null}
             {categories.map((category, index) => (
               <section className="order-cat" key={category.id}>
                 <div className="order-cat-head">
@@ -413,7 +430,7 @@ function CheckoutStep({
     <div className="checkout">
       <div className="checkout-head">
         <button type="button" className="link-back" onClick={onBack}>
-          ← Back to the catalog
+          ‹ {backTarget('checkout')?.label}
         </button>
         <h1>Your order</h1>
         <p className="checkout-sub">
@@ -593,6 +610,9 @@ function PayStep({
 }) {
   return (
     <>
+      <button type="button" className="link-back" onClick={onBack} disabled={submitting}>
+        ‹ {backTarget('pay')?.label}
+      </button>
       <h1>Pay {formatPesos(total)} with GCash</h1>
 
       <div className="order-card">
@@ -679,22 +699,19 @@ function DoneStep({
         <a className="sheet-add" href={`/order/${orderCode}`}>
           Track this order
         </a>
+        <a className="done-secondary" href={signedIn ? '/orders' : '/account'}>
+          {signedIn ? 'My orders' : 'Sign in'}
+        </a>
         <button type="button" className="done-secondary" onClick={onOrderAgain}>
-          Order something else
+          Order again
         </button>
       </div>
 
-      <div className="done-links">
-        {signedIn ? (
-          <a href="/orders">See all your orders</a>
-        ) : (
-          <span>
-            <a href="/account">Sign in with Google</a> to find this order later
-            without the code.
-          </span>
-        )}
-        <a href="/">Back to the Kennko site</a>
-      </div>
+      {signedIn ? null : (
+        <p className="done-links">
+          Sign in with Google to find this order later without the code.
+        </p>
+      )}
     </div>
   )
 }

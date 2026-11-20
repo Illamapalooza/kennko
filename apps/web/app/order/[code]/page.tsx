@@ -3,6 +3,8 @@ import type { OrderStage } from '@kennko/core'
 import { lookupOrder } from '@/lib/orders/lookup'
 import { formatPesos } from '@/lib/money'
 import { formatManilaDateTime } from '@/lib/format/time'
+import { getCurrentCustomer } from '@/lib/auth/customer'
+import { OrderNav } from '@/components/order/OrderNav'
 import '../order.css'
 
 export const dynamic = 'force-dynamic'
@@ -28,9 +30,13 @@ export default async function OrderStatusPage({
   const { code } = await params
   const order = await lookupOrder(code)
   if (!order) notFound()
+  const customer = await getCurrentCustomer()
 
   return (
     <div className="order-shell">
+      <div className="order-main order-main-nav">
+        <OrderNav place="status" signedIn={Boolean(customer)} customerName={customer?.name} />
+      </div>
       <div className="order-main">
         <h1>Order {order.orderCode}</h1>
         <p className="order-note">Your number: {order.ticket}</p>
@@ -64,6 +70,11 @@ export default async function OrderStatusPage({
               : ''}
           </p>
           <p>{formatManilaDateTime(order.fulfilAt)}</p>
+        </div>
+
+        <div className="done-actions">
+          <a className="sheet-add" href={customer ? '/orders' : '/account'}>My orders</a>
+          <a className="done-secondary" href="/order">Order again</a>
         </div>
       </div>
     </div>

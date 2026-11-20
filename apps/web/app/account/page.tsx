@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getCurrentCustomer } from '@/lib/auth/customer'
 import { GoogleSignIn } from '@/components/order/GoogleSignIn'
 import { safeNextPath } from '@/lib/auth/redirect'
+import { OrderNav } from '@/components/order/OrderNav'
 import '../order/order.css'
 
 export const dynamic = 'force-dynamic'
@@ -19,6 +20,9 @@ export default async function AccountPage({
 
   return (
     <div className="order-shell">
+      <div className="order-main order-main-nav">
+        <OrderNav place="account" signedIn={false} />
+      </div>
       <div className="account">
         <div className="panel account-card">
           <h1>Sign in to see your orders</h1>
