@@ -2,9 +2,13 @@ import { randomUUID } from 'node:crypto'
 import type { CounterOrderPayload, ImportOrder, ImportShift, PushResponse } from '@kennko/core'
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose'
 import type { Hono } from 'hono'
+import type postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { verifierFromJwks, type AppEnv } from '../src/auth.js'
 import { createApp } from '../src/create-app.js'
+import { addStamp, claimFreeDrink, removeOrderStamp, unclaim } from '../src/loyalty/cards.js'
+import { cardSummary, customerByCode, tillCustomer } from '../src/loyalty/customers.js'
+import { adjustPoints, balance, creditOrderPoints, dropOrderPoints, reverseOrderPoints } from '../src/loyalty/points.js'
 import { publishMenu } from '../src/menu/snapshot.js'
 import type { PushSender } from '../src/push/send.js'
 import { fakeAuthAdmin, fakeProofs, inlineDefer } from './fakes.js'
@@ -469,6 +473,58 @@ describe('every route as kennko_api', () => {
     const invited = await ok('POST', '/v1/staff', ownerJwt, { fullName: 'Lia', role: 'manager', email: 'lia@x.test' }, 201)
     expect(invited).toMatchObject({ hasLogin: true, email: 'lia@x.test' })
     expect(auth.invited).toEqual(['lia@x.test'])
+  })
+
+  it('loyalty module: stamps, repack, claim, unclaim, removal and points as kennko_api', async () => {
+    const member = '00000000-0000-4000-8000-0000000000b1'
+    const orders = await asSuper(async () => {
+      await db.sql`insert into auth.users (id, email) values (${member}, 'member@x.test')`
+      await db.sql`insert into customers (id, public_code, display_name, age_confirmed_at, privacy_accepted_at,
+          privacy_version, created_at)
+        values (${member}, '23456789A', 'Member', ${NOW}, ${NOW}, '2026-11', ${NOW})`
+      const ids: string[] = []
+      for (let i = 0; i < 9; i++) {
+        const [o] = await db.sql`
+          insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
+            ticket_series, ticket_number, customer_name, customer_phone, customer_email, fulfil_at,
+            subtotal_centavos, total_centavos, created_at, updated_at, customer_id)
+          values ('online', ${`KNK-LOY${i}`}, 'pickup', 'completed', 'paid', '2026-11-21', 'W', ${960 + i}, 'M',
+            '09170000000', 'member@x.test', ${NOW}, 12000, 12000, ${NOW}, ${NOW}, ${member})
+          returning id`
+        ids.push(o!.id as string)
+      }
+      return ids
+    })
+    const run = <T,>(fn: (tx: postgres.TransactionSql) => Promise<T>) => db.sql.begin(fn) as Promise<T>
+    for (const [i, orderId] of orders.entries()) {
+      const r = await run((tx) =>
+        addStamp(tx, {
+          customerId: member,
+          stampId: randomUUID(),
+          orderId,
+          staffId: BARISTA,
+          deviceId,
+          stampedAt: new Date(NOW.getTime() + i * 1000).toISOString(),
+          now: NOW,
+        }),
+      )
+      expect(r).toBe('added')
+    }
+    expect(await run((tx) => tillCustomer(tx, member))).toMatchObject({ stamps: 1, fullCards: 1, stampMode: 'digital' })
+    expect(await run((tx) => customerByCode(tx, '23456789A'))).toMatchObject({ id: member })
+    const claimId = randomUUID()
+    expect(await run((tx) => claimFreeDrink(tx, { customerId: member, claimId, staffId: BARISTA, deviceId, now: NOW }))).toBe('claimed')
+    expect(await run((tx) => removeOrderStamp(tx, orders[0]!, NOW))).toBe('forgiven')
+    expect(await run((tx) => unclaim(tx, { claimId }, NOW))).toBe('unclaimed')
+    expect(await run((tx) => removeOrderStamp(tx, orders[1]!, NOW))).toBe('removed')
+
+    expect(await run((tx) => creditOrderPoints(tx, orders[2]!, NOW))).toBe(12)
+    await run((tx) => adjustPoints(tx, { customerId: member, delta: 3, note: 'Welcome', staffId: OWNER, now: NOW }))
+    expect(await run((tx) => reverseOrderPoints(tx, orders[2]!, NOW))).toBe(-12)
+    expect(await run((tx) => creditOrderPoints(tx, orders[3]!, NOW))).toBe(12)
+    expect(await run((tx) => dropOrderPoints(tx, orders[3]!, member))).toBe(1)
+    expect(await run((tx) => balance(tx, member))).toBe(3)
+    expect(await run((tx) => cardSummary(tx, member))).toMatchObject({ fullCards: 0 })
   })
 
   it('publishMenu from the deploy helper also works as kennko_api', async () => {
