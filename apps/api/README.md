@@ -1,6 +1,6 @@
 # Kennko API
 
-Hono app on Vercel. It owns the published menu: `GET /v1/menu`, `GET /v1/menu/:version`, `POST /v1/menu/publish` (owner only), online checkout `POST /v1/orders` (multipart: `order` JSON + `proof` image), and `GET /health`. Migrations live in `supabase/migrations`.
+Hono app on Vercel. It owns the published menu: `GET /v1/menu`, `GET /v1/menu/:version`, `POST /v1/menu/publish` (owner only), online checkout `POST /v1/orders` (multipart: `order` JSON + `proof` image), `GET /health`, and tills: `POST /v1/devices` (owner, returns a 6-digit pairing code), `GET /v1/devices`, `DELETE /v1/devices/:id` (revoke), `POST /v1/devices/pair` (no auth, code in, device token out) and `GET /v1/devices/me` (device token). Migrations live in `supabase/migrations`.
 
 Environment variables (see `src/config.ts`):
 
