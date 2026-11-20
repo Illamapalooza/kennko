@@ -320,6 +320,19 @@ describe('the import inside the sync loop', () => {
     store.close()
   })
 
+  it('once import_done is set, a run no longer scans for legacy rows (P4-7)', async () => {
+    const { store, sync, calls, paths } = setup()
+    await sync.runOnce()
+    expect(store.kvGet('import_done')).toBe('1')
+    // A row the scan would pick up, if it still ran: no uid, marked for import.
+    store.db.prepare('update orders set uid = null, needs_import = 1 where id = 1').run()
+    calls.length = 0
+    await sync.runOnce()
+    expect(paths()).toEqual(['/v1/sync/pull'])
+    expect((store.db.prepare('select uid from orders where id = 1').get() as any).uid).toBeNull()
+    store.close()
+  })
+
   it('a failed chunk stops the run before any push; the next run resumes at row 101', async () => {
     const { store, sync, calls, fail, paths } = setup()
     fail(2)

@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { CachedStaff, PinDirectory } from './pins.ts'
 import type { Sessions } from './sessions.ts'
 import type { Store } from './store.ts'
+import { bounded } from './wait.ts'
 
 /**
  * This till's pairing with the Kennko API, kept in data/device.json. The token is the till's password to the API,
@@ -131,10 +132,7 @@ export function createPinRefresh(opts: { dataDir: string; refresh: () => Promise
     const t = now()
     if (t - lastSoon < SOON_MS) return false
     lastSoon = t
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const waited = new Promise<void>((resolve) => { timer = setTimeout(resolve, SOON_WAIT_MS); timer.unref?.() })
-    await Promise.race([opts.refresh().catch(() => {}), waited])
-    clearTimeout(timer)
+    await bounded(opts.refresh(), SOON_WAIT_MS)
     return true
   }
 

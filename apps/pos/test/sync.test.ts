@@ -9,7 +9,8 @@ import { builtInMenu, loadSnapshot, saveSnapshot } from '../server/menu.ts'
 import { createPinDirectory, type CachedStaff } from '../server/pins.ts'
 import { createSessions } from '../server/sessions.ts'
 import { createStore, type NewOrder } from '../server/store.ts'
-import { clockSkew, createSync, nextDelay } from '../server/sync.ts'
+import { clockSkew, createSync, nextDelay, syncReady } from '../server/sync.ts'
+import { bounded } from '../server/wait.ts'
 
 const T = Date.UTC(2026, 10, 21, 2, 0) // on a whole second, like an HTTP Date header
 const API = 'https://api.kennko.test'
@@ -578,5 +579,40 @@ describe('replaceSoldOut', () => {
     store.setAvailable('C', false, T, null, { outbox: true })
     store.replaceSoldOut(['A'])
     expect(store.soldOut().sort()).toEqual(['A', 'B', 'C'])
+  })
+})
+
+describe('bounded (Ruling P4-7)', () => {
+  it('is true when the work finishes in time, false when the wait runs out first', async () => {
+    vi.useFakeTimers()
+    try {
+      let finish!: () => void
+      const slow = new Promise<void>((r) => { finish = r })
+      const late = bounded(slow, 5000)
+      await vi.advanceTimersByTimeAsync(4999)
+      let settled: boolean | null = null
+      void late.then((v) => { settled = v })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(settled).toBeNull()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await late).toBe(false)
+      finish()
+      expect(await bounded(Promise.resolve(), 5000)).toBe(true)
+      expect(vi.getTimerCount()).toBe(0) // the timer is cleared once the work is done
+    } finally { vi.useRealTimers() }
+  })
+
+  it('treats a rejection as done, never throws', async () => {
+    expect(await bounded(Promise.reject(new Error('boom')), 1000)).toBe(true)
+  })
+})
+
+describe('syncReady', () => {
+  const device = { deviceId: 'd', name: 'Counter', token: TOKEN, pairedAt: T, revokedAt: null }
+  it('needs the website address, a pairing and no revocation', () => {
+    expect(syncReady(device, API)).toBe(true)
+    expect(syncReady(device, '  ')).toBe(false)
+    expect(syncReady(null, API)).toBe(false)
+    expect(syncReady({ ...device, revokedAt: T }, API)).toBe(false)
   })
 })

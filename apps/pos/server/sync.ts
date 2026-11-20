@@ -38,6 +38,10 @@ export function clockSkew(res: Response, sentAt: number, receivedAt: number): nu
   return Math.round(server - (sentAt + receivedAt) / 2)
 }
 
+/** The till can sync with the website: its address is set, and the till is paired and not disconnected in admin. */
+export const syncReady = (device: DeviceFile | null, apiUrl: string): boolean =>
+  Boolean(apiUrl.trim()) && device !== null && device.revokedAt === null
+
 /** The wait before the next run: every 15 s while things work, then 15, 30, 60, 120 and 300 s after failures in a row. */
 export function nextDelay(failures: number): number {
   if (failures <= 0) return SYNC_EVERY_MS
@@ -167,8 +171,10 @@ export function createSync(opts: {
 
     // Import the history from before this version first (Ruling 9). A 200 acks the chunk, rows counted `rejected`
     // included: the API keeps those as held receipts. A failure stops the run before any push, like a failed push.
-    assignLegacyIds(store, device.deviceId)
-    for (;;) {
+    // Once the import has finished it never has work again (new rows get their uid at insert), so skip the scans.
+    const importDone = store.kvGet('import_done') === '1'
+    if (!importDone) assignLegacyIds(store, device.deviceId)
+    for (; !importDone;) {
       const next = nextImportChunk(store)
       if (!next) break
       const { shifts, orders, cashMoves } = next.chunk
@@ -184,7 +190,7 @@ export function createSync(opts: {
       if (!isImportResponse(a.body, sent)) { failure = { problem: GARBLED, offline: true }; break }
       ackImportChunk(store, next.rows, next.upTo)
     }
-    if (!failure && store.kvGet('import_done') !== '1' && importRemaining(store) === 0) store.kvSet('import_done', '1')
+    if (!failure && !importDone && importRemaining(store) === 0) store.kvSet('import_done', '1')
 
     // Push. `held` in the answer is for information only: held rows can stay held for good, so they are never waited on.
     for (; !failure;) {

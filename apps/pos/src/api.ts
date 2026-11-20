@@ -86,8 +86,11 @@ export const api = {
   voidOrder: (id: number, reason: string, managerPin: string) => call<Order>('POST', `/api/orders/${id}/void`, { reason, managerPin }),
   /** `pin`: the person's own PIN, asked for in per-person mode so the change is credited to them. */
   setAvailable: (itemId: string, available: boolean, pin?: string) => call<Menu>('POST', '/api/menu/availability', { itemId, available, pin }),
-  /** Paired: "Check now", no PIN. Not connected: the manager-PIN pull of the published menu. */
-  syncMenu: (managerPin?: string) => call<Menu>('POST', '/api/menu/sync', { managerPin }),
+  /**
+   * Paired: "Check now", no PIN. Not connected: the manager-PIN pull of the published menu. `notice` is set when the
+   * check is still running after 10 s ("Still checking — the menu updates by itself."): show it instead of "up to date".
+   */
+  syncMenu: (managerPin?: string) => call<Menu & { notice?: string }>('POST', '/api/menu/sync', { managerPin }),
   pairDevice: (code: string, managerPin: string) => call<{ name: string }>('POST', '/api/device/pair', { code, managerPin }),
   till: () => call<TillState>('GET', '/api/till'),
   openTill: (floatCentavos: number) => call<Shift>('POST', '/api/till/open', { floatCentavos }),

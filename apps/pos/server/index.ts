@@ -18,7 +18,8 @@ import { fetchApiMenu, loadMenu, loadSnapshot, saveSnapshot, tillDiscounts, till
 import { createStore } from './store.ts'
 import { createPinDirectory } from './pins.ts'
 import { checkPinFresh, createPinRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice } from './device.ts'
-import { createSync } from './sync.ts'
+import { createSync, syncReady } from './sync.ts'
+import { bounded } from './wait.ts'
 import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
 import { reportCsv } from './report.ts'
 import { WALL_LINGER_MS, wallOrders } from './wall-feed.ts'
@@ -61,8 +62,8 @@ setInterval(backup, 60 * 60 * 1000).unref()
 
 /**
  * The sync with the Kennko API (sync.ts): imports old history once, pushes the outbox, pulls the menu, sold-out marks,
- * staff and shop details. It runs in the background; no request waits on it except pairing, "Check now" and the
- * bounded wrong-PIN refresh. Every write kicks it after answering.
+ * staff and shop details. It runs in the background. Only pairing (5 s), "Check now" (10 s) and the wrong-PIN refresh
+ * (2.5 s) wait on it, and only that long (Ruling P4-7); a longer run lands by itself. Every write kicks it after answering.
  */
 const sync = createSync({
   store, sessions, pins, dataDir: DATA, apiUrl: config.api.url,
@@ -73,6 +74,10 @@ const sync = createSync({
 })
 // A PIN that matches no one runs one sync (paired, not revoked, at most every 30 s, waiting at most 2.5 s; Ruling P4-1).
 const pinRefresh = createPinRefresh({ dataDir: DATA, refresh: sync.runOnce })
+const PAIR_WAIT_MS = 5_000
+const CHECK_WAIT_MS = 10_000
+/** Paired, not revoked and the website address set: "Check now" is one sync with no PIN. */
+const canSync = () => syncReady(loadDevice(DATA), config.api.url)
 
 /** The menu the till sells from: the pulled snapshot (else the old menu) with the sold-out marks applied. */
 const menu = (): Menu => tillMenu(loadedSnapshot, baseMenu, new Set(store.soldOut()), Date.now())
@@ -237,7 +242,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req),
       device: device ? { name: device.name, revoked: device.revokedAt !== null } : null,
       // Paired, not revoked and the website address set: the menu screen offers "Check now" (one sync, no PIN).
-      syncConfigured: Boolean(config.api.url) && device !== null && device.revokedAt === null,
+      syncConfigured: canSync(),
     })
   }
   if (req.method === 'GET' && route === '/api/wall/events') {
@@ -335,13 +340,15 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return done(menu())
   }
   if (route === '/api/menu/sync') {
-    const device = loadDevice(DATA)
-    if (device && device.revokedAt === null) {
-      // "Check now" (Ruling 11): one sync, no PIN. The pulled menu has already been applied by onChange.
-      await sync.runOnce()
+    if (canSync()) {
+      // "Check now" (Ruling 11): one sync, no PIN, waited on for at most 10 s (P4-7). A pulled menu has already been
+      // applied by onChange. No kick afterwards: the run just happened.
+      const finished = await bounded(sync.runOnce(), CHECK_WAIT_MS)
+      if (!finished) { broadcast(); return json(res, 200, { ...menu(), notice: 'Still checking — the menu updates by itself.' }) }
       const problem = sync.status().problem
       if (problem) throw new OrderError(problem)
-      return done(menu())
+      broadcast()
+      return json(res, 200, menu())
     }
     // Not connected: the manager-PIN pull of the published menu, saved as the snapshot.
     await checkPin(req, body.managerPin, 'manager')
@@ -358,7 +365,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     let device
     try { device = await pairWithApi(config.api.url, body.code, now) } catch (err: any) { throw new OrderError(err.message) }
     saveDevice(DATA, device)
-    await sync.runOnce()
+    // The first sync (staff, menu, history) gets 5 s; a longer one carries on and lands through onChange (P4-7).
+    await bounded(sync.runOnce(), PAIR_WAIT_MS)
     broadcast()
     return json(res, 200, { name: device.name })
   }
