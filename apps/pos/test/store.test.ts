@@ -111,8 +111,8 @@ describe('till', () => {
     store.voidOrder(b.id, 'mistake', T + 5000, null)
     const feed = wallOrders([...store.activeOrders(), ...store.recentlyFinished(T)])
     expect(feed).toEqual([
-      { id: a.id, number: 1, name: 'Ana', items: [{ name: 'Café Latte', qty: 3 }], status: 'queued', createdAt: T, updatedAt: T },
-      { id: b.id, number: 2, name: '', items: [{ name: 'Café Latte', qty: 2 }], status: 'voided', createdAt: T, updatedAt: T + 5000 },
+      { id: a.id, number: 1, series: 'C', name: 'Ana', items: [{ name: 'Café Latte', qty: 3 }], status: 'queued', createdAt: T, updatedAt: T },
+      { id: b.id, number: 2, series: 'C', name: '', items: [{ name: 'Café Latte', qty: 2 }], status: 'voided', createdAt: T, updatedAt: T + 5000 },
     ])
     expect(JSON.stringify(feed)).not.toMatch(/centavos|payment|tendered/i)
     expect(store.recentlyFinished(T + 6000)).toEqual([])

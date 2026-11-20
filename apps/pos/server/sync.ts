@@ -1,4 +1,4 @@
-import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, type PullState, type SyncEvent } from '@kennko/core'
+import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, isOnlineQueueOrder, type PullState, type SyncEvent } from '@kennko/core'
 import { REVOKED_CODES, applyDeviceInfo, cleanStaff, loadDevice, type DeviceFile } from './device.ts'
 import { ackImportChunk, assignLegacyIds, importRemaining, nextImportChunk, noteImportSend } from './legacy-import.ts'
 import { isMenuSnapshot, loadSnapshot, saveSnapshot } from './menu.ts'
@@ -21,7 +21,7 @@ export type SyncStatus = {
   importing: number
 }
 
-export type SyncChange = { menu: boolean; staff: boolean; status: boolean }
+export type SyncChange = { menu: boolean; staff: boolean; online: boolean; status: boolean }
 
 const TIMEOUT_MS = 15_000
 const UNREACHABLE = 'Could not reach the website.'
@@ -68,12 +68,17 @@ const isPullState = (b: any): b is PullState =>
   && Array.isArray(b.staff)
   && Boolean(b.shop) && typeof b.shop.name === 'string' && typeof b.shop.address === 'string' && (b.shop.phone === null || typeof b.shop.phone === 'string')
   && (b.menu === null || (Boolean(b.menu) && Number.isInteger(b.menu.version) && (b.menu.snapshot === null || isMenuSnapshot(b.menu.snapshot))))
+  && (b.onlineOrders === undefined || isOnlineList(b.onlineOrders))
+
+/** Every entry a well-formed online order, no id twice. Anything else garbles the whole pull (Plan 5 Ruling 9). */
+const isOnlineList = (list: unknown): boolean =>
+  Array.isArray(list) && list.every(isOnlineQueueOrder) && new Set(list.map((o) => o.id)).size === list.length
 
 /**
  * The till's sync with the Kennko API, in the background. Each run first imports any history from before this version
  * (once, in chunks of 100), then pushes the outbox (50 events a request, oldest
- * first; every answered id is deleted, whatever the answer), then pulls the menu, sold-out marks, staff and shop
- * details. Nothing here is awaited by a till request: a sale never waits on the network.
+ * first; every answered id is deleted, whatever the answer), then pulls the menu, sold-out marks, staff, shop
+ * details and paid online orders. Nothing here is awaited by a till request: a sale never waits on the network.
  */
 export function createSync(opts: {
   store: Store
@@ -158,8 +163,8 @@ export function createSync(opts: {
   }
 
   /** One run. Returns what changed for the tablets. */
-  async function cycle(): Promise<{ menu: boolean; staff: boolean }> {
-    const changed = { menu: false, staff: false }
+  async function cycle(): Promise<{ menu: boolean; staff: boolean; online: boolean }> {
+    const changed = { menu: false, staff: false, online: false }
     const device = loadDevice(dataDir)
     if (!device || device.revokedAt !== null) {
       failures = 0
@@ -242,6 +247,12 @@ export function createSync(opts: {
       applyDeviceInfo(store, sessions, pins, { status: 'ok', staff: cleanStaff(state.staff) }, dataDir, now())
       changed.staff = JSON.stringify(store.staffCache()) !== before
       store.kvSet('shop', JSON.stringify({ name: state.shop.name, address: state.shop.address, phone: state.shop.phone }))
+      // No key = an API from before Plan 5: keep the online orders the till has (Ruling 9).
+      if (state.onlineOrders !== undefined) {
+        const before = JSON.stringify(store.onlineOrders())
+        store.replaceOnlineOrders(state.onlineOrders)
+        changed.online = JSON.stringify(store.onlineOrders()) !== before
+      }
     }
 
     if (failure) {
@@ -278,7 +289,7 @@ export function createSync(opts: {
         again = false
         kicked = false
         let before: string | null = null
-        let changed = { menu: false, staff: false }
+        let changed = { menu: false, staff: false, online: false }
         try {
           before = JSON.stringify(status())
           changed = await cycle()
@@ -290,7 +301,7 @@ export function createSync(opts: {
         }
         try {
           const statusChanged = before === null || JSON.stringify(status()) !== before
-          if (changed.menu || changed.staff || statusChanged) opts.onChange({ ...changed, status: statusChanged })
+          if (changed.menu || changed.staff || changed.online || statusChanged) opts.onChange({ ...changed, status: statusChanged })
         } catch (err: any) {
           console.error(`  Sync could not report a change: ${err?.message ?? err}`)
         }

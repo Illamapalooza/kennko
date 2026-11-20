@@ -22,7 +22,7 @@ import { createSync, syncReady } from './sync.ts'
 import { bounded } from './wait.ts'
 import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
 import { reportCsv } from './report.ts'
-import { WALL_LINGER_MS, wallOrders } from './wall-feed.ts'
+import { WALL_LINGER_MS, wallOnlineOrders, wallOrders } from './wall-feed.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
@@ -62,7 +62,7 @@ setInterval(backup, 60 * 60 * 1000).unref()
 
 /**
  * The sync with the Kennko API (sync.ts): imports old history once, pushes the outbox, pulls the menu, sold-out marks,
- * staff and shop details. It runs in the background. Only pairing (5 s), "Check now" (10 s) and the wrong-PIN refresh
+ * staff, shop details and paid online orders. It runs in the background. Only pairing (5 s), "Check now" (10 s) and the wrong-PIN refresh
  * (2.5 s) wait on it, and only that long (Ruling P4-7); a longer run lands by itself. Every write kicks it after answering.
  */
 const sync = createSync({
@@ -102,6 +102,8 @@ let version = 0
 // menuKey changes whenever the menu or a sold-out mark does, so every tablet knows to fetch it again.
 const snapshot = () => JSON.stringify({
   version, now: Date.now(), day: manilaDay(Date.now()), active: store.activeOrders(), shift: store.openShift(),
+  // Paid online orders being made or out for delivery (Plan 5), kept apart from the till's own tickets.
+  online: store.activeOnlineOrders(),
   menuKey: `${loadedSnapshot?.version ?? 0}:${baseMenu.updatedAt}:${store.soldOut().sort().join(',')}`,
   sync: sync.status(),
 })
@@ -109,7 +111,14 @@ const snapshot = () => JSON.stringify({
 const wallClients = new Set<http.ServerResponse>()
 const wallSnapshot = () => {
   const now = Date.now()
-  return JSON.stringify({ now, day: manilaDay(now), orders: wallOrders([...store.activeOrders(), ...store.recentlyFinished(now - WALL_LINGER_MS)]) })
+  const since = now - WALL_LINGER_MS
+  return JSON.stringify({
+    now, day: manilaDay(now),
+    orders: [
+      ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)]),
+      ...wallOnlineOrders([...store.activeOnlineOrders(), ...store.recentlyFinishedOnline(since)]),
+    ],
+  })
 }
 function broadcast() {
   version += 1
@@ -331,6 +340,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return done(store.voidOrder(id, body.reason, now, manager.staffId))
   }
 
+  // An online order's next prep step (Plan 5): a local write plus an outbox row, credited to the session's person;
+  // Kennko hears about it on the next sync. No Back and no Void here: the customer was told, and admin cancels.
+  const onlineAction = /^\/api\/online\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/advance$/i.exec(route)
+  if (onlineAction) return done(store.advanceOnline(onlineAction[1]!, now, by))
+
   if (route === '/api/menu/availability') {
     if (typeof body.itemId !== 'string' || !onMenu(body.itemId)) throw new OrderError('That drink is not on the menu.')
     // Per-person mode asks for the person's own PIN (any role) and credits them; otherwise the session (Ruling 14/15).
@@ -376,6 +390,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (route === '/api/device/forget') {
     await checkPin(req, body.managerPin, 'manager')
     forgetDevice(DATA) // the staff cache stays, so the same PINs keep working
+    store.clearOnlineOrders() // customer phone and address do not stay on a disconnected computer (Plan 5 Ruling 10)
     broadcast() // the tablets' sync status now says not connected
     return json(res, 200, { ok: true })
   }
@@ -499,7 +514,9 @@ server.listen(port, '0.0.0.0', () => {
   const s = sync.status()
   const waiting = s.pendingEvents ? `, ${s.pendingEvents} change${s.pendingEvents === 1 ? '' : 's'} waiting to send` : ''
   const importing = s.importing ? `, ${s.importing} old record${s.importing === 1 ? '' : 's'} to copy to Kennko` : ''
-  console.log(`  Sync:            ${!s.paired ? 'pending (not connected yet)' : s.revoked ? 'stopped (disconnected in admin)' : config.api.url ? 'paired, every 15 s' : 'paired, but the website address is not set'}${waiting}${importing}`)
+  const online = store.activeOnlineOrders().length
+  const queued = online ? `, ${online} online order${online === 1 ? '' : 's'} in the queue` : ''
+  console.log(`  Sync:            ${!s.paired ? 'pending (not connected yet)' : s.revoked ? 'stopped (disconnected in admin)' : config.api.url ? 'paired, every 15 s' : 'paired, but the website address is not set'}${waiting}${importing}${queued}`)
   console.log(`  PINs:            ${({ off: 'off', shared: 'shared, from config.json', 'per-person': "each person's own" } as const)[pins.mode()]}`)
   if (pins.mode() !== 'per-person' && (config.staffPin === '1234' || config.managerPin === '0000')) console.log('  PINs are still the defaults (staff 1234, manager 0000). Change them in config.json before real use.')
   console.log('  Press Ctrl+C to stop.\n')

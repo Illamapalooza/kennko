@@ -188,6 +188,21 @@ describe('applying a refresh (Review Focus 4)', () => {
     applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'revoked' }, dir, T + 5000)
     expect(loadDevice(dir)?.revokedAt).toBe(T)
   })
+
+  it('Ruling 10: a revoked answer empties the online orders, customer phone and address included', () => {
+    const t = till()
+    const dir = tempDir()
+    saveDevice(dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
+    t.store.replaceOnlineOrders([{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', businessDay: '2026-11-20', ticketNumber: 5, customerName: 'Jose Reyes',
+      fulfilment: 'delivery', fulfilAt: '2026-11-20T02:00:00.000Z', customerNote: null, prepStatus: 'placed',
+      createdAt: '2026-11-20T00:50:00.000Z', updatedAt: '2026-11-20T00:50:00.000Z', lines: [],
+      delivery: { address: '12 Montilla Blvd', barangay: 'Libertad', phone: '09171234567' },
+    }])
+    expect(t.store.onlineOrders()).toHaveLength(1)
+    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'revoked' }, dir, T)
+    expect(t.store.onlineOrders()).toEqual([])
+  })
 })
 
 describe('a new PIN on a wrong try (final fix 1)', () => {

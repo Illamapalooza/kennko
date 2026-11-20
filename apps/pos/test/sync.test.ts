@@ -2,14 +2,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, type MenuSnapshot, type PullState, type PushResult, type SyncEvent } from '@kennko/core'
+import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, type MenuSnapshot, type OnlineQueueOrder, type PullState, type PushResult, type SyncEvent } from '@kennko/core'
 import { hashStaffPin } from '@kennko/core/staff-pin'
 import { loadDevice, saveDevice } from '../server/device.ts'
 import { builtInMenu, loadSnapshot, saveSnapshot } from '../server/menu.ts'
 import { createPinDirectory, type CachedStaff } from '../server/pins.ts'
 import { createSessions } from '../server/sessions.ts'
 import { createStore, type NewOrder } from '../server/store.ts'
-import { clockSkew, createSync, nextDelay, syncReady } from '../server/sync.ts'
+import { clockSkew, createSync, nextDelay, syncReady, type SyncChange } from '../server/sync.ts'
 import { bounded } from '../server/wait.ts'
 
 const T = Date.UTC(2026, 10, 21, 2, 0) // on a whole second, like an HTTP Date header
@@ -98,7 +98,7 @@ function till(opts: { paired?: boolean; staff?: CachedStaff[] } = {}) {
   const pins = createPinDirectory({ staffPin: '1234', managerPin: '0000', staff: () => store.staffCache() })
   const api = fakeApi()
   const timers = fakeTimers()
-  const changes: { menu: boolean; staff: boolean; status: boolean }[] = []
+  const changes: SyncChange[] = []
   let clock = T
   const sync = createSync({ store, sessions, pins, dataDir, apiUrl: `${API}/`, fetchFn: api.fn, now: () => clock, timers, onChange: (w) => changes.push(w) })
   return { dataDir, store, sessions, pins, api, timers, changes, sync, setClock: (t: number) => { clock = t } }
@@ -455,6 +455,107 @@ describe('pairing state', () => {
     await t.sync.runOnce()
     expect(t.api.calls).toHaveLength(0)
     expect(t.sync.status()).toMatchObject({ paired: false, revoked: false, offline: false, pendingEvents: 1 })
+  })
+})
+
+const W5: OnlineQueueOrder = {
+  id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  businessDay: '2026-11-21',
+  ticketNumber: 5,
+  customerName: 'Jose Reyes',
+  fulfilment: 'delivery',
+  fulfilAt: '2026-11-21T02:30:00.000Z',
+  customerNote: null,
+  prepStatus: 'placed',
+  createdAt: '2026-11-21T01:50:00.000Z',
+  updatedAt: '2026-11-21T01:50:00.000Z',
+  lines: [{ name: 'Latte', size: 'M', quantity: 1, options: [], iceLevel: 'regular', iceServe: 'mixed', note: '' }],
+  delivery: { address: '12 Montilla Blvd', barangay: 'Libertad', phone: '09171234567' },
+}
+const BY = null
+const withOnline = (onlineOrders: unknown) => () => json(200, { menu: null, soldOut: [], staff: [], shop: SHOP, onlineOrders })
+
+describe('online orders from the pull', () => {
+  it('stores the pulled orders and says online changed; the same pull again says it did not', async () => {
+    const t = till()
+    t.api.onPull(withOnline([W5]))
+    await t.sync.runOnce()
+    expect(t.store.onlineOrders()).toEqual([W5])
+    expect(t.changes.at(-1)).toMatchObject({ online: true })
+    const seen = t.changes.length
+    await t.sync.runOnce()
+    expect(t.changes.slice(seen).every((c) => !c.online)).toBe(true)
+  })
+
+  it('Review Focus 4: a step taken while push is down survives a pull still saying placed, and is pushed first next run', async () => {
+    const t = till()
+    t.api.onPull(withOnline([W5]))
+    await t.sync.runOnce()
+
+    t.api.onPush(() => new Response('down', { status: 503 }))
+    t.store.advanceOnline(W5.id, T + 1000, BY)
+    await t.sync.runOnce()
+    expect(t.sync.status().offline).toBe(true)
+    expect(t.store.onlineOrders()[0]!.prepStatus).toBe('preparing')
+
+    t.store.setAvailable('later', false, T + 2000, null, { outbox: true })
+    t.api.onPush((events) => json(200, { results: events.map((e) => ({ id: e.id, result: 'applied', reason: null, flags: [] })), held: 0 }))
+    const before = t.api.pushes().length
+    await t.sync.runOnce()
+    const events: SyncEvent[] = t.api.pushes().slice(before)[0]!.body.events
+    expect(events[0]).toMatchObject({ kind: 'order.prep_status', payload: { orderId: W5.id, to: 'preparing' } })
+    expect(events.slice(1).map((e) => e.kind)).toEqual(['menu.availability'])
+  })
+
+  it('a pull without onlineOrders leaves the table as it is (an API from before Plan 5)', async () => {
+    const t = till()
+    t.store.replaceOnlineOrders([W5])
+    t.api.onPull(() => json(200, { menu: null, soldOut: [], staff: [], shop: SHOP }))
+    await t.sync.runOnce()
+    expect(t.store.onlineOrders()).toEqual([W5])
+    expect(t.sync.status()).toMatchObject({ offline: false, problem: null })
+  })
+
+  it('a malformed list is a garbled pull: problem set, offline, nothing applied', async () => {
+    const t = till()
+    t.store.replaceOnlineOrders([W5])
+    t.api.onPull(() => json(200, { menu: null, soldOut: ['x'], staff: [], shop: { name: 'Other', address: 'A', phone: null }, onlineOrders: [{ id: 'x' }] }))
+    await t.sync.runOnce()
+    expect(t.sync.status().problem).toEqual(expect.any(String))
+    expect(t.sync.status().offline).toBe(true)
+    expect(t.store.onlineOrders()).toEqual([W5])
+    expect(t.store.soldOut()).toEqual([])
+    expect(t.store.kvGet('shop')).toBeNull()
+  })
+
+  it('a list that is not an array, or repeats an id, is garbled too', async () => {
+    for (const bad of ['W5', { 0: W5 }, [W5, W5]]) {
+      const t = till()
+      t.store.replaceOnlineOrders([W5])
+      t.api.onPull(withOnline(bad))
+      await t.sync.runOnce()
+      expect(t.sync.status().offline).toBe(true)
+      expect(t.store.onlineOrders()).toEqual([W5])
+    }
+  })
+
+  it('an order no longer in the pull leaves the till', async () => {
+    const t = till()
+    t.api.onPull(withOnline([W5]))
+    await t.sync.runOnce()
+    t.api.onPull(withOnline([]))
+    await t.sync.runOnce()
+    expect(t.store.onlineOrders()).toEqual([])
+    expect(t.changes.at(-1)).toMatchObject({ online: true })
+  })
+
+  it('Ruling 10: 401 DEVICE_REVOKED empties the online orders', async () => {
+    const t = till()
+    t.store.replaceOnlineOrders([W5])
+    t.api.onPull(() => json(401, { code: 'DEVICE_REVOKED', message: 'gone' }))
+    await t.sync.runOnce()
+    expect(loadDevice(t.dataDir)!.revokedAt).toBe(T)
+    expect(t.store.onlineOrders()).toEqual([])
   })
 })
 

@@ -92,7 +92,8 @@ export function cleanStaff(list: unknown[]): CachedStaff[] {
 
 /**
  * Applies one refresh to the till, from the sync pull (`{ status: 'ok', staff }`) or its revoked answer. ok: the cache is replaced, then sessions end for people no longer in it, and
- * shared (config PIN) sessions end once per-person mode is on. revoked: the device file is marked, the cache kept.
+ * shared (config PIN) sessions end once per-person mode is on. revoked: the device file is marked, the cache kept,
+ * the online orders dropped.
  * offline: nothing. Returns true when the caller should tell the tablets.
  */
 export function applyDeviceInfo(store: Store, sessions: Sessions, pins: PinDirectory, result: DeviceInfo, dataDir: string, now: number): boolean {
@@ -104,6 +105,8 @@ export function applyDeviceInfo(store: Store, sessions: Sessions, pins: PinDirec
     return true
   }
   if (result.status === 'revoked') {
+    // Customer phone and address do not stay on a disconnected computer (Plan 5 Ruling 10), even on a repeat answer.
+    store.clearOnlineOrders()
     const device = loadDevice(dataDir)
     if (!device || device.revokedAt !== null) return false
     saveDevice(dataDir, { ...device, revokedAt: now })
