@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import {
-  ADDON_LIMIT_MESSAGE, MAX_MODIFIERS, MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, cleanDiscount, manilaDay, nextStatus, prevStatus, priceLines, summarise, totals,
-  type CashMove, type CounterOrderPayload, type Discount, type LineInput, type Menu, type Order, type OrderStatus, type OrderType,
-  type PaymentMethod, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
+  ADDON_LIMIT_MESSAGE, MAX_MODIFIERS, MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, canMovePrep, cleanDiscount, isOnlineQueueOrder,
+  manilaDay, nextPrepStatus, nextStatus, prevStatus, priceLines, summarise, totals,
+  type CashMove, type CounterOrderPayload, type Discount, type LineInput, type Menu, type OnlineQueueOrder, type Order, type OrderStatus,
+  type OrderType, type PaymentMethod, type PrepStatus, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
 } from '@kennko/core'
 import type { CachedStaff } from './pins.ts'
 
@@ -82,6 +83,7 @@ const SCHEMA = `
     payload text not null
   );
   create table if not exists kv (key text primary key, value text not null);
+  create table if not exists online_orders (id text primary key, prep_status text not null, updated_at integer not null, data text not null);
 `
 
 /** Columns added to tables that already exist on tills from before Plan 4 (SQLite cannot add a unique column). */
@@ -181,10 +183,14 @@ const toMove = (row: any): CashMove => ({
 const ORDERS = 'select o.*, sc.full_name as voided_by_name from orders o left join staff_cache sc on sc.id = o.cancelled_by_staff'
 const MOVES = 'select m.*, sc.full_name as staff_name from cash_moves m left join staff_cache sc on sc.id = m.staff_id'
 
-/** What an outbox row keeps: the event's payload minus the uuids, which are read from the rows at send time (Ruling 8). */
+/**
+ * What an outbox row keeps: the event's payload minus the uuids, which are read from the rows at send time (Ruling 8).
+ * A prep step on an online order keeps the server's `orderId`: that id is the server's from the start (Plan 5 Ruling 8).
+ */
 type StoredPayload<K extends SyncEventKind> = K extends 'order.created'
   ? Omit<CounterOrderPayload, 'orderId' | 'shiftId' | 'payment'> & { payment: Omit<CounterOrderPayload['payment'], 'id'> }
-  : K extends 'order.prep_status' | 'order.cancelled' ? Omit<Extract<SyncEvent, { kind: K }>['payload'], 'orderId'>
+  : K extends 'order.prep_status' ? { to: PrepStatus } | { orderId: string; to: PrepStatus }
+  : K extends 'order.cancelled' ? Omit<Extract<SyncEvent, { kind: K }>['payload'], 'orderId'>
   : K extends 'shift.opened' | 'shift.closed' ? Omit<Extract<SyncEvent, { kind: K }>['payload'], 'shiftId'>
   : K extends 'cash.moved' ? Omit<Extract<SyncEvent, { kind: K }>['payload'], 'id' | 'shiftId'>
   : Extract<SyncEvent, { kind: K }>['payload']
@@ -193,6 +199,11 @@ const ENTITY: Record<SyncEventKind, 'order' | 'shift' | 'cash_move' | 'menu'> = 
   'order.created': 'order', 'order.prep_status': 'order', 'order.cancelled': 'order',
   'shift.opened': 'shift', 'shift.closed': 'shift', 'cash.moved': 'cash_move', 'menu.availability': 'menu',
 }
+
+/** An online order as the till shows it: the pulled copy, with the prep status the till holds now. */
+const toOnline = (row: any): OnlineQueueOrder => ({ ...JSON.parse(row.data), prepStatus: row.prep_status })
+const byCreated = (a: OnlineQueueOrder, b: OnlineQueueOrder) =>
+  a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 
 const money = (value: unknown, what: string, min = 0): number => {
   if (!Number.isInteger(value) || (value as number) < min || (value as number) > MONEY_MAX) throw new OrderError(`${what} is not a valid amount.`)
@@ -279,7 +290,13 @@ export function createStore(file: string) {
         if (!u?.uid || !u.payment_uid || !u.shift_uid) return null
         return { ...head, kind, payload: { orderId: u.uid, shiftId: u.shift_uid, ...stored, payment: { id: u.payment_uid, ...stored.payment } } }
       }
-      case 'order.prep_status':
+      case 'order.prep_status': {
+        // An online order's step carries the server's id, so it never waits for a local uid.
+        if (typeof stored.orderId === 'string') return { ...head, kind, payload: { orderId: stored.orderId, to: stored.to } }
+        const u = orderUids.get(row.entity_local_id) as any
+        if (!u?.uid) return null
+        return { ...head, kind, payload: { orderId: u.uid, ...stored } }
+      }
       case 'order.cancelled': {
         const u = orderUids.get(row.entity_local_id) as any
         if (!u?.uid) return null
@@ -302,6 +319,9 @@ export function createStore(file: string) {
         return null
     }
   }
+
+  const onlineRows = (where: string, ...args: any[]): OnlineQueueOrder[] =>
+    (db.prepare(`select * from online_orders ${where}`).all(...args) as any[]).map(toOnline).sort(byCreated)
 
   return {
     /** The open database, for the till's sessions (sessions.ts). */
@@ -476,6 +496,67 @@ export function createStore(file: string) {
         record('order.cancelled', id, by, now, { reason: why })
         return getOrder(id)
       })
+    },
+
+    /**
+     * Paid online orders as last pulled, oldest first. They live in their own table, never in `orders`, so the day
+     * summary, shift cash, History, CSV and C numbers cannot include them (Plan 5 Ruling 7).
+     */
+    onlineOrders(): OnlineQueueOrder[] {
+      return onlineRows('')
+    },
+
+    activeOnlineOrders(): OnlineQueueOrder[] {
+      return onlineRows("where prep_status in ('placed','preparing','ready','out_for_delivery')")
+    },
+
+    /** Online orders completed since the given time, for the wall to play out their ending. */
+    recentlyFinishedOnline(since: number): OnlineQueueOrder[] {
+      return onlineRows("where prep_status = 'completed' and updated_at >= ?", since)
+    },
+
+    /**
+     * Takes the pulled list, then re-applies this till's unsent online steps in the order they were made, each only
+     * while it is still the next step, so a step Kennko has not heard about yet is not undone by the pull (Plan 5
+     * Ruling 9). One transaction: a malformed list leaves the table as it was.
+     */
+    replaceOnlineOrders(orders: OnlineQueueOrder[]): void {
+      if (!Array.isArray(orders) || !orders.every(isOnlineQueueOrder)) throw new OrderError('The online orders from Kennko are not readable.')
+      tx(() => {
+        db.prepare('delete from online_orders').run()
+        const add = db.prepare('insert into online_orders (id, prep_status, updated_at, data) values (?, ?, ?, ?)')
+        for (const o of orders) add.run(o.id, o.prepStatus, Date.parse(o.updatedAt) || 0, JSON.stringify(o))
+        const get = db.prepare('select prep_status, data from online_orders where id = ?')
+        const set = db.prepare('update online_orders set prep_status = ?, updated_at = ? where id = ?')
+        for (const row of db.prepare("select payload, occurred_at from outbox where kind = 'order.prep_status' order by seq").all() as any[]) {
+          let p: any
+          try { p = JSON.parse(row.payload) } catch { continue } // a broken row never stops the pull
+          if (typeof p?.orderId !== 'string') continue // a counter step
+          const current = get.get(p.orderId) as any
+          if (!current) continue
+          if (canMovePrep(current.prep_status, p.to, JSON.parse(current.data).fulfilment)) set.run(p.to, row.occurred_at, p.orderId)
+        }
+      })
+    },
+
+    /** Moves an online order to its next prep step; the step goes to Kennko through the outbox (Plan 5 Ruling 8). */
+    advanceOnline(id: string, now: number, by: By): OnlineQueueOrder {
+      by = checkBy(by)
+      return tx(() => {
+        const row = db.prepare('select * from online_orders where id = ?').get(id) as any
+        if (!row) throw new OrderError('That online order is no longer on the till.')
+        const order = toOnline(row)
+        const next = nextPrepStatus(order.prepStatus, order.fulfilment)
+        if (!next) throw new OrderError('That order is already finished.')
+        db.prepare('update online_orders set prep_status = ?, updated_at = ? where id = ?').run(next, now, id)
+        record('order.prep_status', null, by, now, { orderId: id, to: next })
+        return { ...order, prepStatus: next }
+      })
+    },
+
+    /** Drops every online order (the till was revoked or forgotten, Plan 5 Ruling 10). The outbox is left alone. */
+    clearOnlineOrders(): void {
+      db.prepare('delete from online_orders').run()
     },
 
     /** Orders still being made or served, oldest first, across days so nothing is stranded at midnight. */
