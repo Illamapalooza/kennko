@@ -324,6 +324,20 @@ describe('staff order and payment actions', () => {
     expectError(await cancel(await seedCounter()), 409, 'COUNTER_ORDER')
   })
 
+  it('counter orders: a prep change -> 409 COUNTER_ORDER, unchanged; a staff note -> 200', async () => {
+    const orderId = await seedCounter()
+    const r = await call('owner', 'PATCH', `/v1/orders/${orderId}`, { prepStatus: 'ready' })
+    expectError(r, 409, 'COUNTER_ORDER')
+    expect(r.body.message).toBe('Counter orders are updated at the till.')
+    expect((await orderRow(orderId)).prep_status).toBe('preparing')
+    expect(await events(orderId, 'prep_status')).toHaveLength(0)
+
+    const note = await patch(orderId, { staffNote: 'regular, extra hot' }, 'owner')
+    expect(note.status).toBe(200)
+    expect(note.body).toEqual({ prepStatus: 'preparing', paymentStatus: 'paid' })
+    expect((await orderRow(orderId)).staff_note).toBe('regular, extra hot')
+  })
+
   it('cancelled orders accept no prep move', async () => {
     const { orderId } = await seedOnline()
     await cancel(orderId)

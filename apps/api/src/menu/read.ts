@@ -13,7 +13,7 @@ function toSnapshot(row: Row): MenuSnapshot {
 }
 
 /** A stored snapshot exactly as published. */
-export async function readMenuVersion(sql: postgres.Sql, version: number): Promise<MenuSnapshot | null> {
+export async function readMenuVersion(sql: postgres.Sql | postgres.TransactionSql, version: number): Promise<MenuSnapshot | null> {
   const [row] = await sql<Row[]>`select version, body, published_at from menu_snapshots where version = ${version}`
   return row ? toSnapshot(row) : null
 }

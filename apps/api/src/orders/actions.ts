@@ -70,6 +70,8 @@ function patchOrderTx(
     let current = { prep: order.prep_status, payment: order.payment_status }
 
     if (prepStatus !== undefined) {
+      // The till owns counter prep until Plan 5 (Ruling 7); staff notes are still fine.
+      if (order.channel === 'counter') return fail(409, 'COUNTER_ORDER', 'Counter orders are updated at the till.')
       if (order.payment_status !== 'paid') {
         return badTransition('Verify the payment before preparing this order.')
       }

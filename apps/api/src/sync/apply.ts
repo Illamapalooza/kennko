@@ -1,5 +1,6 @@
 import type { SyncEvent, SyncEventKind } from '@kennko/core'
 import type postgres from 'postgres'
+import { applyCancelled, applyOrderCreated, applyPrepStatus } from './counter-order.js'
 
 export type Applied = { result: 'applied' | 'flagged' | 'held'; reason: string | null; flags: string[] }
 
@@ -87,12 +88,10 @@ const menuAvailability: Handler<'menu.availability'> = async (tx, _deviceId, eve
   return row ? applied() : flagged('unknown_item')
 }
 
-const notSupported = async (): Promise<Applied> => held('not_supported')
-
 const handlers: { [K in SyncEventKind]: Handler<K> } = {
-  'order.created': notSupported,
-  'order.prep_status': notSupported,
-  'order.cancelled': notSupported,
+  'order.created': applyOrderCreated,
+  'order.prep_status': applyPrepStatus,
+  'order.cancelled': applyCancelled,
   'shift.opened': shiftOpened,
   'shift.closed': shiftClosed,
   'cash.moved': cashMoved,

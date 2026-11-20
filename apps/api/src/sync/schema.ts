@@ -1,4 +1,4 @@
-import { MAX_PUSH_EVENTS, type CounterOrderPayload, type SyncEvent, type SyncEventKind } from '@kennko/core'
+import { MAX_LINES, MAX_PUSH_EVENTS, MAX_QUANTITY, NOTE_MAX, type CounterOrderPayload, type SyncEvent, type SyncEventKind } from '@kennko/core'
 import { z } from 'zod'
 
 const KINDS = [
@@ -32,38 +32,62 @@ type PayloadOf<K extends SyncEventKind> = Extract<SyncEvent, { kind: K }>['paylo
 
 const centavos = z.number().int().min(0)
 
-const pricedLine = z.object({
-  menuItemId: z.string().min(1),
-  name: z.string().min(1),
-  size: z.enum(['M', 'L', 'XL', 'HOT']),
-  basePriceCentavos: centavos,
-  modifiers: z.array(z.object({ id: z.string().min(1), name: z.string(), priceCentavos: centavos })),
-  quantity: z.number().int().min(1),
-  iceLevel: z.enum(['regular', 'less', 'none']).nullable(),
-  iceServe: z.enum(['mixed', 'side']).nullable(),
-  note: z.string(),
-  lineTotalCentavos: centavos,
-})
+/** `YYYY-MM-DD` naming a real calendar day, year 2000 or later. */
+function realDay(value: string): boolean {
+  const [y, m, d] = value.split('-').map(Number) as [number, number, number]
+  return y >= 2000 && new Date(Date.UTC(y, m - 1, d)).getUTCDate() === d
+}
+
+/** Postgres `int`: a bigger number would be refused by the table, so it is held invalid instead. */
+const PG_INT_MAX = 2_147_483_647
+const orderCentavos = centavos.max(PG_INT_MAX)
+/** Text columns with no table limit still get one, well above anything the till produces. */
+const NAME_MAX = 120
+
+const pricedLine = z
+  .object({
+    menuItemId: z.string().min(1).max(NAME_MAX),
+    name: z.string().min(1).max(NAME_MAX),
+    size: z.enum(['M', 'L', 'XL', 'HOT']),
+    basePriceCentavos: orderCentavos,
+    modifiers: z
+      .array(z.object({ id: z.string().min(1).max(NAME_MAX), name: z.string().max(NAME_MAX), priceCentavos: orderCentavos }))
+      .max(20),
+    quantity: z.number().int().min(1).max(MAX_QUANTITY),
+    iceLevel: z.enum(['regular', 'less', 'none']).nullable(),
+    iceServe: z.enum(['mixed', 'side']).nullable(),
+    note: z.string().max(NOTE_MAX),
+    lineTotalCentavos: orderCentavos,
+  })
+  // order_lines_ice_shape: no preference, "none" with no serve, or a level with a serve.
+  .refine(
+    (l) => (l.iceLevel === null || l.iceLevel === 'none' ? l.iceServe === null : l.iceServe !== null),
+    { path: ['iceServe'], message: 'does not match iceLevel' },
+  )
 
 export const orderCreatedPayload = z.object({
   orderId: z.uuid(),
   shiftId: z.uuid(),
-  businessDay: z.iso.date(),
-  ticketNumber: z.number().int().min(1),
+  businessDay: z.iso
+    .date()
+    .refine(realDay, 'expected a real day, year 2000 or later'),
+  ticketNumber: z.number().int().min(1).max(PG_INT_MAX),
   fulfilment: z.enum(['dine_in', 'takeout']),
-  customerName: z.string(),
+  customerName: z.string().max(80),
   menuVersion: z.number().int().min(1).nullable(),
-  lines: z.array(pricedLine).min(1),
-  discount: z.object({ label: z.string(), kind: z.enum(['percent', 'amount']), value: z.number().int() }).nullable(),
-  subtotalCentavos: centavos,
-  discountCentavos: centavos,
-  totalCentavos: centavos,
+  lines: z.array(pricedLine).min(1).max(MAX_LINES),
+  discount: z
+    .object({ label: z.string().max(80), kind: z.enum(['percent', 'amount']), value: z.number().int().min(0).max(PG_INT_MAX) })
+    .nullable(),
+  subtotalCentavos: orderCentavos,
+  discountCentavos: orderCentavos,
+  totalCentavos: orderCentavos,
   payment: z.object({
     id: z.uuid(),
     method: z.enum(['cash', 'gcash']),
-    tenderedCentavos: centavos.nullable(),
-    changeCentavos: centavos.nullable(),
-    reference: z.string().nullable(),
+    tenderedCentavos: orderCentavos.nullable(),
+    changeCentavos: orderCentavos.nullable(),
+    reference: z.string().max(NAME_MAX).nullable(),
   }),
 }) satisfies z.ZodType<CounterOrderPayload>
 

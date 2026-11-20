@@ -335,7 +335,7 @@ test('an unknown staffId is applied, stored null, reason unknown_staff', async (
   expect(m!.staff_id).toBeNull()
 })
 
-test('order kinds are held not_supported for now', async () => {
+test('an order kind for an unknown order is held order_unknown', async () => {
   const { token } = await seedDevice(db.sql)
   const e = {
     id: randomUUID(),
@@ -346,7 +346,7 @@ test('order kinds are held not_supported for now', async () => {
     payload: { orderId: randomUUID(), to: 'preparing' },
   }
   const res = await api.push(token, [e])
-  expect(res.results[0]).toMatchObject({ result: 'held', reason: 'not_supported' })
+  expect(res.results[0]).toMatchObject({ result: 'held', reason: 'order_unknown' })
 })
 
 test('51 events, a bad envelope or an empty list → 400 INVALID; Cache-Control: no-store on success', async () => {
