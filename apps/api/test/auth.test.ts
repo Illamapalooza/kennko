@@ -12,6 +12,10 @@ const ISSUER = `${SUPABASE_URL}/auth/v1`
 const OWNER = '00000000-0000-4000-8000-000000000001'
 const BARISTA = '00000000-0000-4000-8000-000000000002'
 const FIRED = '00000000-0000-4000-8000-000000000003'
+const MANAGER = '00000000-0000-4000-8000-000000000004'
+// An owner whose staff.id (S) differs from their login (U).
+const SPLIT_STAFF = '00000000-0000-4000-8000-0000000000a1'
+const SPLIT_USER = '00000000-0000-4000-8000-0000000000a2'
 
 describe('staff auth', () => {
   let db: TestDb
@@ -25,6 +29,7 @@ describe('staff auth', () => {
       [OWNER, 'owner@x.test', 'owner', true],
       [BARISTA, 'barista@x.test', 'barista', true],
       [FIRED, 'fired@x.test', 'owner', false],
+      [MANAGER, 'manager@x.test', 'manager', true],
     ] as const
     // Constants only, so run as one simple-protocol script (PGlite's extended protocol is flaky here).
     await db.sql
@@ -37,6 +42,13 @@ describe('staff auth', () => {
                values ('${id}', '${id}', '${email}', '${email}', '${role}', ${active});`,
           )
           .join('\n'),
+      )
+      .simple()
+    await db.sql
+      .unsafe(
+        `insert into auth.users (id, email) values ('${SPLIT_USER}', 'split@x.test');
+         insert into staff (id, user_id, email, full_name, role, is_active)
+         values ('${SPLIT_STAFF}', '${SPLIT_USER}', 'split@x.test', 'Split', 'owner', true);`,
       )
       .simple()
 
@@ -167,6 +179,36 @@ describe('staff auth', () => {
       exp: Math.floor(Date.now() / 1000) + 300,
     })}.`
     expect((await get('/any-staff', t)).status).toBe(401)
+  })
+
+  it('a manager passes a route with no role requirement', async () => {
+    const res = await get('/any-staff', await sign(MANAGER))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ id: MANAGER, role: 'manager' })
+  })
+
+  it('a manager on an owner route -> 403', async () => {
+    expect((await get('/owner-only', await sign(MANAGER))).status).toBe(403)
+  })
+
+  it('staff is found by login: sub = user_id yields staff.id', async () => {
+    const res = await get('/owner-only', await sign(SPLIT_USER))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ id: SPLIT_STAFF, role: 'owner' })
+  })
+
+  it('publishing with that token stores published_by = staff.id', async () => {
+    const res = await app.request('/v1/menu/publish', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await sign(SPLIT_USER)}` },
+    })
+    expect(res.status).toBe(200)
+    const [snap] = await db.sql`select published_by from menu_snapshots order by version desc limit 1`
+    expect(snap!.published_by).toBe(SPLIT_STAFF)
+  })
+
+  it('a sub matching a staff id but no user_id -> 403', async () => {
+    expect((await get('/owner-only', await sign(SPLIT_STAFF))).status).toBe(403)
   })
 
   it('a non-Bearer Authorization header -> 401', async () => {

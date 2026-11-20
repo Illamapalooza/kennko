@@ -1,13 +1,18 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose'
 import type { MiddlewareHandler } from 'hono'
 import type { AppDeps } from './create-app.js'
+import { sha256Hex } from './devices/tokens.js'
 import { apiError } from './http.js'
 
-export type StaffRole = 'owner' | 'barista'
+export type StaffRole = 'owner' | 'manager' | 'barista'
 
-/** Hono context typing: `staff` behind `requireStaff`, `userId` behind `optionalUser`. */
+/** Hono context typing: `staff` behind `requireStaff`, `device` behind `requireDevice`, `userId` behind `optionalUser`. */
 export type AppEnv = {
-  Variables: { staff: { id: string; role: StaffRole }; userId: string | null }
+  Variables: {
+    staff: { id: string; role: StaffRole }
+    device: { id: string; name: string }
+    userId: string | null
+  }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -67,13 +72,34 @@ export function requireStaff(deps: AppDeps, role?: 'owner'): MiddlewareHandler<A
     const { userId } = await deps.verifyUser(token)
 
     // Re-checked on every request so deactivation takes effect immediately.
-    const [row] = await deps.sql<{ role: StaffRole; is_active: boolean }[]>`
-      select role, is_active from staff where id = ${userId}
+    const [row] = await deps.sql<{ id: string; role: StaffRole; is_active: boolean }[]>`
+      select id, role, is_active from staff where user_id = ${userId}
     `
     if (!row || !row.is_active) throw apiError(403, 'FORBIDDEN', 'Not an active staff member')
     if (role && row.role !== role) throw apiError(403, 'FORBIDDEN', 'Insufficient role')
 
-    c.set('staff', { id: userId, role: row.role })
+    c.set('staff', { id: row.id, role: row.role })
+    await next()
+  }
+}
+
+/** Till routes: `Authorization: Bearer kd_…`, matched by SHA-256 against `devices.token_hash`. */
+export function requireDevice(deps: AppDeps): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const token = bearer(c.req.header('Authorization'))
+    if (!token || !token.startsWith('kd_')) throw apiError(401, 'UNAUTHENTICATED', 'Missing device token')
+
+    const [row] = await deps.sql<{ id: string; name: string }[]>`
+      select id, name from devices where token_hash = ${sha256Hex(token)} and revoked_at is null
+    `
+    if (!row) throw apiError(401, 'DEVICE_REVOKED', 'This till was disconnected. Pair it again.')
+
+    const now = deps.now()
+    await deps.sql`
+      update devices set last_seen_at = ${now}
+      where id = ${row.id} and (last_seen_at is null or last_seen_at < ${now}::timestamptz - interval '1 minute')
+    `
+    c.set('device', { id: row.id, name: row.name })
     await next()
   }
 }
