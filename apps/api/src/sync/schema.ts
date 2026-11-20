@@ -33,19 +33,18 @@ type PayloadOf<K extends SyncEventKind> = Extract<SyncEvent, { kind: K }>['paylo
 const centavos = z.number().int().min(0)
 
 /** `YYYY-MM-DD` naming a real calendar day, year 2000 or later. */
-function realDay(value: string): boolean {
+export function realDay(value: string): boolean {
   const [y, m, d] = value.split('-').map(Number) as [number, number, number]
   return y >= 2000 && new Date(Date.UTC(y, m - 1, d)).getUTCDate() === d
 }
 
 /** Postgres `int`: a bigger number would be refused by the table, so it is held invalid instead. */
-const PG_INT_MAX = 2_147_483_647
-const orderCentavos = centavos.max(PG_INT_MAX)
+export const PG_INT_MAX = 2_147_483_647
+export const orderCentavos = centavos.max(PG_INT_MAX)
 /** Text columns with no table limit still get one, well above anything the till produces. */
-const NAME_MAX = 120
+export const NAME_MAX = 120
 
-const pricedLine = z
-  .object({
+export const pricedLineShape = z.object({
     menuItemId: z.string().min(1).max(NAME_MAX),
     name: z.string().min(1).max(NAME_MAX),
     size: z.enum(['M', 'L', 'XL', 'HOT']),
@@ -58,7 +57,9 @@ const pricedLine = z
     iceServe: z.enum(['mixed', 'side']).nullable(),
     note: z.string().max(NOTE_MAX),
     lineTotalCentavos: orderCentavos,
-  })
+})
+
+const pricedLine = pricedLineShape
   // order_lines_ice_shape: no preference, "none" with no serve, or a level with a serve.
   .refine(
     (l) => (l.iceLevel === null || l.iceLevel === 'none' ? l.iceServe === null : l.iceServe !== null),
