@@ -10,18 +10,24 @@ export function onlineColumn(p: PrepStatus): OnlineColumn | null {
   return null
 }
 
-/** The one forward button. Online tickets have no Back and no Void. */
+/**
+ * The one forward button. Online tickets have no Back and no Void. A delivery order "ready" or a pickup order "out for
+ * delivery" should never happen; they get a neutral "Done" (it still completes the order) rather than a wrong promise.
+ */
 export function onlineAction(p: PrepStatus, fulfilment: Fulfilment): string | null {
+  const delivery = fulfilment === 'delivery'
   if (p === 'placed') return 'Start'
-  if (p === 'preparing') return fulfilment === 'delivery' ? 'Out for delivery' : 'Ready'
-  if (p === 'ready') return 'Picked up'
-  if (p === 'out_for_delivery') return 'Delivered'
+  if (p === 'preparing') return delivery ? 'Out for delivery' : 'Ready'
+  if (p === 'ready') return delivery ? 'Done' : 'Picked up'
+  if (p === 'out_for_delivery') return delivery ? 'Delivered' : 'Done'
   return null
 }
 
+/** The serving stage under the ticket number; neutral words for the two impossible pairs (see onlineAction). */
 export function onlineStage(p: PrepStatus, fulfilment: Fulfilment): string {
-  if (p === 'ready') return 'Ready for pickup'
-  if (p === 'out_for_delivery') return fulfilment === 'delivery' ? 'Out for delivery' : ''
+  const delivery = fulfilment === 'delivery'
+  if (p === 'ready') return delivery ? 'Ready' : 'Ready for pickup'
+  if (p === 'out_for_delivery') return delivery ? 'Out for delivery' : 'Sent out'
   return ''
 }
 

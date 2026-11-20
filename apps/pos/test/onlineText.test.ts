@@ -17,29 +17,31 @@ describe('onlineColumn', () => {
   ] as [PrepStatus, string | null][])('%s -> %s', (p, col) => expect(onlineColumn(p)).toBe(col))
 })
 
-describe('onlineAction', () => {
-  it('pickup', () => {
-    expect(onlineAction('placed', 'pickup')).toBe('Start')
-    expect(onlineAction('preparing', 'pickup')).toBe('Ready')
-    expect(onlineAction('ready', 'pickup')).toBe('Picked up')
-    expect(onlineAction('completed', 'pickup')).toBeNull()
-    expect(onlineAction('cancelled', 'pickup')).toBeNull()
-  })
-  it('delivery', () => {
-    expect(onlineAction('placed', 'delivery')).toBe('Start')
-    expect(onlineAction('preparing', 'delivery')).toBe('Out for delivery')
-    expect(onlineAction('out_for_delivery', 'delivery')).toBe('Delivered')
-    expect(onlineAction('completed', 'delivery')).toBeNull()
-  })
-})
+// Every prep status × online fulfilment: [status, fulfilment, button, stage]. The two impossible pairs (a delivery order
+// "ready", a pickup order "out for delivery") get neutral words that promise the customer nothing (final fix 8).
+const MATRIX: [PrepStatus, 'pickup' | 'delivery', string | null, string][] = [
+  ['placed', 'pickup', 'Start', ''],
+  ['placed', 'delivery', 'Start', ''],
+  ['preparing', 'pickup', 'Ready', ''],
+  ['preparing', 'delivery', 'Out for delivery', ''],
+  ['ready', 'pickup', 'Picked up', 'Ready for pickup'],
+  ['ready', 'delivery', 'Done', 'Ready'],
+  ['out_for_delivery', 'pickup', 'Done', 'Sent out'],
+  ['out_for_delivery', 'delivery', 'Delivered', 'Out for delivery'],
+  ['completed', 'pickup', null, ''],
+  ['completed', 'delivery', null, ''],
+  ['cancelled', 'pickup', null, ''],
+  ['cancelled', 'delivery', null, ''],
+]
 
-describe('onlineStage', () => {
-  it('names the serving stage only', () => {
-    expect(onlineStage('placed', 'pickup')).toBe('')
-    expect(onlineStage('preparing', 'delivery')).toBe('')
-    expect(onlineStage('ready', 'pickup')).toBe('Ready for pickup')
-    expect(onlineStage('out_for_delivery', 'delivery')).toBe('Out for delivery')
-    expect(onlineStage('completed', 'pickup')).toBe('')
+describe('onlineAction and onlineStage, every status × fulfilment', () => {
+  it('covers all twelve pairs', () => {
+    const statuses: PrepStatus[] = ['placed', 'preparing', 'ready', 'out_for_delivery', 'completed', 'cancelled']
+    expect(new Set(MATRIX.map(([p, f]) => `${p}/${f}`))).toEqual(new Set(statuses.flatMap((p) => [`${p}/pickup`, `${p}/delivery`])))
+  })
+  it.each(MATRIX)('%s %s: button %s, stage "%s"', (p, f, action, stage) => {
+    expect(onlineAction(p, f)).toBe(action)
+    expect(onlineStage(p, f)).toBe(stage)
   })
 })
 
