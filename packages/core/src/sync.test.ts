@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import type { PricedLine } from './cart.ts'
 import type { MenuSnapshot, SnapshotBody } from './snapshot.ts'
-import { TILL_TO_PREP, repriceCounterOrder, MAX_PUSH_EVENTS, BACKOFF_MS } from './sync.ts'
+import { TILL_TO_PREP, repriceCounterOrder, MAX_PUSH_EVENTS, BACKOFF_MS, isOnlineQueueOrder, onlinePrepDecision, ONLINE_PULL_MAX, ONLINE_RECENT_MS, type OnlineQueueOrder } from './sync.ts'
 
 const variant = (id: string, code: string, priceCentavos: number, isAvailable = true) => ({
   id, code, label: code, priceCentavos, temperature: 'none' as const, isAvailable,
@@ -89,4 +89,58 @@ test('till statuses map to prep statuses', () => {
 test('constants', () => {
   expect(MAX_PUSH_EVENTS).toBe(50)
   expect(BACKOFF_MS).toEqual([15_000, 30_000, 60_000, 120_000, 300_000])
+})
+
+const pickupFixture: OnlineQueueOrder = {
+  id: '2f6f1c1e-5b0a-4c53-9a53-0d8f3d6b7a11',
+  businessDay: '2026-11-20',
+  ticketNumber: 3,
+  customerName: 'Ana Reyes',
+  fulfilment: 'pickup',
+  fulfilAt: '2026-11-20T03:30:00.000Z',
+  customerNote: null,
+  prepStatus: 'placed',
+  createdAt: '2026-11-20T02:00:00.000Z',
+  updatedAt: '2026-11-20T02:00:00.000Z',
+  lines: [{ name: 'Latte', size: 'M', quantity: 1, options: ['Oat milk'], iceLevel: 'less', iceServe: 'mixed', note: '' }],
+  delivery: null,
+}
+const deliveryFixture: OnlineQueueOrder = {
+  ...pickupFixture,
+  id: '8a1f0c52-79c0-4a7e-b1a5-4f2f7c3f9d22',
+  ticketNumber: 4,
+  fulfilment: 'delivery',
+  delivery: { address: '12 Rizal St', barangay: 'Libertad', phone: '09171234567' },
+}
+
+test('online queue constants', () => {
+  expect(ONLINE_PULL_MAX).toBe(200)
+  expect(ONLINE_RECENT_MS).toBe(86_400_000)
+})
+test('online steps follow the same transitions as admin', () => {
+  expect(onlinePrepDecision('placed', 'preparing', 'pickup', 'paid')).toBe('move')
+  expect(onlinePrepDecision('preparing', 'ready', 'pickup', 'paid')).toBe('move')
+  expect(onlinePrepDecision('preparing', 'out_for_delivery', 'delivery', 'paid')).toBe('move')
+  expect(onlinePrepDecision('preparing', 'ready', 'delivery', 'paid')).toBe('conflict')
+  expect(onlinePrepDecision('placed', 'ready', 'pickup', 'paid')).toBe('conflict')
+  expect(onlinePrepDecision('ready', 'preparing', 'pickup', 'paid')).toBe('conflict')
+})
+test('already there, cancelled, unpaid and cancel requests', () => {
+  expect(onlinePrepDecision('ready', 'ready', 'pickup', 'paid')).toBe('same')
+  expect(onlinePrepDecision('cancelled', 'preparing', 'pickup', 'refunded')).toBe('cancelled')
+  expect(onlinePrepDecision('placed', 'preparing', 'pickup', 'pending_verification')).toBe('not_paid')
+  expect(onlinePrepDecision('placed', 'cancelled', 'pickup', 'paid')).toBe('refused')
+})
+test('isOnlineQueueOrder', () => {
+  expect(isOnlineQueueOrder(pickupFixture)).toBe(true)
+  expect(isOnlineQueueOrder(deliveryFixture)).toBe(true)
+  expect(isOnlineQueueOrder({ ...pickupFixture, delivery: { address: 'x', barangay: 'y', phone: 'z' } })).toBe(false)
+  expect(isOnlineQueueOrder({ ...deliveryFixture, delivery: null })).toBe(false)
+  expect(isOnlineQueueOrder({ ...pickupFixture, prepStatus: 'eaten' })).toBe(false)
+  expect(isOnlineQueueOrder({ ...pickupFixture, id: 'W3' })).toBe(false)
+  expect(isOnlineQueueOrder({ ...pickupFixture, ticketNumber: 0 })).toBe(false)
+  expect(isOnlineQueueOrder({ ...pickupFixture, lines: [{ ...pickupFixture.lines[0], options: [1] }] })).toBe(false)
+  expect(isOnlineQueueOrder({ ...pickupFixture, lines: [{ ...pickupFixture.lines[0], iceLevel: 'lots' }] })).toBe(false)
+  expect(isOnlineQueueOrder(null)).toBe(false)
+  expect(isOnlineQueueOrder('x')).toBe(false)
 })
