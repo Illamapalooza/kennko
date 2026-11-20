@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import type { AppDeps } from '../create-app.js'
 import { requireDevice, type AppEnv } from '../auth.js'
 import { apiError } from '../http.js'
+import { readPullState } from '../sync/pull.js'
 import { pushEvents } from '../sync/push.js'
 import { pushBodySchema } from '../sync/schema.js'
 
@@ -19,6 +20,14 @@ export function syncRoutes(deps: AppDeps): Hono<AppEnv> {
     const res = await pushEvents(deps, c.get('device').id, body.data.events)
     c.header('Cache-Control', 'no-store')
     return c.json(res)
+  })
+
+  app.get('/pull', requireDevice(deps), async (c) => {
+    const raw = Number(c.req.query('version'))
+    const version = Number.isInteger(raw) && raw > 0 ? raw : null
+    const state = await readPullState(deps.sql, version)
+    c.header('Cache-Control', 'no-store')
+    return c.json(state)
   })
 
   return app

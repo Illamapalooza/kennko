@@ -4,6 +4,7 @@ import type { AppDeps } from '../create-app.js'
 import { requireDevice, requireStaff, type AppEnv } from '../auth.js'
 import { apiError, invalid } from '../http.js'
 import { PAIRING_TTL_MS, pairDevice } from '../devices/pairing.js'
+import { readPinRoster } from '../staff/pin-roster.js'
 import { newPairingCode, sha256Hex } from '../devices/tokens.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -68,12 +69,9 @@ export function deviceRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.get('/me', requireDevice(deps), async (c) => {
     const device = c.get('device')
-    const staff = await sql<{ id: string; full_name: string; role: string; pin_hash: string }[]>`
-      select id, full_name, role, pin_hash from staff
-      where is_active and pin_hash is not null order by full_name, id`
     return c.json({
       device: { id: device.id, name: device.name, ticketSeries: 'C' },
-      staff: staff.map((s) => ({ id: s.id, fullName: s.full_name, role: s.role, pinHash: s.pin_hash })),
+      staff: await readPinRoster(sql),
     })
   })
 
