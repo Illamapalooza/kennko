@@ -32,9 +32,11 @@ type Row = {
   }[] | null
 }
 
-/** The live (non-rejected) payment, else the newest -- same rule as the admin order list. */
+/** The newest verified payment, else the live (non-rejected) one, else the newest. */
 function livePayment(payments: PaymentRow[]): PaymentRow | null {
   const newestFirst = [...payments].sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))
+  const verified = newestFirst.find((p) => p.verified_at != null)
+  if (verified) return verified
   return newestFirst.find((p) => p.status !== 'rejected') ?? newestFirst[0] ?? null
 }
 

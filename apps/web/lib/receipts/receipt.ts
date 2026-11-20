@@ -66,7 +66,7 @@ export type Receipt = {
 }
 
 function maskReference(reference: string): string {
-  return `••••${reference.slice(-4)}`
+  return reference.length < 5 ? '••••' : `••••${reference.slice(-4)}`
 }
 
 /**
@@ -82,9 +82,8 @@ export function buildReceipt(
   if (order.paymentStatus !== 'paid' && order.paymentStatus !== 'refunded') return null
 
   const isPublic = view === 'public'
-  const customer = isPublic
-    ? (order.customerName.trim().split(/\s+/)[0] ?? '')
-    : order.customerName.trim()
+  const fullName = order.customerName.trim()
+  const customer = (isPublic ? fullName.split(/\s+/)[0] : fullName) || 'Customer'
 
   let fulfilment = 'Pickup'
   if (order.fulfilment === 'delivery') {

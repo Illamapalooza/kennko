@@ -54,7 +54,6 @@ describe('buildReceipt', () => {
     expect(r.seller.registeredName).toBeNull()
     expect(r.seller.tin).toBeNull()
     expect(r.footer).toBe(settings.receiptFooter)
-    expect(r.paidAt).toMatch(/Nov 20, 2026/)
   })
 
   it('copies totals from the order, never sums the lines', () => {
@@ -104,5 +103,30 @@ describe('buildReceipt', () => {
     const r = buildReceipt(base, { ...settings, registeredName: 'Kennko OPC', tin: '123-456-789-000' }, 'public')!
     expect(r.seller.registeredName).toBe('Kennko OPC')
     expect(r.seller.tin).toBe('123-456-789-000')
+  })
+
+  it('formats paidAt in Manila time across UTC midnight', () => {
+    const r = buildReceipt({ ...base, paidAt: '2026-11-20T17:00:00Z' }, settings, 'public')!
+    expect(r.paidAt).toMatch(/Nov 21, 2026/)
+  })
+
+  it('masks a short reference fully', () => {
+    expect(buildReceipt({ ...base, reference: '1234' }, settings, 'public')!.reference).toBe('••••')
+    expect(buildReceipt({ ...base, reference: '12345' }, settings, 'public')!.reference).toBe('••••2345')
+  })
+
+  it('falls back to "Customer" for an empty name in both views', () => {
+    for (const view of ['public', 'email'] as const) {
+      expect(buildReceipt({ ...base, customerName: '   ' }, settings, view)!.customer).toBe('Customer')
+    }
+  })
+
+  it('public delivery with no barangay never shows the street', () => {
+    const order: ReceiptOrder = {
+      ...base, fulfilment: 'delivery', deliveryAddress: '12 Mabini St.', deliveryBarangay: null,
+    }
+    const r = buildReceipt(order, settings, 'public')!
+    expect(r.fulfilment).toBe('Delivery')
+    expect(JSON.stringify(r)).not.toContain('Mabini')
   })
 })
