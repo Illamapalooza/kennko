@@ -198,6 +198,7 @@ type StoredPayload<K extends SyncEventKind> = K extends 'order.created'
 const ENTITY: Record<SyncEventKind, 'order' | 'shift' | 'cash_move' | 'menu'> = {
   'order.created': 'order', 'order.prep_status': 'order', 'order.cancelled': 'order',
   'shift.opened': 'shift', 'shift.closed': 'shift', 'cash.moved': 'cash_move', 'menu.availability': 'menu',
+  'customer.linked': 'order', 'customer.unlinked': 'order', 'stamp.added': 'order', 'reward.used': 'order',
 }
 
 /** An online order as the till shows it: the pulled copy, with the prep status the till holds now. */

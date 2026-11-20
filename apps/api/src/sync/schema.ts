@@ -129,6 +129,11 @@ export const availabilityPayload = z.object({
   available: z.boolean(),
 }) satisfies z.ZodType<PayloadOf<'menu.availability'>>
 
+export const customerLinkedPayload = z.object({ orderId: z.uuid(), publicCode: z.string().min(1).max(20) }) satisfies z.ZodType<PayloadOf<'customer.linked'>>
+export const customerUnlinkedPayload = z.object({ orderId: z.uuid() }) satisfies z.ZodType<PayloadOf<'customer.unlinked'>>
+export const stampAddedPayload = z.object({ orderId: z.uuid(), stampId: z.uuid() }) satisfies z.ZodType<PayloadOf<'stamp.added'>>
+export const rewardUsedPayload = z.object({ claimId: z.uuid(), orderId: z.uuid() }) satisfies z.ZodType<PayloadOf<'reward.used'>>
+
 export const payloadSchemas: { [K in SyncEventKind]: z.ZodType<PayloadOf<K>> } = {
   'order.created': orderCreatedPayload,
   'order.prep_status': prepStatusPayload,
@@ -137,6 +142,10 @@ export const payloadSchemas: { [K in SyncEventKind]: z.ZodType<PayloadOf<K>> } =
   'shift.closed': shiftClosedPayload,
   'cash.moved': cashMovedPayload,
   'menu.availability': availabilityPayload,
+  'customer.linked': customerLinkedPayload,
+  'customer.unlinked': customerUnlinkedPayload,
+  'stamp.added': stampAddedPayload,
+  'reward.used': rewardUsedPayload,
 }
 
 const isoDateTime = z.iso.datetime({ offset: true })

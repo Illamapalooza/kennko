@@ -166,6 +166,7 @@ export async function readAttention(sql: Sql, show: 'open' | 'resolved'): Promis
     events: await events(sql, show),
     orders: await orders(sql, show),
     shifts: show === 'open' ? await openShifts(sql) : [],
+    stamps: [], // Plan 7 Task 7 fills this
   }
 }
 

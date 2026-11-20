@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import type { PricedLine } from './cart.ts'
 import type { MenuSnapshot, SnapshotBody } from './snapshot.ts'
+import { formatPublicCode, makePublicCode } from './loyalty.ts'
 import { TILL_TO_PREP, eventSummary, repriceCounterOrder, MAX_PUSH_EVENTS, BACKOFF_MS, isOnlineQueueOrder, onlinePrepDecision, ONLINE_PULL_MAX, ONLINE_RECENT_MS, type OnlineQueueOrder } from './sync.ts'
 
 const variant = (id: string, code: string, priceCentavos: number, isAvailable = true) => ({
@@ -190,4 +191,41 @@ test('eventSummary reads a garbled payload as just its kind', () => {
   // A money field that is not a whole number is left out, never guessed.
   expect(eventSummary('shift.opened', { openingFloatCentavos: '100' })).toEqual({ label: 'Shift opened', amountCentavos: null })
   expect(eventSummary('mystery.kind', { a: 1 })).toEqual({ label: 'mystery.kind', amountCentavos: null })
+})
+
+test('repriceCounterOrder accepts a free-drink line at base 0 and refuses it at the full base', () => {
+  const free = line({ basePriceCentavos: 0, quantity: 1, lineTotalCentavos: 2000, reward: true })
+  expect(repriceCounterOrder(v1, order([free])).matches).toBe(true)
+  expect(repriceCounterOrder(v1, order([line(), free])).matches).toBe(true)
+  const fullBase = line({ quantity: 1, lineTotalCentavos: 14000, reward: true })
+  const r = repriceCounterOrder(v1, order([fullBase]))
+  expect(r.matches).toBe(false)
+  expect(r.mismatchedLines).toEqual([0])
+  // A free line whose add-on price drifted from the snapshot is still a mismatch.
+  const drift = line({ basePriceCentavos: 0, quantity: 1, reward: true, modifiers: [{ id: 'o-oat', name: 'Oat milk', priceCentavos: 1000 }], lineTotalCentavos: 1000 })
+  expect(repriceCounterOrder(v1, order([drift])).matches).toBe(false)
+  // A base 0 without the flag is not free.
+  expect(repriceCounterOrder(v1, order([line({ basePriceCentavos: 0, quantity: 1, lineTotalCentavos: 2000 })])).matches).toBe(false)
+})
+
+test('isOnlineQueueOrder reads the card field', () => {
+  expect(isOnlineQueueOrder(pickupFixture)).toBe(true)
+  for (const card of ['stamp', 'stamped', 'paper', null]) expect(isOnlineQueueOrder({ ...pickupFixture, card })).toBe(true)
+  expect(isOnlineQueueOrder({ ...pickupFixture, card: 'gold' })).toBe(false)
+  expect(isOnlineQueueOrder({ ...pickupFixture, card: 3 })).toBe(false)
+})
+
+test('eventSummary names the loyalty events', () => {
+  const bare = makePublicCode(() => 3)
+  const shown = { label: `Customer added: ${formatPublicCode(bare)}`, amountCentavos: null }
+  expect(eventSummary('customer.linked', { orderId: 'o', publicCode: formatPublicCode(bare) })).toEqual(shown)
+  expect(eventSummary('customer.linked', { orderId: 'o', publicCode: bare })).toEqual(shown)
+  expect(eventSummary('customer.unlinked', { orderId: 'o' })).toEqual({ label: 'Customer removed', amountCentavos: null })
+  expect(eventSummary('stamp.added', { orderId: 'o', stampId: 's' })).toEqual({ label: 'Stamp', amountCentavos: null })
+  expect(eventSummary('reward.used', { claimId: 'c', orderId: 'o' })).toEqual({ label: 'Free drink used', amountCentavos: null })
+  const garbled = (kind: string) => ({ label: kind, amountCentavos: null })
+  expect(eventSummary('customer.linked', { orderId: 'o' })).toEqual(garbled('customer.linked'))
+  expect(eventSummary('customer.linked', { publicCode: 5 })).toEqual(garbled('customer.linked'))
+  expect(eventSummary('customer.linked', null)).toEqual(garbled('customer.linked'))
+  expect(eventSummary('stamp.added', 'x')).toEqual(garbled('stamp.added'))
 })

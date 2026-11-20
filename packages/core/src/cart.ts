@@ -20,6 +20,8 @@ export type LineInput = {
   iceLevel: IceLevel | null
   iceServe: IceServe | null
   note: string
+  /** The free drink from a full stamp card: base price 0, add-ons still charged. */
+  reward?: boolean
 }
 
 export type PricedModifier = { id: string; name: string; priceCentavos: number }
@@ -35,6 +37,7 @@ export type PricedLine = {
   iceServe: IceServe | null
   note: string
   lineTotalCentavos: number
+  reward?: true
 }
 
 export type Discount = {
@@ -75,6 +78,7 @@ export function priceLine(menu: Menu, input: LineInput): PricedLine {
   if (!Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > MAX_QUANTITY) {
     throw new OrderError(`Quantity must be 1 to ${MAX_QUANTITY}.`)
   }
+  if (input.reward && input.quantity !== 1) throw new OrderError('A free drink is one drink.')
 
   const wanted = new Set(Array.isArray(input.modifierIds) ? input.modifierIds : [])
   const modifiers: PricedModifier[] = []
@@ -95,19 +99,20 @@ export function priceLine(menu: Menu, input: LineInput): PricedLine {
     menuItemId: item.id,
     name: item.name,
     size: input.size,
-    basePriceCentavos: price.priceCentavos,
+    basePriceCentavos: input.reward ? 0 : price.priceCentavos,
     modifiers,
     quantity: input.quantity,
     iceLevel: ice.level,
     iceServe: ice.serve,
     note,
   }
-  return { ...line, lineTotalCentavos: lineTotal(line) }
+  return { ...line, lineTotalCentavos: lineTotal(line), ...(input.reward ? { reward: true as const } : {}) }
 }
 
 export function priceLines(menu: Menu, inputs: LineInput[]): PricedLine[] {
   if (!Array.isArray(inputs) || inputs.length === 0) throw new OrderError('Add at least one drink.')
   if (inputs.length > MAX_LINES) throw new OrderError('Too many lines in one order. Split it into two.')
+  if (inputs.filter((i) => i.reward).length > 1) throw new OrderError('One free drink per order.')
   return inputs.map((input) => priceLine(menu, input))
 }
 

@@ -37,6 +37,10 @@ export function entityKeys(event: { kind: SyncEventKind; payload: unknown }): st
     case 'order.created':
     case 'order.prep_status':
     case 'order.cancelled':
+    case 'customer.linked':
+    case 'customer.unlinked':
+    case 'stamp.added':
+    case 'reward.used':
       return key('order', p.orderId)
     case 'shift.opened':
     case 'shift.closed':
@@ -113,7 +117,14 @@ const menuAvailability: Handler<'menu.availability'> = async (tx, _deviceId, eve
   return row ? applied() : flagged('unknown_item')
 }
 
+/** The loyalty kinds exist in core first; the API stores them in Plan 7 Task 2. Until then they are flagged, never refused. */
+const notYet = async () => flagged('loyalty_not_supported_yet')
+
 const handlers: { [K in SyncEventKind]: Handler<K> } = {
+  'customer.linked': notYet,
+  'customer.unlinked': notYet,
+  'stamp.added': notYet,
+  'reward.used': notYet,
   'order.created': applyOrderCreated,
   'order.prep_status': applyPrepStatus,
   'order.cancelled': applyCancelled,

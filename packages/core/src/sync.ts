@@ -3,6 +3,7 @@ import type { OrderStatus, OrderType, PaymentMethod } from './order.ts'
 import type { IceLevel, IceServe } from './ice.ts'
 import { canMovePrep, type Fulfilment, type PaymentStatus, type PrepStatus } from './order-status.ts'
 import type { MenuSnapshot } from './snapshot.ts'
+import { formatPublicCode, normalisePublicCode, type StampMode } from './loyalty.ts'
 
 export const MAX_PUSH_EVENTS = 50
 export const IMPORT_CHUNK_MAX = 100
@@ -35,6 +36,10 @@ export type SyncEventKind =
   | 'shift.closed'
   | 'cash.moved'
   | 'menu.availability'
+  | 'customer.linked'
+  | 'customer.unlinked'
+  | 'stamp.added'
+  | 'reward.used'
 
 export type CounterOrderPayload = {
   orderId: string
@@ -66,6 +71,10 @@ export type SyncEvent = { id: string; seq: number; occurredAt: string; staffId: 
   | { kind: 'shift.closed'; payload: { shiftId: string; countedCentavos: number; expectedCentavos: number; note: string } }
   | { kind: 'cash.moved'; payload: { id: string; shiftId: string; kind: 'in' | 'out'; amountCentavos: number; reason: string } }
   | { kind: 'menu.availability'; payload: { itemId: string; available: boolean } }
+  | { kind: 'customer.linked'; payload: { orderId: string; publicCode: string } }
+  | { kind: 'customer.unlinked'; payload: { orderId: string } }
+  | { kind: 'stamp.added'; payload: { orderId: string; stampId: string } }
+  | { kind: 'reward.used'; payload: { claimId: string; orderId: string } }
 )
 
 export type PushResult = 'applied' | 'flagged' | 'held' | 'duplicate'
@@ -95,6 +104,19 @@ export type OnlineQueueOrder = {
   updatedAt: string
   lines: OnlineQueueLine[]
   delivery: { address: string; barangay: string; phone: string } | null
+  /** Stamp at pickup: `stamp` = to stamp, `stamped` = done, `paper` = a paper card, null = no card. Absent = older API. */
+  card?: 'stamp' | 'stamped' | 'paper' | null
+}
+
+/** The only customer fields the till ever receives. No real name, email, phone or point balance. */
+export type TillCustomer = {
+  /** Formatted, `KC-XXX-XXX-XXX`. */
+  code: string
+  /** Always null until cats arrive. */
+  catName: string | null
+  stampMode: StampMode
+  stamps: number
+  fullCards: number
 }
 
 export type PullState = {
@@ -105,6 +127,8 @@ export type PullState = {
   shop: { name: string; address: string; phone: string | null }
   /** Absent = an API from before Plan 5: the till keeps the online orders it has. */
   onlineOrders?: OnlineQueueOrder[]
+  /** Customers linked through this till recently. Absent = an API from before the loyalty plan. */
+  customers?: TillCustomer[]
 }
 
 export type ImportShift = {
@@ -174,8 +198,10 @@ export function repriceCounterOrder(
     const item = items.get(line.menuItemId)
     const variant = item?.variants.find((v) => v.code === line.size)
     if (!item || !variant) return null
+    // A free drink has no base price; its add-ons are still charged.
+    const basePriceCentavos = line.reward ? 0 : variant.priceCentavos
     const options = item.optionGroupIds.flatMap((id) => groups.get(id)?.options ?? [])
-    let pricesAgree = variant.priceCentavos === line.basePriceCentavos
+    let pricesAgree = basePriceCentavos === line.basePriceCentavos
     const modifiers: { priceCentavos: number }[] = []
     for (const m of line.modifiers) {
       const option = options.find((o) => o.id === m.id)
@@ -184,7 +210,7 @@ export function repriceCounterOrder(
       modifiers.push({ priceCentavos: option.priceCentavos })
     }
     try {
-      return { total: lineTotal({ basePriceCentavos: variant.priceCentavos, modifiers, quantity: line.quantity }), pricesAgree }
+      return { total: lineTotal({ basePriceCentavos, modifiers, quantity: line.quantity }), pricesAgree }
     } catch {
       return null
     }
@@ -241,6 +267,7 @@ export function isOnlineQueueOrder(x: unknown): x is OnlineQueueOrder {
   if (!Number.isInteger(x.ticketNumber) || (x.ticketNumber as number) < 1) return false
   if (x.fulfilment !== 'pickup' && x.fulfilment !== 'delivery') return false
   if (x.customerNote !== null && !isStr(x.customerNote)) return false
+  if (x.card !== undefined && x.card !== null && x.card !== 'stamp' && x.card !== 'stamped' && x.card !== 'paper') return false
   if (!isStr(x.prepStatus) || !PREP_STATUSES.includes(x.prepStatus)) return false
   if (!Array.isArray(x.lines) || !x.lines.every(isOnlineQueueLine)) return false
   if (x.fulfilment === 'delivery') {
@@ -314,7 +341,21 @@ export type OpenShift = {
   blocking: number
 }
 
-export type AttentionView = { events: AttentionEvent[]; orders: FlaggedOrder[]; shifts: OpenShift[] }
+/** A stamp rung up for a customer who has since gone on paper cards; an owner or manager applies or discards it. */
+export type PaperStamp = {
+  id: string
+  orderId: string
+  ticket: string
+  customerId: string
+  customerCode: string
+  displayName: string
+  customerMode: StampMode
+  stampedAt: string
+  deviceName: string | null
+  staffName: string | null
+}
+
+export type AttentionView = { events: AttentionEvent[]; orders: FlaggedOrder[]; shifts: OpenShift[]; stamps: PaperStamp[] }
 
 const money = (x: unknown): number | null => (Number.isInteger(x) ? (x as number) : null)
 const ticketOf = (p: Record<string, unknown>): string | null =>
@@ -353,6 +394,18 @@ export function eventSummary(kind: string, payload: unknown): EventSummary {
     }
     case 'menu.availability':
       return say(typeof p.available === 'boolean' ? (p.available ? 'Back on sale' : 'Sold out') : null)
+    case 'customer.linked': {
+      if (!isStr(p.publicCode)) return garbled
+      // A code that fails its check is shown as sent: the receipt says what the till said.
+      const code = normalisePublicCode(p.publicCode)
+      return say(`Customer added: ${code ? formatPublicCode(code) : p.publicCode}`)
+    }
+    case 'customer.unlinked':
+      return say('Customer removed')
+    case 'stamp.added':
+      return say('Stamp')
+    case 'reward.used':
+      return say('Free drink used')
     case 'import.order': {
       const ticket = ticketOf(p)
       return say(ticket && `Old sale ${ticket} (before sync)`, p.totalCentavos)

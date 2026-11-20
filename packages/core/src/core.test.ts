@@ -56,6 +56,19 @@ describe('pricing', () => {
     expect(() => priceLine(menu, line({ modifierIds: ['ghost'] }))).toThrow(/add-ons/)
     expect(() => priceLines(menu, [])).toThrow(/at least one/)
   })
+
+  it('prices a free drink at zero with its add-ons', () => {
+    const priced = priceLine(menu, line({ size: 'HOT', modifierIds: ['oat'], reward: true }))
+    expect(priced.basePriceCentavos).toBe(0)
+    expect(priced.lineTotalCentavos).toBe(4000)
+    expect(priced.reward).toBe(true)
+    expect(priceLine(menu, line()).reward).toBeUndefined()
+  })
+  it('keeps a free drink to one drink, one per order', () => {
+    expect(() => priceLine(menu, line({ reward: true, quantity: 2 }))).toThrow('A free drink is one drink.')
+    expect(() => priceLines(menu, [line({ reward: true }), line({ reward: true })])).toThrow('One free drink per order.')
+    expect(priceLines(menu, [line({ reward: true }), line()])).toHaveLength(2)
+  })
 })
 
 describe('discounts and totals', () => {
