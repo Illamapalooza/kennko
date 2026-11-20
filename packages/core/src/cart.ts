@@ -1,5 +1,5 @@
 import { normaliseIce, type IceLevel, type IceServe } from './ice.ts'
-import { findItem, type DrinkSize, type Menu } from './menu.ts'
+import { findItem, type DrinkSize, type Menu, type MenuItem, type ModifierGroup } from './menu.ts'
 
 /** A mistake the person at the till can fix; the message is shown to them. */
 export class OrderError extends Error {}
@@ -59,6 +59,12 @@ export function cartSubtotal(lines: PricedInput[]): number {
   return lines.reduce((sum, line) => sum + lineTotal(line), 0)
 }
 
+/** The add-on groups a drink offers: its linked groups when the menu says, else every group. */
+export function groupsFor(menu: Menu, item: MenuItem): ModifierGroup[] {
+  const ids = item.modifierGroupIds
+  return ids ? menu.modifierGroups.filter((g) => ids.includes(g.id)) : menu.modifierGroups
+}
+
 /** Prices one line from the menu. Throws OrderError when the menu no longer allows it. */
 export function priceLine(menu: Menu, input: LineInput): PricedLine {
   const item = findItem(menu, input.menuItemId)
@@ -72,7 +78,7 @@ export function priceLine(menu: Menu, input: LineInput): PricedLine {
 
   const wanted = new Set(Array.isArray(input.modifierIds) ? input.modifierIds : [])
   const modifiers: PricedModifier[] = []
-  for (const group of menu.modifierGroups) {
+  for (const group of groupsFor(menu, item)) {
     const picked = group.modifiers.filter((m) => wanted.has(m.id))
     if (!group.isMultiSelect && picked.length > 1) throw new OrderError(`Pick only one from ${group.name}.`)
     for (const m of picked) {

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
-import type { MenuSnapshot } from '@kennko/core'
+import { groupsFor, priceLine, type MenuSnapshot } from '@kennko/core'
 import { builtInMenu, fetchApiMenu, loadSnapshot, splitSoldOut, tillDiscounts, tillMenu } from '../server/menu.ts'
 
 const snapshot: MenuSnapshot = {
@@ -62,6 +62,26 @@ describe('splitSoldOut (manual pull on an unpaired till)', () => {
     const sold = new Set(soldOut)
     expect(tillMenu(clean, builtInMenu(0), sold, 0).categories.flatMap((c) => c.items).find((i) => i.id === 'i-latte')!.isAvailable).toBe(true)
     expect(splitSoldOut(clean).soldOut).toEqual([])
+  })
+})
+
+describe('add-ons on the till follow the snapshot links (no spurious reprice_mismatch)', () => {
+  it("offers and prices only the drink's own groups", () => {
+    const linked: MenuSnapshot = {
+      ...snapshot,
+      categories: [{ ...snapshot.categories[0]!, items: [
+        { ...snapshot.categories[0]!.items[0]!, optionGroupIds: ['g-milk'] },
+        { ...snapshot.categories[0]!.items[0]!, id: 'i-amer', name: 'Americano', optionGroupIds: [] },
+      ] }],
+      optionGroups: [{ id: 'g-milk', name: 'Milk', minSelect: 0, maxSelect: 1, options: [{ id: 'o-oat', name: 'Oat', priceCentavos: 2000, isAvailable: true }] }],
+    }
+    const menu = tillMenu(linked, builtInMenu(0), new Set(), 0)
+    const items = menu.categories[0]!.items
+    expect(groupsFor(menu, items[0]!).map((g) => g.id)).toEqual(['g-milk'])
+    expect(groupsFor(menu, items[1]!)).toEqual([])
+    const line = (menuItemId: string) => ({ menuItemId, size: 'M' as const, modifierIds: ['o-oat'], quantity: 1, iceLevel: 'regular' as const, iceServe: 'mixed' as const, note: '' })
+    expect(priceLine(menu, line('i-latte')).lineTotalCentavos).toBe(12000)
+    expect(() => priceLine(menu, line('i-amer'))).toThrow('One of the add-ons is no longer on the menu.')
   })
 })
 

@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
 import { liveDrinkMenu, type MenuSnapshot } from './snapshot.ts'
+import { OrderError, priceLine } from './cart.ts'
+import { repriceCounterOrder } from './sync.ts'
 
 const variant = (code: string, priceCentavos: number, isAvailable = true) => ({
   id: `v-${code}`,
@@ -128,4 +130,35 @@ test('drops a sold-out variant from prices', () => {
 
 test('liveDrinkMenu carries the snapshot version', () => {
   expect(liveDrinkMenu(snapshot, 0).version).toBe(snapshot.version)
+})
+
+test("a drink takes add-ons only from its own linked groups, like the API's repricing", () => {
+  const snap: MenuSnapshot = {
+    version: 7,
+    publishedAt: '2026-11-20T00:00:00.000Z',
+    categories: [{
+      id: 'c', name: 'Coffee', kind: 'drink',
+      items: [
+        { id: 'latte', name: 'Latte', description: null, imagePath: null, isBestseller: false, isAvailable: true, optionGroupIds: ['g-milk'],
+          variants: [{ id: 'lm', code: 'M', label: 'Medium', priceCentavos: 12000, temperature: 'iced', isAvailable: true }] },
+        { id: 'amer', name: 'Americano', description: null, imagePath: null, isBestseller: false, isAvailable: true, optionGroupIds: [],
+          variants: [{ id: 'am', code: 'M', label: 'Medium', priceCentavos: 10000, temperature: 'iced', isAvailable: true }] },
+      ],
+    }],
+    optionGroups: [{ id: 'g-milk', name: 'Milk', minSelect: 0, maxSelect: 1, options: [{ id: 'oat', name: 'Oat', priceCentavos: 2000, isAvailable: true }] }],
+    discountPresets: [],
+  }
+  const menu = liveDrinkMenu(snap, 0)
+  expect(menu.categories[0]!.items.map((i) => [i.id, i.modifierGroupIds])).toEqual([['latte', ['g-milk']], ['amer', []]])
+  const line = (menuItemId: string) => ({ menuItemId, size: 'M' as const, modifierIds: ['oat'], quantity: 1, iceLevel: 'regular' as const, iceServe: 'mixed' as const, note: '' })
+  const latte = priceLine(menu, line('latte'))
+  expect(latte.lineTotalCentavos).toBe(14000)
+  expect(() => priceLine(menu, line('amer'))).toThrow(OrderError)
+  // What the till can ring up, the API's repricing accepts.
+  const order = { menuVersion: 7, lines: [latte], discount: null, subtotalCentavos: 14000, discountCentavos: 0, totalCentavos: 14000 }
+  expect(repriceCounterOrder(snap, order).matches).toBe(true)
+  // A menu without links (built-in, old menu.json) still offers every group to every drink.
+  const { modifierGroupIds: _drop, ...unlinked } = menu.categories[0]!.items[1]!
+  const loose = { ...menu, categories: [{ ...menu.categories[0]!, items: [unlinked] }] }
+  expect(priceLine(loose, line('amer')).lineTotalCentavos).toBe(12000)
 })

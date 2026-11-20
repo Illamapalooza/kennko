@@ -12,6 +12,8 @@ export type MenuItem = {
   isBestseller: boolean
   isAvailable: boolean
   prices: MenuItemPrice[]
+  /** The add-on groups this drink offers (from a published snapshot). Absent: every group (built-in or old menu.json). */
+  modifierGroupIds?: string[]
 }
 
 export type MenuCategory = { id: string; name: string; items: MenuItem[] }

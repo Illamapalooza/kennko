@@ -24,7 +24,10 @@ export function liveDrinkMenu(snapshot: MenuSnapshot, now: number): Menu {
         return variant ? [{ size, priceCentavos: variant.priceCentavos }] : []
       })
       if (prices.length === 0) continue
-      items.push({ id: item.id, name: item.name, isBestseller: item.isBestseller, isAvailable: item.isAvailable, prices })
+      items.push({
+        id: item.id, name: item.name, isBestseller: item.isBestseller, isAvailable: item.isAvailable, prices,
+        modifierGroupIds: [...item.optionGroupIds],
+      })
       for (const groupId of item.optionGroupIds) usedGroupIds.add(groupId)
     }
     if (items.length > 0) categories.push({ id: category.id, name: category.name, items })

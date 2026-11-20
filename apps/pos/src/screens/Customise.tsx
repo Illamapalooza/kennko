@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  ICE_LEVELS, ICE_SERVES, MAX_QUANTITY, NOTE_MAX, SIZE_LABELS, formatPesos, normaliseIce, takesIce, takesIceServe,
+  ICE_LEVELS, ICE_SERVES, MAX_QUANTITY, NOTE_MAX, SIZE_LABELS, formatPesos, groupsFor, normaliseIce, takesIce, takesIceServe,
   type IceLevel, type IceServe, type LineInput, type Menu, type MenuItem,
 } from '@kennko/core'
 import { Modal } from '../components/Modal.tsx'
@@ -26,14 +26,16 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
   const [addonLimit, setAddonLimit] = useState<string | null>(null)
 
   const ice = normaliseIce(size, iceLevel, iceServe)
+  // Only this drink's own add-on groups, as the API reprices it (an add-on from another drink's group is never offered).
+  const groups = useMemo(() => groupsFor(menu, item), [menu, item])
   const unit = useMemo(() => {
     const base = item.prices.find((p) => p.size === size)?.priceCentavos ?? 0
-    const extras = menu.modifierGroups.flatMap((g) => g.modifiers).filter((m) => picked.has(m.id)).reduce((sum, m) => sum + m.priceCentavos, 0)
+    const extras = groups.flatMap((g) => g.modifiers).filter((m) => picked.has(m.id)).reduce((sum, m) => sum + m.priceCentavos, 0)
     return base + extras
-  }, [item, menu, size, picked])
+  }, [item, groups, size, picked])
 
   const toggle = (groupId: string, id: string) => {
-    const { next, refused } = toggleAddon(menu.modifierGroups, picked, groupId, id)
+    const { next, refused } = toggleAddon(groups, picked, groupId, id)
     setPicked(next)
     setAddonLimit(refused)
   }
@@ -94,7 +96,7 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
       ) : null}
 
       {addonLimit ? <p className="error" role="alert">{addonLimit}</p> : null}
-      {menu.modifierGroups.map((group) => (
+      {groups.map((group) => (
         <section className="field" key={group.id}>
           <h3>{group.name} <small>{group.isMultiSelect ? 'any' : 'pick one'}</small></h3>
           <div className="choices">
