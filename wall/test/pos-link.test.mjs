@@ -37,6 +37,11 @@ test("a counter order keeps its wall id whether or not online orders are around"
   assert.deepEqual(ids(withW), ids(alone));
 });
 
+test("a series of C or anything unknown is read as a counter order", () => {
+  const state = fromPosFeed({ day: "2026-11-20", orders: [order({ id: 1, number: 2, series: "C" }), order({ id: 2, number: 4, series: "Z" })] }, 1);
+  assert.deepEqual(state.orders.map((o) => [o.id, o.label]), [[2, undefined], [4, undefined]]);
+});
+
 test("two W1s across midnight stay apart", () => {
   const state = fromPosFeed({ day: "2026-11-21", orders: [
     order({ id: 20, number: 1, series: "W", createdAt: 200 }),

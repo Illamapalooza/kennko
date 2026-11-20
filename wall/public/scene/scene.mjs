@@ -315,7 +315,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
       if (ambient) {
         ctx.fillStyle = "#9db6ee"; ctx.fillRect(x + 3 + sway, 32, 7, 1); ctx.fillRect(x + 3 + sway, 34, 5, 1); ctx.fillRect(x + 3 + sway, 36, 6, 1);
       } else {
-        const label = String(o.id % 1000);
+        const label = o.label ?? String(o.id % 1000);
         drawText(ctx, label, x + sway + 7 - Math.floor(textWidth(label) / 2), 32, BLUE);
       }
     });
@@ -371,18 +371,18 @@ export function createScene(canvas, tagLayer, opts = {}) {
 
   function label() {
     for (const el of tags.values()) el.dataset.live = "";
+    const byId = new Map(orders.map((o) => [o.id, o]));
     if (!ambient) {
       for (const c of custs.values()) {
-        if (c.phase === "in" && !c.cup) tag(`c${c.id}`, "tag", String(c.id), c.x, c.y - CAT_H - 2);
+        if (c.phase === "in" && !c.cup) tag(`c${c.id}`, "tag", byId.get(c.id)?.label ?? String(c.id), c.x, c.y - CAT_H - 2);
       }
     }
-    const byId = new Map(orders.map((o) => [o.id, o]));
     baristas.forEach((b, i) => {
       const o = byId.get(assignment[i]);
       if (!o) return;
       const items = o.items?.length ? o.items : [{ name: "", qty: 1 }];
       const drink = itemsLabel([items[Math.floor(t / 2.5) % items.length]]);
-      tag(`b${i}`, "tag bubble", ambient ? drink : `${o.id} · ${drink}`, b.x, BARISTA_TOP - 3 - (i % 2) * 9);
+      tag(`b${i}`, "tag bubble", ambient ? drink : `${o.label ?? o.id} · ${drink}`, b.x, BARISTA_TOP - 3 - (i % 2) * 9);
     });
     for (const [key, el] of tags) if (!el.dataset.live) { el.remove(); tags.delete(key); }
   }

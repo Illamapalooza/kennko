@@ -37,7 +37,7 @@ up on the till walks in as a customer cat, and the wall shows the queue and call
 | Void | The order is taken off the wall |
 | Online order paid | Comes in like any other, shown as **W3** with the customer's first name |
 | Online order out for delivery | Leaves the wall (delivery orders are not called at the counter) |
-| Online order cancelled | The order is taken off the wall |
+| Online order cancelled | Taken off the wall at the till's next sync (not instantly; it stays while the till is offline) |
 
 - The number on the wall is the order number the till shows after payment and prints on the receipt. Online orders
   carry a `W` in front (W3) and are separate from counter number 3; the banner reads "Order W3 for Ana is ready!".
