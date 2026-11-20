@@ -126,3 +126,58 @@ export function applyDeviceInfo(store: Store, sessions: Sessions, pins: PinDirec
   }
   return false
 }
+
+const SOON_MS = 30_000
+
+/**
+ * The till's staff refresh. `refresh` fetches who may use this till and applies it; runs one at a time, so a slow
+ * answer for an old pairing cannot land after a new one. `soon` is the same refresh for a wrong PIN, so a PIN issued
+ * in admin a moment ago works on the next try: paired, not revoked and at most once every 30 seconds, else it does
+ * nothing. It resolves true when it asked the API (whatever the answer), bounded by the fetch timeout.
+ */
+export function createStaffRefresh(opts: {
+  dataDir: string; apiUrl: string; store: Store; sessions: Sessions; pins: PinDirectory; onChange: () => void
+  fetchFn?: typeof fetch; now?: () => number
+}) {
+  const now = opts.now ?? Date.now
+  let chain: Promise<void> = Promise.resolve()
+  let lastSoon = -Infinity
+
+  function refresh(): Promise<void> {
+    chain = chain.then(async () => {
+      try {
+        const device = loadDevice(opts.dataDir)
+        if (!device || device.revokedAt !== null) return
+        const result = await fetchDeviceInfo(opts.apiUrl, device.token, opts.fetchFn)
+        if (loadDevice(opts.dataDir)?.token !== device.token) return // forgotten or paired again while asking
+        if (applyDeviceInfo(opts.store, opts.sessions, opts.pins, result, opts.dataDir, now())) opts.onChange()
+        if (result.status === 'revoked') console.warn('  This till was disconnected in admin. It keeps selling; connect it again from the Menu screen.')
+      } catch (err: any) {
+        console.error(`  Could not refresh the staff list: ${err.message}`)
+      }
+    })
+    return chain
+  }
+
+  async function soon(): Promise<boolean> {
+    const device = loadDevice(opts.dataDir)
+    if (!device || device.revokedAt !== null) return false
+    const t = now()
+    if (t - lastSoon < SOON_MS) return false
+    lastSoon = t
+    await refresh()
+    return true
+  }
+
+  return { refresh, soon }
+}
+
+/**
+ * Checks a PIN; when it matches no one, refreshes the staff list (see `soon`) and checks once more. The caller counts
+ * one wrong try for the whole call, however many checks it made.
+ */
+export async function checkPinFresh<T>(check: () => Promise<T | null>, soon: () => Promise<boolean>): Promise<T | null> {
+  const first = await check()
+  if (first) return first
+  return (await soon()) ? check() : null
+}

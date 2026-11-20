@@ -17,7 +17,7 @@ import { loadConfig } from './config.ts'
 import { fetchApiMenu, loadMenu, saveMenu } from './menu.ts'
 import { createStore } from './store.ts'
 import { createPinDirectory } from './pins.ts'
-import { applyDeviceInfo, fetchDeviceInfo, forgetDevice, loadDevice, pairWithApi, saveDevice } from './device.ts'
+import { checkPinFresh, createStaffRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice } from './device.ts'
 import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
 import { reportCsv } from './report.ts'
 import { WALL_LINGER_MS, wallOrders } from './wall-feed.ts'
@@ -56,26 +56,12 @@ backup()
 setInterval(backup, 60 * 60 * 1000).unref()
 
 /**
- * Fetches who may use this till from the API and applies it (device.ts). At startup, every 5 minutes and right after
- * pairing. Nothing waits on it but pairing: offline leaves the cache as it is, and a revoked till keeps selling.
- * Runs one at a time, so a slow answer for an old pairing cannot land after a new one.
+ * Fetches who may use this till from the API and applies it (device.ts). At startup, every 5 minutes, right after
+ * pairing, and on a wrong PIN at most once every 30 seconds (staff.soon), so a PIN issued a moment ago in admin works.
+ * Nothing else waits on it: offline leaves the cache as it is, and a revoked till keeps selling.
  */
-let refreshing: Promise<void> = Promise.resolve()
-function refreshStaff(): Promise<void> {
-  refreshing = refreshing.then(async () => {
-    try {
-      const device = loadDevice(DATA)
-      if (!device || device.revokedAt !== null) return
-      const result = await fetchDeviceInfo(config.api.url, device.token)
-      if (loadDevice(DATA)?.token !== device.token) return // forgotten or paired again while asking
-      if (applyDeviceInfo(store, sessions, pins, result, DATA, Date.now())) broadcast()
-      if (result.status === 'revoked') console.warn('  This till was disconnected in admin. It keeps selling; connect it again from the Menu screen.')
-    } catch (err: any) {
-      console.error(`  Could not refresh the staff list: ${err.message}`)
-    }
-  })
-  return refreshing
-}
+const staff = createStaffRefresh({ dataDir: DATA, apiUrl: config.api.url, store, sessions, pins, onChange: () => broadcast() })
+const refreshStaff = staff.refresh
 setInterval(refreshStaff, 5 * 60 * 1000).unref()
 
 /** The menu the till sells from: the saved menu with today's sold-out marks applied. */
@@ -157,13 +143,16 @@ const strikes = new Map<string, { count: number; until: number }>()
 const MAX_STRIKES = 8
 const LOCK_MS = 5 * 60000
 
-/** Checks a typed PIN: the one that opens the till, or the manager PIN. Wrong guesses count against the device. */
+/**
+ * Checks a typed PIN: the one that opens the till, or the manager PIN. A PIN that matches no one first refreshes the
+ * staff list (throttled) and is checked once more; the whole try counts as one wrong guess against the device.
+ */
 async function checkPin(req: http.IncomingMessage, given: unknown, need: 'staff' | 'manager'): Promise<Who> {
   const ip = req.socket.remoteAddress ?? '?'
   const s = strikes.get(ip)
   if (s && s.until > Date.now()) throw new PinError('Too many wrong PINs. Try again in 5 minutes.', 429)
   const pin = typeof given === 'string' ? given : ''
-  const who = need === 'manager' ? await pins.checkManager(pin) : await pins.checkGate(pin)
+  const who = await checkPinFresh(() => (need === 'manager' ? pins.checkManager(pin) : pins.checkGate(pin)), staff.soon)
   if (who) {
     strikes.delete(ip)
     return who

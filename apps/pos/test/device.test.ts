@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { hashStaffPin } from '@kennko/core/staff-pin'
-import { applyDeviceInfo, fetchDeviceInfo, forgetDevice, loadDevice, pairWithApi, saveDevice, type DeviceFile } from '../server/device.ts'
+import { applyDeviceInfo, checkPinFresh, createStaffRefresh, fetchDeviceInfo, forgetDevice, loadDevice, pairWithApi, saveDevice, type DeviceFile } from '../server/device.ts'
 import { createPinDirectory, type CachedStaff } from '../server/pins.ts'
 import { createSessions } from '../server/sessions.ts'
 import { createStore } from '../server/store.ts'
@@ -210,5 +210,76 @@ describe('applying a refresh (Review Focus 4)', () => {
     // A second revoked answer keeps the first time.
     applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'revoked' }, dir, T + 5000)
     expect(loadDevice(dir)?.revokedAt).toBe(T)
+  })
+})
+
+describe('a new PIN on a wrong try (final fix 1)', () => {
+  let carl: CachedStaff
+  beforeAll(async () => { carl = { id: 'b-2', fullName: 'Carl', role: 'barista', pinHash: await hashStaffPin('333333') } })
+
+  function paired(respond: () => Response) {
+    const t = till([bea, ana])
+    const dir = tempDir()
+    saveDevice(dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
+    let clock = T
+    let changes = 0
+    const api = fakeFetch(respond)
+    const refresh = createStaffRefresh({
+      dataDir: dir, apiUrl: URL_, store: t.store, sessions: t.sessions, pins: t.pins,
+      onChange: () => { changes += 1 }, fetchFn: api.fn, now: () => clock,
+    })
+    return { ...t, dir, api, refresh, tick: (ms: number) => { clock += ms }, changes: () => changes }
+  }
+
+  it('fetches the staff list and lets a just-issued PIN in on the same try', async () => {
+    const t = paired(() => reply(200, { staff: [bea, ana, carl] }))
+    const who = await checkPinFresh(() => t.pins.checkGate('333333'), t.refresh.soon)
+    expect(who).toEqual({ staffId: 'b-2', role: 'staff', name: 'Carl' })
+    expect(t.api.calls).toHaveLength(1)
+    expect(t.changes()).toBe(1)
+  })
+
+  it('does not ask the API when the PIN is right', async () => {
+    const t = paired(() => reply(200, { staff: [bea, ana] }))
+    expect(await checkPinFresh(() => t.pins.checkGate('111111'), t.refresh.soon)).not.toBeNull()
+    expect(t.api.calls).toHaveLength(0)
+  })
+
+  it('asks at most once every 30 seconds', async () => {
+    const t = paired(() => reply(200, { staff: [bea, ana] }))
+    expect(await checkPinFresh(() => t.pins.checkGate('999999'), t.refresh.soon)).toBeNull()
+    expect(await checkPinFresh(() => t.pins.checkGate('999999'), t.refresh.soon)).toBeNull()
+    t.tick(29_999)
+    expect(await checkPinFresh(() => t.pins.checkGate('999999'), t.refresh.soon)).toBeNull()
+    expect(t.api.calls).toHaveLength(1)
+    t.tick(1)
+    expect(await checkPinFresh(() => t.pins.checkGate('999999'), t.refresh.soon)).toBeNull()
+    expect(t.api.calls).toHaveLength(2)
+  })
+
+  it('checks the PIN only once more after the refresh', async () => {
+    const t = paired(() => reply(200, { staff: [bea, ana] }))
+    let checks = 0
+    expect(await checkPinFresh(async () => { checks += 1; return null }, t.refresh.soon)).toBeNull()
+    expect(checks).toBe(2)
+    checks = 0
+    expect(await checkPinFresh(async () => { checks += 1; return null }, t.refresh.soon)).toBeNull()
+    expect(checks).toBe(1) // throttled: no refresh, no second check
+  })
+
+  it('changes nothing when the API is offline', async () => {
+    const t = paired(() => { throw new TypeError('fetch failed') })
+    expect(await checkPinFresh(() => t.pins.checkGate('333333'), t.refresh.soon)).toBeNull()
+    expect(t.store.staffCache()).toHaveLength(2)
+    expect(t.changes()).toBe(0)
+  })
+
+  it('does not ask when the till is not paired, or was disconnected in admin', async () => {
+    const t = paired(() => reply(200, { staff: [bea, ana, carl] }))
+    forgetDevice(t.dir)
+    expect(await t.refresh.soon()).toBe(false)
+    saveDevice(t.dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: T - 500 })
+    expect(await t.refresh.soon()).toBe(false)
+    expect(t.api.calls).toHaveLength(0)
   })
 })
