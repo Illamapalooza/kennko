@@ -7,6 +7,14 @@ import { getServerClient } from '@/lib/supabase/server'
 import { allowRequest } from '@/lib/orders/rate-limit'
 import { sendEmail, activeStaffEmails } from '@/lib/email/send'
 import { staffAlertSubject, staffAlertBody } from '@/lib/email/templates'
+import { formatManilaDateTime } from '@/lib/format/time'
+import { parseManilaDateTime } from '@kennko/core'
+
+/** The submitted time may carry +08:00 or no offset; either way staff read it in Manila time. */
+function manilaTime(value: string | undefined): string {
+  const when = value ? parseManilaDateTime(value) : null
+  return when ? formatManilaDateTime(when.toISOString()) : (value ?? '')
+}
 
 /** What the staff alert reads from the customer's own submission. */
 type Submitted = {
@@ -122,7 +130,7 @@ export async function POST(request: NextRequest) {
         ticket: created.ticket,
         customerName: submitted.name ?? '',
         fulfilment,
-        fulfilAt: submitted.fulfilAt ?? '',
+        fulfilAt: manilaTime(submitted.fulfilAt),
         totalCentavos: created.totalCentavos,
         deliveryAddress: fulfilment === 'delivery' ? (submitted.address ?? null) : null,
         // Names come from the API's repriced result, not the request.

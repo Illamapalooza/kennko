@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import type { OrderStage } from '@kennko/core'
 import { lookupOrder } from '@/lib/orders/lookup'
 import { formatPesos } from '@/lib/money'
+import { formatManilaDateTime } from '@/lib/format/time'
 import '../order.css'
 
 export const dynamic = 'force-dynamic'
@@ -62,7 +63,7 @@ export default async function OrderStatusPage({
               ? ` to ${order.deliveryAddress}`
               : ''}
           </p>
-          <p>{new Date(order.fulfilAt).toLocaleString('en-PH')}</p>
+          <p>{formatManilaDateTime(order.fulfilAt)}</p>
         </div>
       </div>
     </div>

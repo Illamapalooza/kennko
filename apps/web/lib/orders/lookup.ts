@@ -26,7 +26,7 @@ export async function lookupOrder(code: string): Promise<PublicOrder | null> {
   const { data } = await db
     .from('orders')
     .select(
-      'order_code, prep_status, payment_status, ticket_series, ticket_number, fulfilment, fulfil_at, total_centavos, delivery_address, order_lines ( item_name, variant_label, quantity, ice_level, ice_serve, note, order_line_options ( option_name ) )',
+      'order_code, prep_status, payment_status, ticket_series, ticket_number, fulfilment, fulfil_at, total_centavos, delivery_address, cancelled_at, order_lines ( item_name, variant_label, quantity, ice_level, ice_serve, note, order_line_options ( option_name ) )',
     )
     .eq('order_code', code.toUpperCase())
     .maybeSingle()
@@ -35,7 +35,7 @@ export async function lookupOrder(code: string): Promise<PublicOrder | null> {
 
   return {
     orderCode: data.order_code,
-    stage: orderStage(data.prep_status, data.payment_status),
+    stage: orderStage(data.prep_status, data.payment_status, data.cancelled_at != null),
     ticket: ticketLabel(data.ticket_series, data.ticket_number),
     fulfilment: data.fulfilment,
     fulfilAt: data.fulfil_at,

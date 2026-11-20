@@ -80,6 +80,21 @@ describe('confirmPayment', () => {
   })
 })
 
+describe('customer email is awaited', () => {
+  it('confirm does not resolve until the email send finishes', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    let finish: (v: undefined) => void = () => {}
+    sendEmail.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    let settled = false
+    const pending = confirmPayment('p1').then((r) => { settled = true; return r })
+    await vi.waitFor(() => expect(sendEmail).toHaveBeenCalledTimes(1))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(settled).toBe(false)
+    finish(undefined)
+    expect(await pending).toEqual({ ok: true })
+  })
+})
+
 describe('email trouble never reaches the UI', () => {
   it('confirm still returns ok and revalidates when the email lookup throws', async () => {
     staffFetch.mockResolvedValue(reply(200, { ok: true }))
@@ -144,11 +159,47 @@ describe('advanceStatus', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
-  it.each(['STATUS_CHANGED', 'BAD_TRANSITION'])('maps 409 %s', async (code) => {
-    staffFetch.mockResolvedValue(reply(409, { code, message: 'x' }))
+  it('maps STATUS_CHANGED to the changed-elsewhere message', async () => {
+    staffFetch.mockResolvedValue(reply(409, { code: 'STATUS_CHANGED', message: 'x' }))
     expect(await advanceStatus('o1', 'ready')).toEqual({
       ok: false, message: 'This order changed on another screen. Refresh to see it.',
     })
+  })
+
+  it('maps BAD_TRANSITION to the step-not-allowed message', async () => {
+    staffFetch.mockResolvedValue(reply(409, { code: 'BAD_TRANSITION', message: 'x' }))
+    expect(await advanceStatus('o1', 'ready')).toEqual({
+      ok: false, message: "That step isn't allowed for this order. Refresh to see where it is.",
+    })
+  })
+
+  it('maps FORBIDDEN outside cancel to the ask-the-owner message', async () => {
+    staffFetch.mockResolvedValue(reply(403, { code: 'FORBIDDEN', message: 'x' }))
+    expect(await advanceStatus('o1', 'ready')).toEqual({
+      ok: false, message: "Your account can't do that. Ask the owner.",
+    })
+  })
+
+  it('maps 401 to the session-ended message', async () => {
+    staffFetch.mockResolvedValue(reply(401, { code: 'UNAUTHENTICATED', message: 'x' }))
+    expect(await advanceStatus('o1', 'ready')).toEqual({
+      ok: false, message: 'Your session ended. Sign in again.',
+    })
+  })
+
+  it('maps 404 to the no-longer-exists message', async () => {
+    staffFetch.mockResolvedValue(reply(404, { code: 'NOT_FOUND', message: 'x' }))
+    expect(await advanceStatus('o1', 'ready')).toEqual({ ok: false, message: 'This order no longer exists.' })
+  })
+
+  it.each([
+    [400, { code: 'INVALID', message: 'prepStatus must be one of ...' }],
+    [409, { code: 'COUNTER_ORDER', message: 'Counter orders are managed at the till' }],
+    [500, { code: 'INTERNAL', message: 'relation "orders" does not exist' }],
+    [502, 'not json'],
+  ])('never shows the raw API message (%s)', async (status, body) => {
+    staffFetch.mockResolvedValue(reply(status, body))
+    expect(await advanceStatus('o1', 'ready')).toEqual({ ok: false, message: 'Something went wrong. Try again.' })
   })
 })
 

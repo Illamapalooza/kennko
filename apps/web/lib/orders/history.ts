@@ -18,7 +18,7 @@ export type HistoryOrder = {
   totalCentavos: number
   claimedByEmail: boolean
   items: {
-    name: string; variantLabel: string; quantity: number
+    name: string; variantCode: string; variantLabel: string; quantity: number
     ice: string | null; note: string | null; modifiers: string[]
   }[]
 }
@@ -37,8 +37,8 @@ export async function getOrderHistory(customer: Customer): Promise<HistoryOrder[
 
   const columns = `id, order_code, prep_status, payment_status, ticket_series, ticket_number, fulfilment, fulfil_at, created_at,
      delivery_address, subtotal_centavos, delivery_fee_centavos, total_centavos,
-     customer_user_id, customer_email,
-     order_lines ( item_name, variant_label, quantity, ice_level, ice_serve, note,
+     customer_user_id, customer_email, cancelled_at,
+     order_lines ( item_name, variant_code, variant_label, quantity, ice_level, ice_serve, note,
                    order_line_options ( option_name ) )`
 
   const filter = customer.emailConfirmed
@@ -62,8 +62,9 @@ export async function getOrderHistory(customer: Customer): Promise<HistoryOrder[
     delivery_address: string | null
     subtotal_centavos: number; delivery_fee_centavos: number; total_centavos: number
     customer_user_id: string | null; customer_email: string
+    cancelled_at: string | null
     order_lines: {
-      item_name: string; variant_label: string; quantity: number
+      item_name: string; variant_code: string; variant_label: string; quantity: number
       ice_level: IceLevel | null; ice_serve: IceServe | null; note: string | null
       order_line_options: { option_name: string }[]
     }[]
@@ -72,7 +73,7 @@ export async function getOrderHistory(customer: Customer): Promise<HistoryOrder[
   return ((data ?? []) as Row[]).map((r) => ({
     id: r.id,
     orderCode: r.order_code,
-    stage: orderStage(r.prep_status, r.payment_status),
+    stage: orderStage(r.prep_status, r.payment_status, r.cancelled_at != null),
     ticket: ticketLabel(r.ticket_series, r.ticket_number),
     fulfilment: r.fulfilment,
     fulfilAt: r.fulfil_at,
@@ -84,6 +85,7 @@ export async function getOrderHistory(customer: Customer): Promise<HistoryOrder[
     claimedByEmail: r.customer_user_id !== customer.id,
     items: (r.order_lines ?? []).map((i) => ({
       name: i.item_name,
+      variantCode: i.variant_code,
       variantLabel: i.variant_label,
       quantity: i.quantity,
       ice: iceSummary(i.ice_level, i.ice_serve),

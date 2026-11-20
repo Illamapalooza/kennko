@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { formatPesos } from '@/lib/money'
+import { formatManilaDateTime } from '@/lib/format/time'
 import type { OrderStage, PaymentStatus, PrepStatus } from '@kennko/core'
 import { confirmPayment, rejectPayment, advanceStatus, cancelOrder, proofUrl } from '@/app/admin/orders/actions'
 import { nextStatus, prepLabel, statusLabel, type Fulfilment } from '@/app/admin/orders/status'
@@ -31,6 +32,7 @@ export type AdminOrder = {
   gcashReference: string | null
   proofPath: string | null
   customerNote: string | null
+  cancelReason: string | null
   items: {
     name: string; variantLabel: string; quantity: number
     modifiers: string[]; ice: string | null; note: string | null
@@ -109,7 +111,7 @@ export function OrderCard({
             )}
           </>
         ) : null}
-        <p style={{ margin: '4px 0' }}>{new Date(order.fulfilAt).toLocaleString('en-PH')}</p>
+        <p style={{ margin: '4px 0' }}>{formatManilaDateTime(order.fulfilAt)}</p>
       </div>
 
       <div>
@@ -126,6 +128,7 @@ export function OrderCard({
       </div>
 
       {order.customerNote ? <p><em>Note: {order.customerNote}</em></p> : null}
+      {order.cancelReason ? <p><strong>Cancelled:</strong> {order.cancelReason}</p> : null}
 
       <div>
         <div>Subtotal {formatPesos(order.subtotalCentavos)}</div>

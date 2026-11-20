@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { formatPesos } from '@/lib/money'
+import { withManilaOffset } from '@/lib/format/time'
 import { lineTotal, cartSubtotal } from '@/lib/cart/total'
 import { validateCheckout, describeFee, ridingDistanceKm, deliveryFeeCentavos } from '@kennko/core'
 import type { CartLine, Fulfilment } from '@/lib/cart/types'
@@ -232,7 +233,7 @@ export function OrderClient({
     body.set('order', JSON.stringify({
       name: form.name, email: form.email, phone: form.phone,
       fulfilment, address: form.address, barangay: form.barangay,
-      fulfilAt: form.fulfilAt, gcashReference: form.gcashReference,
+      fulfilAt: withManilaOffset(form.fulfilAt), gcashReference: form.gcashReference,
       note: form.note,
       claimedTotalCentavos: total,
       pin: fulfilment === 'delivery' ? pin : null,

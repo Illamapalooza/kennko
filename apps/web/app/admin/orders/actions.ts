@@ -6,6 +6,7 @@ import { getAdminClient } from '@/lib/supabase/admin'
 import { requireStaff } from '@/lib/auth/session'
 import { staffFetch } from '@/lib/api/client'
 import { sendEmail } from '@/lib/email/send'
+import { formatManilaDateTime } from '@/lib/format/time'
 import {
   customerConfirmSubject, customerConfirmBody,
   customerRejectSubject, customerRejectBody,
@@ -16,12 +17,17 @@ const PROOF_BUCKET = 'payment-proofs'
 
 type Result = { ok: true } | { ok: false; message: string }
 
-const CHANGED = 'This order changed on another screen. Refresh to see it.'
-const OWNER_ONLY = 'Only the owner can cancel orders.'
 const UNREACHABLE = "Couldn't reach the server. Try again."
 
-/** Every order write goes through the API; this maps its answer to a message staff can act on. */
-async function callApi(path: string, init: { method: string; body?: unknown }): Promise<Result> {
+/**
+ * Every order write goes through the API; this maps its answer to a message staff can act on.
+ * Never the raw API message: it is written for developers, not for the counter.
+ */
+async function callApi(
+  path: string,
+  init: { method: string; body?: unknown },
+  forbidden = "Your account can't do that. Ask the owner.",
+): Promise<Result> {
   let res: Response
   try {
     res = await staffFetch(path, {
@@ -34,12 +40,16 @@ async function callApi(path: string, init: { method: string; body?: unknown }): 
     return { ok: false, message: UNREACHABLE }
   }
   if (res.ok) return { ok: true }
-  if (res.status === 409) return { ok: false, message: CHANGED }
-  if (res.status === 403) return { ok: false, message: OWNER_ONLY }
+  const body = (await res.json().catch(() => null)) as { code?: unknown } | null
+  const code = typeof body?.code === 'string' ? body.code : null
+  if (code === 'STATUS_CHANGED') return { ok: false, message: 'This order changed on another screen. Refresh to see it.' }
+  if (code === 'BAD_TRANSITION') {
+    return { ok: false, message: "That step isn't allowed for this order. Refresh to see where it is." }
+  }
+  if (code === 'FORBIDDEN' || res.status === 403) return { ok: false, message: forbidden }
   if (res.status === 401) return { ok: false, message: 'Your session ended. Sign in again.' }
-  if (res.status === 404) return { ok: false, message: 'That order no longer exists. Refresh to see it.' }
-  const body = (await res.json().catch(() => null)) as { message?: string } | null
-  return { ok: false, message: body?.message ?? 'Something went wrong. Try again.' }
+  if (res.status === 404) return { ok: false, message: 'This order no longer exists.' }
+  return { ok: false, message: 'Something went wrong. Try again.' }
 }
 
 type OrderRow = {
@@ -73,11 +83,7 @@ async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: 
       ticket: ticketLabel(row.ticket_series, row.ticket_number),
       customerName: row.customer_name,
       fulfilment: row.fulfilment,
-      fulfilAt: row.fulfil_at
-        ? new Date(row.fulfil_at).toLocaleString('en-PH', {
-            timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short',
-          })
-        : '',
+      fulfilAt: row.fulfil_at ? formatManilaDateTime(row.fulfil_at) : '',
       totalCentavos: row.total_centavos,
       deliveryAddress: row.delivery_address,
       items: (row.order_lines ?? []).map((l) => ({
@@ -89,14 +95,18 @@ async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: 
   }
 }
 
-/** The API call already succeeded; a mail problem must never turn that into an error for staff. */
+/**
+ * The API call already succeeded; a mail problem must never turn that into an error for staff.
+ * The send is awaited (it never throws): it is the customer's only confirmation, and a serverless
+ * function may be frozen as soon as the action returns.
+ */
 async function notifyCustomer(
   paymentId: string,
   compose: (data: OrderEmailData) => { subject: string; text: string },
 ) {
   try {
     const mail = await emailFor(paymentId)
-    if (mail) void sendEmail({ to: [mail.to], ...compose(mail.data) })
+    if (mail) await sendEmail({ to: [mail.to], ...compose(mail.data) })
   } catch (cause) {
     console.error('Customer email failed after the payment action succeeded', cause)
   }
@@ -150,9 +160,11 @@ export async function cancelOrder(orderId: string, reason: string): Promise<Resu
   await requireStaff()
   const why = reason.trim()
   if (!why) return { ok: false, message: 'Give a reason for cancelling.' }
-  const result = await callApi(`/v1/orders/${encodeURIComponent(orderId)}/cancel`, {
-    method: 'POST', body: { reason: why },
-  })
+  const result = await callApi(
+    `/v1/orders/${encodeURIComponent(orderId)}/cancel`,
+    { method: 'POST', body: { reason: why } },
+    'Only the owner can cancel orders.',
+  )
   if (result.ok) refresh()
   return result
 }

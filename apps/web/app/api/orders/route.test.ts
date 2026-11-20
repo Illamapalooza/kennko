@@ -134,6 +134,16 @@ describe('POST /api/orders', () => {
     expect(args[0].subject).toContain('(pickup)')
   })
 
+  it('shows the pickup time in the staff alert in Manila time, not the raw string', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(created, 201)))
+    await POST(makeRequest())
+    const [{ text }] = sendEmail.mock.calls[0] as unknown as [{ text: string }]
+    // 07:00 UTC is 3:00 PM in Manila.
+    expect(text).toContain('Nov 21, 2026')
+    expect(text).toContain('3:00 PM')
+    expect(text).not.toContain('2026-11-21T07:00:00Z')
+  })
+
   it('answers 503 without calling fetch when ordering is disabled', async () => {
     vi.stubEnv('NEXT_PUBLIC_ORDERING_ENABLED', 'false')
     const fetchMock = vi.fn()

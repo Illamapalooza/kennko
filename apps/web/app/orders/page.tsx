@@ -85,7 +85,7 @@ function HistoryCard({
         </div>
         <span className="history-date">
           {new Date(order.createdAt).toLocaleDateString('en-PH', {
-            day: 'numeric', month: 'short', year: 'numeric',
+            timeZone: 'Asia/Manila', day: 'numeric', month: 'short', year: 'numeric',
           })}
         </span>
       </header>
@@ -97,7 +97,9 @@ function HistoryCard({
             <div className="summary-detail">
               <strong>{item.name}</strong>
               <span>
-                {item.variantLabel} · {SIZE_VOLUMES[item.variantLabel as DrinkSize] ?? ''}
+                {SIZE_VOLUMES[item.variantCode as DrinkSize]
+                  ? `${item.variantLabel} · ${SIZE_VOLUMES[item.variantCode as DrinkSize]}`
+                  : item.variantLabel}
               </span>
               {item.modifiers.length > 0 ? <span>{item.modifiers.join(', ')}</span> : null}
               {item.ice ? <span>{item.ice}</span> : null}

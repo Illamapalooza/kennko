@@ -54,7 +54,7 @@ export async function recentOrders(limit = 5): Promise<RecentOrder[]> {
   const { data, error } = await db
     .from('orders')
     .select(
-      'id, order_code, customer_name, prep_status, payment_status, ticket_series, ticket_number, total_centavos',
+      'id, order_code, customer_name, prep_status, payment_status, ticket_series, ticket_number, total_centavos, cancelled_at',
     )
     .eq('channel', 'online')
     .order('created_at', { ascending: false })
@@ -68,7 +68,7 @@ export async function recentOrders(limit = 5): Promise<RecentOrder[]> {
     orderCode: r.order_code as string,
     ticket: ticketLabel(r.ticket_series as 'C' | 'W', r.ticket_number as number),
     customerName: r.customer_name as string,
-    stage: orderStage(r.prep_status as PrepStatus, r.payment_status as PaymentStatus),
+    stage: orderStage(r.prep_status as PrepStatus, r.payment_status as PaymentStatus, r.cancelled_at != null),
     totalCentavos: r.total_centavos as number,
   }))
 }
