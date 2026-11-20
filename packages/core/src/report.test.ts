@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { summariseDay, type DayLineRow, type DayOrderRow, type DayRows, type DayShiftRow, type HeldSaleRow, type ShiftSaleRow } from './report.ts'
 
 const DAY = '2026-11-21'
+const sum = <T>(xs: T[], f: (x: T) => number) => xs.reduce((s, x) => s + f(x), 0)
 let n = 0
 
 /** A counted cash counter sale on till A unless overridden. */
@@ -147,6 +148,26 @@ describe('summariseDay', () => {
     expect(r.sales.counter.byTill).toEqual([{ deviceName: 'Till A', orders: 2, totalCentavos: 39500, firstTicket: 'C1', lastTicket: `C${voided.ticketNumber}` }])
   })
 
+  test('every order of the day lands in exactly one bucket, and the buckets sum to the day', () => {
+    const orders = [
+      ...fourSales(),
+      order({ totalCentavos: 12000, prepStatus: 'cancelled', paymentStatus: 'refunded' }),
+      online({ totalCentavos: 18000, prepStatus: 'cancelled', paymentStatus: 'refunded' }),
+      online({ totalCentavos: 9000, prepStatus: 'cancelled', paymentStatus: 'rejected' }),
+      online({ totalCentavos: 7500, prepStatus: 'placed', paymentStatus: 'pending_verification' }),
+      // Neither a sale nor any named bucket: a legacy unpaid row, and a cancelled online order never refunded.
+      order({ totalCentavos: 4000, paymentStatus: 'unpaid', flags: ['legacy'], payments: [] }),
+      online({ totalCentavos: 6000, prepStatus: 'cancelled', paymentStatus: 'paid' }),
+      online({ totalCentavos: 3000, prepStatus: 'cancelled', paymentStatus: 'pending_verification' }),
+    ]
+    const r = summariseDay(rows({ orders }))
+    expect(r.other).toEqual({ orders: 3, totalCentavos: 13000 })
+    const buckets = [r.sales, r.cancelled.counterVoids, r.cancelled.onlineRefunded, r.cancelled.onlineRejected, r.awaitingVerification, r.other]
+    expect(buckets.map((b) => b.orders)).toEqual([4, 1, 1, 1, 1, 3])
+    expect(sum(buckets, (b) => b.orders)).toBe(orders.length)
+    expect(sum(buckets, (b) => b.totalCentavos)).toBe(sum(orders, (o) => o.totalCentavos))
+  })
+
   test('a counted order pays only with recorded or verified payments', () => {
     const o = order({
       totalCentavos: 10000,
@@ -274,6 +295,7 @@ describe('summariseDay', () => {
       payments: { cashCentavos: 0, gcashCentavos: 0 },
       cancelled: { counterVoids: zero, onlineRefunded: zero, onlineRejected: zero },
       awaitingVerification: zero,
+      other: zero,
       items: [],
       shifts: [],
       flagged: [],

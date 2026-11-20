@@ -24,7 +24,12 @@ export type DayLineRow = { orderId: string; itemName: string; variantLabel: stri
 
 /**
  * A shift opened on the day (Manila day of `openedAt`). `closedAt` is the till's close time (or the owner's, for an
- * admin close); `closeReceivedAt` is when the server stored that close, so it compares with a sale's `receivedAt`.
+ * admin close); `closeReceivedAt` is when the server stored that close, so it compares with a sale's `receivedAt`
+ * (both server times). It is `shifts.updated_at` once closed, so:
+ * - sales freed by an admin close (the retry runs under the same `now`) count as on time;
+ * - a till close that replaces an admin close moves it forward to the replacement, so a sale stored between the
+ *   two is not counted late;
+ * - a legacy shift has none (its orders came by import), so it has no late sales.
  */
 export type DayShiftRow = {
   id: string
@@ -85,6 +90,8 @@ export type DayReport = {
   payments: { cashCentavos: number; gcashCentavos: number }
   cancelled: { counterVoids: Tally; onlineRefunded: Tally; onlineRejected: Tally }
   awaitingVerification: Tally
+  /** Every other order of the day: e.g. a legacy unpaid row, or a cancelled online order never refunded or rejected. */
+  other: Tally
   items: { name: string; variant: string; quantity: number; totalCentavos: number }[]
   shifts: {
     id: string
@@ -190,7 +197,8 @@ function shifts(rows: DayShiftRow[], sales: ShiftSaleRow[]): DayReport['shifts']
  * The day report (Rulings 4, 7, 8). Pure: the API reads the rows, the web renders the result.
  *
  * - A sale is an order that is not cancelled and is paid; cash and GCash are its recorded or verified payments.
- * - Voids, online refunds, online rejections and payments awaiting verification are each listed apart.
+ * - Voids, online refunds, online rejections and payments awaiting verification are each listed apart; every
+ *   other order is in `other`, so each order of the day is in exactly one bucket.
  * - Legacy orders are inside the sales; `legacy` counts those sales. `flagged` lists orders with any other flag.
  * - A shift's cash sales are all its counted orders, whatever their day. Its expected is the till's, or float + cash
  *   sales + in − out when the till sent none (an admin close, or still open). A late sale was stored after the close.
@@ -201,6 +209,12 @@ export function summariseDay(rows: DayRows): DayReport {
   const counter = counted.filter((o) => o.channel === 'counter')
   const online = counted.filter((o) => o.channel === 'online')
   const cancelled = (o: DayOrderRow) => o.prepStatus === 'cancelled'
+  // Every order lands in exactly one of these, or in the sales; whatever is left is `other`.
+  const counterVoids = rows.orders.filter((o) => o.channel === 'counter' && cancelled(o))
+  const onlineRefunded = rows.orders.filter((o) => o.channel === 'online' && o.paymentStatus === 'refunded')
+  const onlineRejected = rows.orders.filter((o) => o.channel === 'online' && o.paymentStatus === 'rejected')
+  const awaiting = rows.orders.filter((o) => !cancelled(o) && o.paymentStatus === 'pending_verification')
+  const bucketed = new Set([...counted, ...counterVoids, ...onlineRefunded, ...onlineRejected, ...awaiting])
 
   return {
     date: rows.date,
@@ -217,11 +231,12 @@ export function summariseDay(rows: DayRows): DayReport {
     },
     payments: { cashCentavos: paid(counted, 'cash'), gcashCentavos: paid(counted, 'gcash') },
     cancelled: {
-      counterVoids: tally(rows.orders.filter((o) => o.channel === 'counter' && cancelled(o))),
-      onlineRefunded: tally(rows.orders.filter((o) => o.channel === 'online' && o.paymentStatus === 'refunded')),
-      onlineRejected: tally(rows.orders.filter((o) => o.channel === 'online' && o.paymentStatus === 'rejected')),
+      counterVoids: tally(counterVoids),
+      onlineRefunded: tally(onlineRefunded),
+      onlineRejected: tally(onlineRejected),
     },
-    awaitingVerification: tally(rows.orders.filter((o) => !cancelled(o) && o.paymentStatus === 'pending_verification')),
+    awaitingVerification: tally(awaiting),
+    other: tally(rows.orders.filter((o) => !bucketed.has(o))),
     items: items(rows.lines, new Set(counted.map((o) => o.id))),
     shifts: shifts(rows.shifts, rows.shiftSales),
     flagged: rows.orders

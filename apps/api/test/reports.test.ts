@@ -71,6 +71,12 @@ async function expectAddsUp(r: DayReport) {
   expect(r.payments).toEqual({ cashCentavos: sums.cash, gcashCentavos: sums.gcash })
   expect(r.sales.counter.totalCentavos + r.sales.online.totalCentavos).toBe(r.sales.totalCentavos)
   expect(r.payments.cashCentavos + r.payments.gcashCentavos).toBe(r.sales.totalCentavos)
+  // Every order of the day is in exactly one bucket.
+  const [all] = await db.sql<{ n: number; total: number }[]>`
+    select count(*)::int as n, coalesce(sum(total_centavos), 0)::int as total from orders where business_day = ${r.date}`
+  const buckets = [r.sales, r.cancelled.counterVoids, r.cancelled.onlineRefunded, r.cancelled.onlineRejected, r.awaitingVerification, r.other]
+  expect(buckets.reduce((s, b) => s + b.orders, 0)).toBe(all!.n)
+  expect(buckets.reduce((s, b) => s + b.totalCentavos, 0)).toBe(all!.total)
 }
 
 /** A paid online pickup with its verified GCash payment, inserted as the website would leave it. */
@@ -177,6 +183,48 @@ describe('the day report adds up', () => {
       ]),
     )
     expect(r.held.rows).toHaveLength(2)
+  })
+
+  test('a legacy order the import rejected is listed held with its ticket and total, outside the sales', async () => {
+    const day = '2026-11-24'
+    const till = await seedDevice(db.sql, 'Till E')
+    const legacy = (ticketNumber: number, totalCentavos: number) => ({
+      id: randomUUID(),
+      shiftId: null,
+      businessDay: day,
+      ticketNumber,
+      fulfilment: 'dine_in',
+      customerName: 'Walk-in',
+      status: 'done',
+      lines: [{ menuItemId: 'latte', name: 'Latte', size: 'M', basePriceCentavos: 12000, modifiers: [], quantity: 1, iceLevel: null, iceServe: null, note: '', lineTotalCentavos: 12000 }],
+      subtotalCentavos: 12000,
+      discountCentavos: 0,
+      discountLabel: null,
+      totalCentavos,
+      payment: { id: randomUUID(), method: 'cash', tenderedCentavos: totalCentavos, changeCentavos: 0, reference: null },
+      createdAt: '2026-11-24T01:00:00.000Z',
+      voidedAt: null,
+      voidReason: null,
+      cancelledByStaff: null,
+    })
+    const good = legacy(5, 12000)
+    // The total does not follow from the lines: rejected and kept as a held receipt.
+    const bad = legacy(6, 13000)
+    const res = await api.app.request('/v1/sync/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${till.token}` },
+      body: JSON.stringify({ shifts: [], orders: [good, bad], cashMoves: [] }),
+    })
+    expect(await res.json()).toEqual({ inserted: 1, existing: 0, rejected: 1 })
+
+    const r = await report(day)
+    await expectAddsUp(r)
+    expect(r.sales).toMatchObject({ orders: 1, totalCentavos: 12000 })
+    expect(r.legacy).toEqual({ orders: 1, totalCentavos: 12000 })
+    expect(r.held.held).toEqual({ count: 1, totalCentavos: 13000 })
+    expect(r.held.rows).toEqual([
+      { deviceName: 'Till E', eventId: bad.id, result: 'held', reason: expect.stringMatching(/^invalid: legacy: /), ticketNumber: 6, totalCentavos: 13000, note: null },
+    ])
   })
 
   test("an online order on the next business day is not counted; voids, refunds and pending payments are apart", async () => {

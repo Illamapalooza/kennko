@@ -61,7 +61,8 @@ const counted = (sql: Sql) => sql`(o.prep_status <> 'cancelled' and o.payment_st
 /**
  * Everything the day report needs for `date` (a valid `YYYY-MM-DD`), read as rows; `summariseDay` does the sums.
  * Orders count on their business day; shifts on the Manila day they opened, with every counted sale of theirs
- * whatever its day; held and set-aside sales on the business day their payload names.
+ * whatever its day; held and set-aside sales (pushed, or legacy rows the import rejected) on the business day their
+ * payload names.
  */
 export async function readDayRows(sql: Sql, date: string): Promise<DayRows> {
   const orders = await sql<OrderRow[]>`
@@ -117,7 +118,7 @@ export async function readDayRows(sql: Sql, date: string): Promise<DayRows> {
       e.payload->'totalCentavos' as total, e.resolve_note
     from sync_events e
     join devices d on d.id = e.device_id
-    where e.kind = 'order.created' and e.result in ('held', 'discarded') and e.payload->>'businessDay' = ${date}
+    where e.kind in ('order.created', 'import.order') and e.result in ('held', 'discarded') and e.payload->>'businessDay' = ${date}
     order by e.received_at, e.seq`
 
   return {
