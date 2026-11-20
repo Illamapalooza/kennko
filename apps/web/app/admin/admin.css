@@ -390,5 +390,5 @@
 .till-code-box { display: grid; gap: 8px; padding: 16px; border: 2px solid var(--blue); border-radius: var(--radius-md); background: var(--white); text-align: center; }
 .till-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 2.5rem; letter-spacing: 0.15em; color: var(--blue); }
 .till-countdown { font-weight: 700; }
-.till-countdown.is-low { color: var(--amber); }
+.till-countdown.is-low { background: var(--amber-soft); border: 2px solid var(--amber); border-radius: 999px; padding: 2px 12px; justify-self: center; }
 @media (min-width: 921px) { .till-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
