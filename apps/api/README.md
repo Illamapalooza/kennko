@@ -249,7 +249,6 @@ still asks for the `config.json` PIN until the owner has a PIN.
 - Check that `api.url` is set in `apps\pos\config.json` (the API address from step 2). Without it the till cannot pair.
 - Check that `managerPin` is not empty. An empty `managerPin` blocks voids, closing the till and pairing.
 
-- On a till that is not paired, a sold-out size or add-on that came from a manual menu pull (Menu › Update from website, with a manager PIN) stays off until the till is paired: the Menu screen switches whole drinks only.
 - Reload every tablet after updating. Old tabs keep the old PIN flow until reloaded.
 - A tablet types the PIN once and stays signed in across reloads and a till restart.
 - A tablet that used both the https and the http address signs in once on each.
