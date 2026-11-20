@@ -31,8 +31,8 @@ const iso = (ms: number | null): string | null => (ms === null || ms === undefin
 
 /**
  * Gives every row still without a uid its permanent UUIDv5, "<deviceId>:<table>:<localId>" (orders also get their
- * payment's, "<deviceId>:payments:<localId>"). A row that has a uid is never touched, so pairing again with another
- * device id changes nothing. Returns how many rows got one.
+ * payment's, "<deviceId>:payments:<localId>"). A uid already there is never changed, so pairing again with another
+ * device id changes nothing. Returns how many rows got a uid or a payment uid.
  */
 export function assignLegacyIds(store: Store, deviceId: string): number {
   return inTx(store, () => {
@@ -48,6 +48,13 @@ export function assignLegacyIds(store: Store, deviceId: string): number {
         else update.run(uid, id)
         set++
       }
+    }
+    // An order with a uid but no payment uid would never be offered (the chunk needs both): give it its payment's.
+    const noPayment = store.db.prepare('select id from orders where uid is not null and payment_uid is null order by id').all() as { id: number }[]
+    const setPayment = store.db.prepare('update orders set payment_uid = ? where id = ? and payment_uid is null')
+    for (const { id } of noPayment) {
+      setPayment.run(uuid5(KENNKO_TILL_NS, `${deviceId}:payments:${id}`), id)
+      set++
     }
     return set
   })
@@ -161,20 +168,36 @@ export function nextImportChunk(store: Store): { chunk: ImportChunk; upTo: numbe
   })
 }
 
+/** The kv key holding the outbox seq a chunk's ack may delete up to, fixed when that chunk was first sent (Ruling P4-6). */
+const UPTO_KEY = 'import_upto'
+
+/**
+ * Call just before sending a chunk. The first send fixes the ack's delete bound; a resend after a lost answer keeps
+ * it, so a void or close written between the two sends is pushed after the import instead of being deleted (the
+ * resend is answered `existing` and changes nothing on the website).
+ */
+export function noteImportSend(store: Store, upTo: number): void {
+  if (store.kvGet(UPTO_KEY) === null) store.kvSet(UPTO_KEY, String(upTo))
+}
+
 /**
  * The API has the chunk: its rows are no longer legacy, and the outbox events of those rows written before the chunk
- * was read (`seq <= upTo`) go too, since the import already carried their latest state (Ruling 9). Later events stay
- * and are pushed as usual. One transaction.
+ * was first sent go too (`seq <=` the bound saved by `noteImportSend`, else `upTo`), since the import carried their
+ * state (Ruling 9, P4-6). Later events stay and are pushed as usual; if the first send never arrived they re-apply
+ * harmlessly. One transaction, which also clears the saved bound.
  */
 export function ackImportChunk(store: Store, rows: ImportRow[], upTo: number): void {
   if (rows.length === 0) return
   const db = store.db
   inTx(store, () => {
+    const saved = store.kvGet(UPTO_KEY)
+    const bound = saved === null ? upTo : Number(saved)
     const drop = db.prepare('delete from outbox where entity = ? and entity_local_id = ? and seq <= ?')
     const done = Object.fromEntries(TABLES.map((t) => [t, db.prepare(`update ${t} set needs_import = 0 where id = ?`)]))
     for (const { table, localId } of rows) {
       done[table]!.run(localId)
-      drop.run(ENTITY[table], localId, upTo)
+      drop.run(ENTITY[table], localId, bound)
     }
+    db.prepare('delete from kv where key = ?').run(UPTO_KEY)
   })
 }

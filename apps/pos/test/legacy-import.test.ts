@@ -119,6 +119,17 @@ describe('assignLegacyIds', () => {
     again.close()
   })
 
+  it('gives a payment uid to an order that has a uid but none for its payment, so it is offered', () => {
+    const store = createStore(oldFile())
+    store.db.prepare("update orders set uid = '33333333-3333-4333-8333-333333333333' where id = 1").run()
+    expect(assignLegacyIds(store, 'D')).toBe(4)
+    expect(store.db.prepare('select uid, payment_uid from orders where id = 1').get())
+      .toEqual({ uid: '33333333-3333-4333-8333-333333333333', payment_uid: uuid5(KENNKO_TILL_NS, 'D:payments:1') })
+    expect(drain(store).flatMap((c) => c.orders)).toHaveLength(2)
+    expect(importRemaining(store)).toBe(0)
+    store.close()
+  })
+
   it('never touches a row created after the upgrade', () => {
     const store = createStore(oldFile())
     const shift = store.startShift(0, T + 200_000, null)
@@ -244,14 +255,24 @@ describe('ackImportChunk (Review Focus 5)', () => {
 })
 
 describe('the import inside the sync loop', () => {
-  function setup() {
+  /**
+   * A paired till on an upgraded pos.db and a fake API that remembers what it stored: a row it already has is answered
+   * `existing`, ticket 5 is `rejected` (kept as a held receipt). `lose(n)`: the n-th import is stored but the till only
+   * sees a 503 (a lost response). `fail(n)`: the n-th import is not stored at all.
+   */
+  function setup(opts: { orders?: number; open?: boolean; status?: string; newShift?: boolean } = {}) {
     const dataDir = tempDir()
     saveDevice(dataDir, { deviceId: 'D', name: 'Counter', token: TOKEN, pairedAt: T, revokedAt: null })
-    const store = createStore(oldFile({ orders: 250 }))
-    store.startShift(0, T + 200_000, null)
-    store.createOrder(menu, sale, T + 200_001, null)
+    const store = createStore(oldFile({ orders: opts.orders ?? 250, open: opts.open, status: opts.status }))
+    if (opts.newShift !== false) {
+      store.startShift(0, T + 200_000, null)
+      store.createOrder(menu, sale, T + 200_001, null)
+    }
     const calls: { path: string; body: any }[] = []
-    let failImport: number | null = null
+    const stored = new Set<string>()
+    const fails = new Set<number>()
+    const losses = new Set<number>()
+    let answer: ((n: number) => unknown) | null = null
     let imports = 0
     const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
     const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
@@ -260,9 +281,16 @@ describe('the import inside the sync loop', () => {
       calls.push({ path: p, body })
       if (p === '/v1/sync/import') {
         imports++
-        if (imports === failImport) return json(503, { code: 'UNAVAILABLE', message: 'down' })
-        const n = body.shifts.length + body.orders.length + body.cashMoves.length
-        return json(200, { inserted: n - 1, existing: 0, rejected: 1 })
+        if (fails.has(imports)) return json(503, { code: 'UNAVAILABLE', message: 'down' })
+        const out = { inserted: 0, existing: 0, rejected: 0 }
+        for (const r of [...body.shifts, ...body.orders, ...body.cashMoves]) {
+          if (stored.has(r.id)) out.existing++
+          else if (r.ticketNumber === 5) out.rejected++
+          else out.inserted++
+          stored.add(r.id)
+        }
+        if (losses.has(imports)) return json(503, { code: 'UNAVAILABLE', message: 'down' })
+        return json(200, answer ? answer(body.shifts.length + body.orders.length + body.cashMoves.length) : out)
       }
       if (p === '/v1/sync/push') return json(200, { results: body.events.map((e: SyncEvent) => ({ id: e.id, result: 'applied', reason: null, flags: [] })), held: 0 })
       if (p === '/v1/sync/pull') return json(200, { menu: null, soldOut: [], staff: [], shop: { name: 'K', address: 'B', phone: null } } satisfies PullState)
@@ -272,34 +300,102 @@ describe('the import inside the sync loop', () => {
     const pins = createPinDirectory({ staffPin: '1234', managerPin: '0000', staff: () => store.staffCache() })
     const timers = { set: (() => 0) as unknown as typeof setTimeout, clear: (() => {}) as unknown as typeof clearTimeout }
     const sync = createSync({ store, sessions, pins, dataDir, apiUrl: API, fetchFn, now: () => T + 300_000, timers, onChange: () => {} })
-    return { store, sync, calls, failSecondImport: () => { failImport = 2 } }
+    return {
+      store, sync, calls,
+      fail: (n: number) => fails.add(n), lose: (n: number) => losses.add(n), answerWith: (f: (n: number) => unknown) => { answer = f },
+      paths: () => calls.map((c) => c.path),
+      pushed: () => calls.filter((c) => c.path === '/v1/sync/push').flatMap((c) => c.body.events as SyncEvent[]),
+    }
   }
 
   it('imports everything before it pushes anything', async () => {
-    const { store, sync, calls } = setup()
+    const { store, sync, paths, pushed } = setup()
     expect(sync.status().importing).toBe(252)
     await sync.runOnce()
-    expect(calls.map((c) => c.path)).toEqual(['/v1/sync/import', '/v1/sync/import', '/v1/sync/import', '/v1/sync/push', '/v1/sync/pull'])
-    expect(calls[3]!.body.events.map((e: SyncEvent) => e.kind)).toEqual(['shift.opened', 'order.created'])
+    expect(paths()).toEqual(['/v1/sync/import', '/v1/sync/import', '/v1/sync/import', '/v1/sync/push', '/v1/sync/pull'])
+    expect(pushed().map((e) => e.kind)).toEqual(['shift.opened', 'order.created'])
     expect(store.kvGet('import_done')).toBe('1')
+    expect(store.kvGet('import_upto')).toBeNull()
     expect(sync.status()).toMatchObject({ importing: 0, offline: false, pendingEvents: 0 })
     store.close()
   })
 
   it('a failed chunk stops the run before any push; the next run resumes at row 101', async () => {
-    const { store, sync, calls, failSecondImport } = setup()
-    failSecondImport()
+    const { store, sync, calls, fail, paths } = setup()
+    fail(2)
     await sync.runOnce()
-    expect(calls.map((c) => c.path)).toEqual(['/v1/sync/import', '/v1/sync/import', '/v1/sync/pull'])
+    expect(paths()).toEqual(['/v1/sync/import', '/v1/sync/import', '/v1/sync/pull'])
     expect(sync.status()).toMatchObject({ importing: 152, offline: true, pendingEvents: 2 })
     expect(store.kvGet('import_done')).toBeNull()
 
     calls.length = 0
     await sync.runOnce()
-    expect(calls.map((c) => c.path)).toEqual(['/v1/sync/import', '/v1/sync/import', '/v1/sync/push', '/v1/sync/pull'])
+    expect(paths()).toEqual(['/v1/sync/import', '/v1/sync/import', '/v1/sync/push', '/v1/sync/pull'])
     expect(calls[0]!.body.orders[0].id).toBe(uuid5(KENNKO_TILL_NS, 'D:orders:100')) // row 101: the shift was row 1
     expect(sync.status()).toMatchObject({ importing: 0, offline: false, pendingEvents: 0 })
     expect(store.kvGet('import_done')).toBe('1')
+    store.close()
+  })
+
+  // Ruling P4-6: the delete bound is fixed at a chunk's first send, so a change made after it is never dropped.
+  it('a void after a lost answer still reaches the website', async () => {
+    const { store, sync, lose, paths, pushed } = setup({ orders: 3, open: true, status: 'queued', newShift: false })
+    lose(1)
+    await sync.runOnce() // stored by the API; the till saw a 503
+    expect(store.kvGet('import_upto')).toBe('0')
+    store.voidOrder(1, 'customer left', T + 400_000, ANA) // seq 1, after the first send
+    await sync.runOnce() // the resend is answered `existing`
+    expect(paths()).toEqual(['/v1/sync/import', '/v1/sync/pull', '/v1/sync/import', '/v1/sync/push', '/v1/sync/pull'])
+    expect(pushed()).toEqual([expect.objectContaining({ kind: 'order.cancelled', payload: { orderId: uuid5(KENNKO_TILL_NS, 'D:orders:1'), reason: 'customer left' } })])
+    expect(store.kvGet('import_upto')).toBeNull()
+    expect(sync.status()).toMatchObject({ importing: 0, pendingEvents: 0 })
+    store.close()
+  })
+
+  it('a shift close after a lost answer still reaches the website', async () => {
+    const { store, sync, lose, pushed } = setup({ orders: 3, open: true, status: 'done', newShift: false })
+    lose(1)
+    await sync.runOnce()
+    store.endShift(70000, 'counted', T + 400_000, ANA)
+    await sync.runOnce()
+    expect(pushed()).toEqual([expect.objectContaining({ kind: 'shift.closed', payload: expect.objectContaining({ shiftId: uuid5(KENNKO_TILL_NS, 'D:shifts:1'), countedCentavos: 70000 }) })])
+    expect(store.outboxEvents()).toEqual([])
+    store.close()
+  })
+
+  it('still drops events written before the first send', async () => {
+    const { store, sync, lose, pushed } = setup({ orders: 3, open: true, status: 'queued', newShift: false })
+    store.voidOrder(1, 'before', T + 1000, ANA) // seq 1, carried by the chunk itself
+    lose(1)
+    await sync.runOnce()
+    expect(store.kvGet('import_upto')).toBe('1')
+    store.advance(3, T + 2000, null) // seq 2, after the first send
+    await sync.runOnce()
+    expect(pushed().map((e) => [e.seq, e.kind])).toEqual([[2, 'order.prep_status']])
+    store.close()
+  })
+
+  it('does not ack an answer whose counts do not add up to the rows sent', async () => {
+    const { store, sync, answerWith, paths } = setup({ orders: 3, newShift: false })
+    answerWith((n) => ({ inserted: n - 1, existing: 0, rejected: 0 }))
+    await sync.runOnce()
+    expect(paths()).toEqual(['/v1/sync/import', '/v1/sync/pull'])
+    expect(sync.status()).toMatchObject({ importing: 5, offline: true })
+    store.close()
+  })
+
+  it('acks rows the API counts as rejected (it keeps them)', async () => {
+    const { store, sync } = setup({ orders: 6, newShift: false })
+    await sync.runOnce()
+    expect(sync.status()).toMatchObject({ importing: 0, offline: false })
+    store.close()
+  })
+
+  it('stops counting once the import is done', async () => {
+    const { store, sync } = setup({ orders: 3, newShift: false })
+    await sync.runOnce()
+    store.db.exec('update orders set needs_import = 1') // never happens; shows status no longer counts
+    expect(sync.status().importing).toBe(0)
     store.close()
   })
 })
