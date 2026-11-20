@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAuthAdmin } from '../src/auth-admin.js'
+import { AuthAdminError, createAuthAdmin } from '../src/auth-admin.js'
 
 type Call = { url: string; init: RequestInit }
 
@@ -68,6 +68,9 @@ describe('createAuthAdmin', () => {
     mockFetch([new Response('{"msg":"new@x.test already registered"}', { status: 422 })])
     const err = await admin().invite('new@x.test').catch((e: Error) => e)
     expect((err as Error).message).toBe('Auth invite failed (422)')
+    expect(err).toBeInstanceOf(AuthAdminError)
+    expect(err).toMatchObject({ status: 422 })
+    expect(JSON.stringify(err)).not.toContain('new@x.test')
   })
 
   it('bounds every call with a timeout and turns it into a plain error', async () => {
@@ -85,6 +88,7 @@ describe('createAuthAdmin', () => {
     const slow = createAuthAdmin('https://ref.supabase.co', 'service-key', 20)
     await expect(slow.getUser(ID)).rejects.toThrow('Auth getUser failed (timeout)')
     await expect(slow.invite('new@x.test')).rejects.toThrow('Auth invite failed (timeout)')
+    await expect(slow.invite('new@x.test')).rejects.toMatchObject({ status: 'timeout' })
     await expect(slow.deleteUser(ID)).rejects.toThrow('Auth deleteUser failed (timeout)')
     expect(signals.every((s) => s instanceof AbortSignal)).toBe(true)
   })
@@ -95,6 +99,8 @@ describe('createAuthAdmin', () => {
     }))
     const err = await admin().invite('new@x.test').catch((e: Error) => e)
     expect((err as Error).message).toBe('Auth invite failed (network)')
+    expect(err).toBeInstanceOf(AuthAdminError)
+    expect(err).toMatchObject({ status: 'network' })
   })
 
   it('deleteUser deletes the admin user and throws on 500', async () => {

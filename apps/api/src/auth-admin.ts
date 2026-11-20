@@ -10,6 +10,20 @@ export type AuthAdmin = {
   deleteUser(id: string): Promise<void>
 }
 
+/**
+ * A failed Auth admin call: the HTTP status, or `'timeout'` / `'network'`. Never the body (it can echo
+ * an email), so callers can branch on the status and log the message safely.
+ */
+export class AuthAdminError extends Error {
+  constructor(
+    readonly call: string,
+    readonly status: number | 'timeout' | 'network',
+  ) {
+    super(`Auth ${call} failed (${status})`)
+    this.name = 'AuthAdminError'
+  }
+}
+
 type GoTrueUser = { id?: string; email?: string | null; email_confirmed_at?: string | null }
 
 /** Long enough for a slow Auth, short enough that the customer sees "try again" rather than a hang. */
@@ -20,8 +34,8 @@ export function createAuthAdmin(supabaseUrl: string, serviceKey: string, timeout
   const auth = { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey }
   const userUrl = (id: string) => `${base}/admin/users/${encodeURIComponent(id)}`
 
-  function failed(what: string, res: Response): Error {
-    return new Error(`Auth ${what} failed (${res.status})`)
+  function failed(what: string, res: Response): AuthAdminError {
+    return new AuthAdminError(what, res.status)
   }
 
   /** Every call is bounded; a timeout or network error becomes a plain, email-free error. */
@@ -30,7 +44,7 @@ export function createAuthAdmin(supabaseUrl: string, serviceKey: string, timeout
       return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
     } catch (err) {
       const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
-      throw new Error(`Auth ${what} failed (${timedOut ? 'timeout' : 'network'})`)
+      throw new AuthAdminError(what, timedOut ? 'timeout' : 'network')
     }
   }
 

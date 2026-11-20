@@ -68,6 +68,9 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...env, KENNKO_WEB_KEY: 'k'.repeat(32) }).webKey).toBe('k'.repeat(32))
     expect(loadConfig({ ...env, KENNKO_WEB_KEY: '' }).webKey).toBeNull()
     expect(() => loadConfig({ ...env, KENNKO_WEB_KEY: 'k'.repeat(31) })).toThrow(/^Missing or invalid environment variable: KENNKO_WEB_KEY$/)
+    // Spaces do not count: a key of blanks, or a short key padded out, fails boot.
+    expect(() => loadConfig({ ...env, KENNKO_WEB_KEY: ' '.repeat(40) })).toThrow(/KENNKO_WEB_KEY/)
+    expect(() => loadConfig({ ...env, KENNKO_WEB_KEY: ` ${'k'.repeat(31)} ` })).toThrow(/KENNKO_WEB_KEY/)
   })
 
   it('reads VAPID keys when all three are set, treats blank as unset', () => {

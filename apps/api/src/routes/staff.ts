@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { AppDeps } from '../create-app.js'
 import { requireStaff, requireWebKey, type AppEnv } from '../auth.js'
 import { apiError, invalid } from '../http.js'
+import { AuthAdminError } from '../auth-admin.js'
 import { issuePin, toStaffView, type StaffRow } from '../staff/manage.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -53,10 +54,21 @@ export function staffRoutes(deps: AppDeps): Hono<AppEnv> {
     // with a userId is the old website, which invited them itself.
     let invited: string | null = null
     if (!userId && r !== 'barista' && email) {
+      // Already staff: answer before inviting, so no invite email goes out and no login is left behind.
+      const [taken] = await sql`select 1 from staff where lower(email) = lower(${email})`
+      if (taken) throw apiError(409, 'EMAIL_TAKEN', 'That email already belongs to a staff member.')
       try {
         userId = (await deps.authAdmin.invite(email)).userId
       } catch (err) {
         console.error('Staff invite failed:', message(err))
+        // GoTrue answers 422 when the address already has a confirmed login. Our text, never its body.
+        if (err instanceof AuthAdminError && err.status === 422) {
+          throw apiError(
+            409,
+            'ALREADY_REGISTERED',
+            'That email already has a website login. Use a different email, or ask them to sign in first.',
+          )
+        }
         throw apiError(502, 'INVITE_FAILED', 'Could not send the invite. Try again.')
       }
       invited = userId

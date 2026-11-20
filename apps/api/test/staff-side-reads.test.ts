@@ -302,14 +302,42 @@ describe('staff-side reads: proofs, customer-email data, alert list, invites', (
       expect(auth.invited).toEqual(['co@x.test'])
     })
 
-    it('the invite throws -> 502 INVITE_FAILED and no row', async () => {
-      auth.failInvite = true
+    it.each([['down'], ['timeout']] as const)('the invite fails (%s) -> 502 INVITE_FAILED and no row', async (how) => {
+      auth.failInvite = how
       vi.spyOn(console, 'error').mockImplementation(() => {})
-      const res = await post({ fullName: 'Lia', role: 'manager', email: 'lia@x.test' })
-      expect(res.status).toBe(502)
-      expect(await res.json()).toEqual({ code: 'INVITE_FAILED', message: 'Could not send the invite. Try again.' })
-      expect(await db.sql`select 1 from staff where full_name = 'Lia'`).toHaveLength(0)
-      vi.restoreAllMocks()
+      try {
+        const res = await post({ fullName: 'Lia', role: 'manager', email: 'lia@x.test' })
+        expect(res.status).toBe(502)
+        expect(await res.json()).toEqual({ code: 'INVITE_FAILED', message: 'Could not send the invite. Try again.' })
+        expect(await db.sql`select 1 from staff where full_name = 'Lia'`).toHaveLength(0)
+      } finally {
+        vi.restoreAllMocks()
+      }
+    })
+
+    it('GoTrue 422 (the email already has a login) -> 409 ALREADY_REGISTERED with the fixed text, no row', async () => {
+      auth.failInvite = 'registered'
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const res = await post({ fullName: 'Lia', role: 'manager', email: 'lia@x.test' })
+        expect(res.status).toBe(409)
+        expect(await res.json()).toEqual({
+          code: 'ALREADY_REGISTERED',
+          message: 'That email already has a website login. Use a different email, or ask them to sign in first.',
+        })
+        expect(await db.sql`select 1 from staff where full_name = 'Lia'`).toHaveLength(0)
+        expect(auth.deleted).toEqual([])
+      } finally {
+        vi.restoreAllMocks()
+      }
+    })
+
+    it('an email already on staff (any case) -> 409 EMAIL_TAKEN before any invite', async () => {
+      const res = await post({ fullName: 'Mia Two', role: 'manager', email: 'MIA@x.test' })
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: 'EMAIL_TAKEN' })
+      expect(auth.invited).toEqual([])
+      expect(auth.deleted).toEqual([])
     })
 
     it('the insert fails (no such login: FK) -> the invited login is deleted and the original error answered', async () => {
@@ -339,12 +367,16 @@ describe('staff-side reads: proofs, customer-email data, alert list, invites', (
       }
     })
 
-    it('EMAIL_TAKEN -> the login is kept', async () => {
-      auth.onInvite = createsLogin
-      const res = await post({ fullName: 'Mia Two', role: 'manager', email: 'mia@x.test' })
+    it('EMAIL_TAKEN at insert (staff added meanwhile) -> the login is kept', async () => {
+      // The row appears between the check and the insert, as from a second owner's screen.
+      auth.onInvite = async (email, id) => {
+        await createsLogin(email, id)
+        await db.sql`insert into staff (full_name, email, role) values ('Racer', ${email}, 'barista')`
+      }
+      const res = await post({ fullName: 'Lia', role: 'manager', email: 'lia@x.test' })
       expect(res.status).toBe(409)
       expect(await res.json()).toMatchObject({ code: 'EMAIL_TAKEN' })
-      expect(auth.invited).toEqual(['mia@x.test'])
+      expect(auth.invited).toEqual(['lia@x.test'])
       expect(auth.deleted).toEqual([])
     })
 

@@ -17,7 +17,7 @@ const schema = z.object({
   VAPID_PUBLIC_KEY: z.string().min(1).optional(),
   VAPID_PRIVATE_KEY: z.string().min(1).optional(),
   VAPID_SUBJECT: z.string().min(1).optional(),
-  KENNKO_WEB_KEY: z.string().min(32).optional(),
+  KENNKO_WEB_KEY: z.string().trim().min(32).optional(),
 })
 
 export function loadConfig(env: Record<string, string | undefined>): Config {

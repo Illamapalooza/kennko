@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AuthAdmin } from '../src/auth-admin.js'
+import { AuthAdminError, type AuthAdmin } from '../src/auth-admin.js'
 import type { ProofStore } from '../src/storage.js'
 
 export type FakeProofStore = ProofStore & {
@@ -40,8 +40,11 @@ export type FakeAuthAdmin = AuthAdmin & {
   users: Record<string, FakeAuthUser>
   /** Set to make getUser throw, as when Supabase Auth is down. */
   failGetUser: boolean
-  /** Set to make invite throw, as when Supabase Auth refuses or is down. */
-  failInvite: boolean
+  /**
+   * Makes invite throw as GoTrue would: `true` or `'down'` a 503, `'timeout'` a timeout, `'registered'` a 422
+   * (the email already has a login).
+   */
+  failInvite: boolean | 'down' | 'timeout' | 'registered'
   /** The id the next invites answer (GoTrue returns the existing user for a re-invite); random when null. */
   inviteAs: string | null
   /** Runs after a successful invite, e.g. to create the auth.users row GoTrue would have made. */
@@ -69,7 +72,9 @@ export function fakeAuthAdmin(users: Record<string, FakeAuthUser> = {}): FakeAut
     },
     async invite(email) {
       admin.invited.push(email)
-      if (admin.failInvite) throw new Error('Auth invite failed (422)')
+      if (admin.failInvite === 'registered') throw new AuthAdminError('invite', 422)
+      if (admin.failInvite === 'timeout') throw new AuthAdminError('invite', 'timeout')
+      if (admin.failInvite) throw new AuthAdminError('invite', 503)
       const userId = admin.inviteAs ?? randomUUID()
       await admin.onInvite?.(email, userId)
       return { userId }
