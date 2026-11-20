@@ -1,8 +1,10 @@
 import { canMovePrep, type Fulfilment, type PrepStatus } from '@kennko/core'
 import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
+import { creditOrderPoints } from '../loyalty/points.js'
 import { afterCommit } from '../push/defer.js'
 import { notifyOrder, PREP_PUSH_EVENTS } from '../push/notify.js'
+import { onOrderCancelled } from '../sync/loyalty-events.js'
 
 export type ActionResult =
   | { ok: true; prepStatus: PrepStatus; paymentStatus: string }
@@ -142,6 +144,7 @@ function cancelOrderTx(
       insert into order_events (order_id, kind, from_value, to_value, staff_id, reason)
       values (${orderId}, 'cancelled', ${order.prep_status}, 'cancelled', ${staffId},
               ${`${reason} (payment ${outcome.order})`})`
+    await onOrderCancelled(tx, orderId, deps.now())
     return { ok: true, prepStatus: 'cancelled', paymentStatus: outcome.order }
   })
 }
@@ -192,6 +195,9 @@ function decidePaymentTx(
       insert into order_events (order_id, kind, from_value, to_value, staff_id, reason)
       values (${orderId}, 'payment', 'pending_verification', ${verifying ? 'paid' : 'rejected'}, ${staffId},
               ${input.decision === 'reject' ? input.reason : null})`
+    // Linked at checkout: a verified payment earns the points; a rejected one cancels the order.
+    if (verifying) await creditOrderPoints(tx, orderId, deps.now())
+    else await onOrderCancelled(tx, orderId, deps.now())
     return verifying
       ? { ok: true, prepStatus: order.prep_status, paymentStatus: 'paid' }
       : { ok: true, prepStatus: 'cancelled', paymentStatus: 'rejected' }

@@ -14,6 +14,7 @@ import type postgres from 'postgres'
 import { readMenuVersion } from '../menu/read.js'
 import { PREP_PUSH_EVENTS } from '../push/notify.js'
 import type { Applied } from './apply.js'
+import { onOrderCancelled } from './loyalty-events.js'
 
 type Tx = postgres.TransactionSql
 type EventOf<K extends SyncEvent['kind']> = Extract<SyncEvent, { kind: K }>
@@ -135,11 +136,11 @@ export async function applyOrderCreated(
     const [row] = await tx<{ id: string }[]>`
       insert into order_lines (
         order_id, item_id, variant_id, item_name, variant_code, variant_label, unit_price_centavos,
-        quantity, line_total_centavos, ice_level, ice_serve, note, created_at
+        quantity, line_total_centavos, ice_level, ice_serve, note, is_reward, created_at
       ) values (
         ${p.orderId}, ${itemId}, ${variantId}, ${line.name}, ${line.size}, ${variant?.label ?? SIZE_LABELS[line.size]},
         ${line.basePriceCentavos}, ${line.quantity}, ${line.lineTotalCentavos}, ${line.iceLevel}, ${line.iceServe},
-        ${line.note}, ${event.occurredAt}
+        ${line.note}, ${line.reward === true}, ${event.occurredAt}
       ) returning id`
     for (const m of line.modifiers) {
       await tx`
@@ -249,7 +250,10 @@ async function applyOnlinePrep(
   return push ? { ...applied(), notify: { orderId, event: push } } : applied()
 }
 
-/** A void at the till: the order is cancelled and its live payment refunded. */
+/**
+ * A void at the till: the order is cancelled and its live payment refunded; its points are reversed, its stamp
+ * removed and any free-drink claim it used released.
+ */
 export async function applyCancelled(
   tx: Tx,
   deviceId: string,
@@ -272,5 +276,6 @@ export async function applyCancelled(
     insert into order_events (id, device_id, order_id, kind, from_value, to_value, staff_id, occurred_at, received_at, reason)
     values (${event.id}, ${deviceId}, ${orderId}, 'cancelled', ${order.prep_status}, 'cancelled', ${staffId},
       ${event.occurredAt}, ${now}, ${reason})`
+  await onOrderCancelled(tx, orderId, now)
   return applied()
 }

@@ -171,3 +171,12 @@ export const orderCreated = (p: Partial<CounterOrderPayload> & { shiftId: string
     },
     over,
   )
+
+export const customerLinked = (p: P<'customer.linked'>, over: EnvelopeOver = {}) => envelope('customer.linked', p, over)
+
+export const customerUnlinked = (p: P<'customer.unlinked'>, over: EnvelopeOver = {}) => envelope('customer.unlinked', p, over)
+
+export const stampAdded = (p: Partial<P<'stamp.added'>> & { orderId: string }, over: EnvelopeOver = {}) =>
+  envelope('stamp.added', { stampId: randomUUID(), ...p }, over)
+
+export const rewardUsed = (p: P<'reward.used'>, over: EnvelopeOver = {}) => envelope('reward.used', p, over)

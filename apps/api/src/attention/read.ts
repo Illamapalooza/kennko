@@ -8,7 +8,21 @@ type Sql = postgres.Sql | postgres.TransactionSql
  * (`reprice_mismatch`, `unknown_version`, `ticket_duplicate`, `clock_skew`) is looked at as a flagged
  * order instead, so it is not listed twice.
  */
-export const RECEIPT_FLAGS = ['already_recorded_differs', 'not_for_counter', 'online_order', 'not_paid', 'not_from_till', 'unknown_item']
+export const RECEIPT_FLAGS = [
+  'already_recorded_differs',
+  'not_for_counter',
+  'online_order',
+  'not_paid',
+  'not_from_till',
+  'unknown_item',
+  // Plan 7. `mode_was_paper` is not here: the stamp itself is listed under "Stamps to check" (Ruling 13).
+  'unknown_customer',
+  'linked_other',
+  'not_linked',
+  'no_drink',
+  'unknown_claim',
+  'claim_reused',
+]
 
 const OPEN_LIMIT = 200
 const RESOLVED_LIMIT = 100

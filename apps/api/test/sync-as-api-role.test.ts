@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import type { CounterOrderPayload, ImportOrder, ImportShift, PushResponse } from '@kennko/core'
+import { randomInt, randomUUID } from 'node:crypto'
+import { formatPublicCode, makePublicCode, type CounterOrderPayload, type ImportOrder, type ImportShift, type PushResponse } from '@kennko/core'
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose'
 import type { Hono } from 'hono'
 import type postgres from 'postgres'
@@ -16,11 +16,15 @@ import { startTestDb, type TestDb } from './pg.js'
 import {
   availability,
   cashMoved,
+  customerLinked,
+  customerUnlinked,
   orderCancelled,
   orderCreated,
   prepStatus,
+  rewardUsed,
   shiftClosed,
   shiftOpened,
+  stampAdded,
 } from './sync-helpers.js'
 
 /**
@@ -527,6 +531,97 @@ describe('every route as kennko_api', () => {
     expect(await run((tx) => dropOrderPoints(tx, orders[3]!, member))).toBe(1)
     expect(await run((tx) => balance(tx, member))).toBe(3)
     expect(await run((tx) => cardSummary(tx, member))).toMatchObject({ fullCards: 0 })
+  })
+
+  it('sync push: link, stamp, free drink, void, unlink and an admin verify/refund move cards and points as kennko_api', async () => {
+    const member = '00000000-0000-4000-8000-0000000000b2'
+    const bare = makePublicCode(randomInt)
+    const claimId = randomUUID()
+    const cardId = await asSuper(async () => {
+      await db.sql`insert into auth.users (id, email) values (${member}, 'linked@x.test')`
+      await db.sql`insert into customers (id, public_code, display_name, age_confirmed_at, privacy_accepted_at,
+          privacy_version, created_at)
+        values (${member}, ${bare}, 'Linked', ${NOW}, ${NOW}, '2026-11', ${NOW})`
+      // A full card already claimed at the till (Ruling 10), waiting for its sale.
+      const [card] = await db.sql`insert into stamp_cards (customer_id, started_at, filled_at, claimed_at, claim_id)
+        values (${member}, ${NOW}, ${NOW}, ${NOW}, ${claimId}) returning id`
+      return card!.id as string
+    })
+    const code = formatPublicCode(bare)
+    // The shift the needs-a-look case left open on this till.
+    const [open] = await asSuper(() => db.sql<{ id: string }[]>`select id from shifts where device_id = ${deviceId} and closed_at is null`)
+    const shiftId = open!.id
+    const line = {
+      menuItemId: latteId,
+      name: 'Latte',
+      size: 'M' as const,
+      basePriceCentavos: 12000,
+      modifiers: [{ id: oatId, name: 'Oat milk', priceCentavos: 2000 }],
+      quantity: 1,
+      iceLevel: 'regular' as const,
+      iceServe: 'mixed' as const,
+      note: '',
+      lineTotalCentavos: 14000,
+    }
+    const reward = { ...line, basePriceCentavos: 0, lineTotalCentavos: 2000, reward: true as const }
+    const free = orderCreated(
+      { shiftId, ticketNumber: 50, menuVersion: version, lines: [line, reward],
+        subtotalCentavos: 16000, totalCentavos: 16000,
+        payment: { id: randomUUID(), method: 'cash', tenderedCentavos: 16000, changeCentavos: 0, reference: null } },
+      { staffId: BARISTA },
+    )
+    const plain = orderCreated({ shiftId, ticketNumber: 51, menuVersion: version, lines: [line] }, { staffId: BARISTA })
+    const events = [
+      free,
+      customerLinked({ orderId: free.payload.orderId, publicCode: code }, { staffId: BARISTA }),
+      stampAdded({ orderId: free.payload.orderId }, { staffId: BARISTA }),
+      rewardUsed({ claimId, orderId: free.payload.orderId }, { staffId: BARISTA }),
+      orderCancelled({ orderId: free.payload.orderId }, { staffId: OWNER }),
+      plain,
+      customerLinked({ orderId: plain.payload.orderId, publicCode: code }, { staffId: BARISTA }),
+      stampAdded({ orderId: plain.payload.orderId }, { staffId: BARISTA }),
+      customerUnlinked({ orderId: plain.payload.orderId }, { staffId: BARISTA }),
+    ]
+    const res = await push(events)
+    expect(res.results.map((r) => [r.result, r.reason])).toEqual(events.map(() => ['applied', null]))
+
+    const state = await asSuper(async () => ({
+      card: (await db.sql`select claimed_at from stamp_cards where id = ${cardId}`)[0],
+      ledger: await db.sql`select delta, reason from points_ledger where customer_id = ${member} order by created_at, reason`,
+      stamps: await db.sql`select count(*)::int as n from stamps where customer_id = ${member}`,
+      linked: await db.sql`select count(*)::int as n from orders where customer_id = ${member}`,
+    }))
+    // The void released the claim; the free sale earned 14 and lost them; the unlinked sale left nothing.
+    expect(state.card).toBeUndefined()
+    expect(state.ledger.map((r) => [r.delta, r.reason])).toEqual([
+      [14, 'order'],
+      [-14, 'order_reversed'],
+    ])
+    expect(state.stamps[0]!.n).toBe(0)
+    expect(state.linked[0]!.n).toBe(1)
+
+    // An online order linked at checkout: verified, then refunded, through admin's routes.
+    const online = await asSuper(async () => {
+      const [o] = await db.sql`
+        insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
+          ticket_series, ticket_number, customer_name, customer_phone, customer_email, fulfil_at,
+          subtotal_centavos, total_centavos, created_at, updated_at, customer_id)
+        values ('online', 'KNK-LINK1', 'pickup', 'placed', 'pending_verification', '2026-11-21', 'W', 980, 'L',
+          '09170000000', 'linked@x.test', ${NOW}, 12000, 12000, ${NOW}, ${NOW}, ${member})
+        returning id`
+      const [p] = await db.sql`insert into payments (order_id, method, amount_centavos, reference, status)
+        values (${o!.id}, 'gcash', 12000, 'GC-LINK1', 'pending_verification') returning id`
+      return { orderId: o!.id as string, paymentId: p!.id as string }
+    })
+    await ok('POST', `/v1/payments/${online.paymentId}/verify`, baristaJwt)
+    await ok('POST', `/v1/orders/${online.orderId}/cancel`, ownerJwt, { reason: 'closed early' })
+    const after = await asSuper(
+      () => db.sql`select delta, reason from points_ledger where order_id = ${online.orderId} order by reason`,
+    )
+    expect(after.map((r) => [r.delta, r.reason])).toEqual([
+      [12, 'order'],
+      [-12, 'order_reversed'],
+    ])
   })
 
   it('Kennko card: view, join, rename, and delete a second customer as kennko_api', async () => {

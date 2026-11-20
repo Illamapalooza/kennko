@@ -2,6 +2,7 @@ import type { SyncEvent, SyncEventKind } from '@kennko/core'
 import type postgres from 'postgres'
 import type { OrderPushEvent } from '../push/notify.js'
 import { applyCancelled, applyOrderCreated, applyPrepStatus } from './counter-order.js'
+import { applyCustomerLinked, applyCustomerUnlinked, applyRewardUsed, applyStampAdded } from './loyalty-events.js'
 
 /** `notify`: the customer push a real online prep move owes, sent only after the push transaction commits. */
 export type Applied = {
@@ -117,14 +118,7 @@ const menuAvailability: Handler<'menu.availability'> = async (tx, _deviceId, eve
   return row ? applied() : flagged('unknown_item')
 }
 
-/** The loyalty kinds exist in core first; the API stores them in Plan 7 Task 2. Until then they are flagged, never refused. */
-const notYet = async () => flagged('loyalty_not_supported_yet')
-
 const handlers: { [K in SyncEventKind]: Handler<K> } = {
-  'customer.linked': notYet,
-  'customer.unlinked': notYet,
-  'stamp.added': notYet,
-  'reward.used': notYet,
   'order.created': applyOrderCreated,
   'order.prep_status': applyPrepStatus,
   'order.cancelled': applyCancelled,
@@ -132,6 +126,10 @@ const handlers: { [K in SyncEventKind]: Handler<K> } = {
   'shift.closed': shiftClosed,
   'cash.moved': cashMoved,
   'menu.availability': menuAvailability,
+  'customer.linked': applyCustomerLinked,
+  'customer.unlinked': applyCustomerUnlinked,
+  'stamp.added': applyStampAdded,
+  'reward.used': applyRewardUsed,
 }
 
 /**

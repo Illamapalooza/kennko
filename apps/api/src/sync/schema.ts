@@ -1,4 +1,4 @@
-import { MAX_LINES, MAX_PUSH_EVENTS, MAX_QUANTITY, NOTE_MAX, type CounterOrderPayload, type SyncEvent, type SyncEventKind } from '@kennko/core'
+import { MAX_LINES, MAX_PUSH_EVENTS, MAX_QUANTITY, normalisePublicCode, NOTE_MAX, type CounterOrderPayload, type SyncEvent, type SyncEventKind } from '@kennko/core'
 import { z } from 'zod'
 
 const KINDS = [
@@ -9,6 +9,10 @@ const KINDS = [
   'shift.closed',
   'cash.moved',
   'menu.availability',
+  'customer.linked',
+  'customer.unlinked',
+  'stamp.added',
+  'reward.used',
 ] as const satisfies readonly SyncEventKind[]
 
 /**
@@ -57,6 +61,8 @@ export const pricedLineShape = z.object({
   iceServe: z.enum(['mixed', 'side']).nullable(),
   note: z.string().max(NOTE_MAX),
   lineTotalCentavos: orderCentavos,
+  // The free drink (Ruling 11): base 0, add-ons charged, at most one per order with quantity 1.
+  reward: z.literal(true).optional(),
 })
 
 const pricedLine = pricedLineShape
@@ -90,7 +96,13 @@ export const orderCreatedPayload = z.object({
     changeCentavos: orderCentavos.nullable(),
     reference: z.string().max(NAME_MAX).nullable(),
   }),
-}) satisfies z.ZodType<CounterOrderPayload>
+}).refine(
+  (p) => {
+    const rewards = p.lines.filter((l) => l.reward)
+    return rewards.length <= 1 && rewards.every((l) => l.quantity === 1)
+  },
+  { path: ['lines'], message: 'reward' },
+) satisfies z.ZodType<CounterOrderPayload>
 
 export const prepStatusPayload = z.object({
   orderId: z.uuid(),
@@ -129,7 +141,14 @@ export const availabilityPayload = z.object({
   available: z.boolean(),
 }) satisfies z.ZodType<PayloadOf<'menu.availability'>>
 
-export const customerLinkedPayload = z.object({ orderId: z.uuid(), publicCode: z.string().min(1).max(20) }) satisfies z.ZodType<PayloadOf<'customer.linked'>>
+export const customerLinkedPayload = z.object({
+  orderId: z.uuid(),
+  // The till refuses a bad check symbol before writing (Ruling 19), so one arriving here is held invalid.
+  publicCode: z
+    .string()
+    .max(20)
+    .refine((code) => normalisePublicCode(code) !== null, 'expected a Kennko card code with a valid check symbol'),
+}) satisfies z.ZodType<PayloadOf<'customer.linked'>>
 export const customerUnlinkedPayload = z.object({ orderId: z.uuid() }) satisfies z.ZodType<PayloadOf<'customer.unlinked'>>
 export const stampAddedPayload = z.object({ orderId: z.uuid(), stampId: z.uuid() }) satisfies z.ZodType<PayloadOf<'stamp.added'>>
 export const rewardUsedPayload = z.object({ claimId: z.uuid(), orderId: z.uuid() }) satisfies z.ZodType<PayloadOf<'reward.used'>>
