@@ -358,3 +358,18 @@ test('a row that imports later closes its held import receipt (kept, marked appl
   // A third send changes nothing.
   expect(await importOk(token, chunk)).toEqual({ inserted: 0, existing: 1, rejected: 0 })
 })
+
+test('a set-aside import receipt is closed too once the order stores, so it is not listed twice', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  const good = order(null)
+  const bad = { ...good, totalCentavos: good.totalCentavos + 1000 }
+  expect(await importOk(token, { shifts: [], orders: [bad], cashMoves: [] })).toEqual({ inserted: 0, existing: 0, rejected: 1 })
+  // The owner set it aside on Needs a look.
+  const owner = await seedStaff(db.sql, { fullName: 'Olive', role: 'owner' })
+  await db.sql`update sync_events set result = 'discarded', resolved_at = now(), resolved_by = ${owner}, resolve_note = 'Typo'
+    where device_id = ${deviceId} and id = ${good.id}`
+  expect(await importOk(token, { shifts: [], orders: [good], cashMoves: [] })).toEqual({ inserted: 1, existing: 0, rejected: 0 })
+  const after = (await receipts(deviceId)).filter((r) => r.kind === 'import.order')
+  expect(after).toHaveLength(1)
+  expect(after[0]).toMatchObject({ id: good.id, result: 'applied', reason: 'legacy: stored on a later send' })
+})

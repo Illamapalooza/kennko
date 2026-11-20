@@ -139,13 +139,14 @@ async function row<S extends z.ZodType>(
   }
   try {
     const out = (await tx.savepoint((sp) => body(sp, parsed.data))) as Outcome
-    // Stored now (a conflict that cleared): close the earlier receipt. sync_events is append-only
+    // Stored now (a conflict that cleared): close the earlier receipt, held or set aside, so the day
+    // report and Needs a look do not list it beside the order. sync_events is append-only
     // for kennko_api (no DELETE grant), so the receipt is marked applied, never removed.
     if (out !== 'rejected') {
       const id = (raw as { id: string }).id
       await tx`
         update sync_events set result = 'applied', reason = 'legacy: stored on a later send', applied_at = ${now}
-        where device_id = ${deviceId} and id = ${id} and kind like 'import.%' and result = 'held'`
+        where device_id = ${deviceId} and id = ${id} and kind like 'import.%' and result in ('held', 'discarded')`
     }
     return out
   } catch (err) {
