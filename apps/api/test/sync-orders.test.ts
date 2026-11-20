@@ -540,3 +540,31 @@ test('a shift close after the orders, and a sale with an unknown staff id, still
   const [ev] = await db.sql`select staff_id from order_events where id = ${sale.id}`
   expect(ev!.staff_id).toBeNull()
 })
+
+test('an order event re-sent under a new device id (re-paired till) answers already_recorded; a later void applies', async () => {
+  const a = await tillWithShift()
+  const order = orderCreated({ shiftId: a.shiftId, ...pricedOn(2) })
+  const prep = prepStatus({ orderId: order.payload.orderId, to: 'preparing' }, { staffId: bea })
+  const ready = prepStatus({ orderId: order.payload.orderId, to: 'ready' }, { staffId: bea })
+  expect((await api.push(a.token, [order, prep, ready])).results.map((r) => r.result)).toEqual(['applied', 'applied', 'applied'])
+
+  // The same till re-paired as device B resends its outbox: the same event ids, a new device id.
+  const b = await seedDevice(db.sql, 'Front till (re-paired)')
+  const resent = await api.push(b.token, [prep])
+  expect(resent.results[0]).toMatchObject({ result: 'applied', reason: 'already_recorded' })
+  const [row] = await db.sql`select prep_status from orders where id = ${order.payload.orderId}`
+  expect(row!.prep_status).toBe('ready')
+
+  const voidA = orderCancelled({ orderId: order.payload.orderId }, { staffId: olive })
+  expect((await api.push(a.token, [voidA])).results[0]!.result).toBe('applied')
+  // The void re-sent by B is recorded already; nothing changes.
+  expect((await api.push(b.token, [voidA])).results[0]).toMatchObject({ result: 'applied', reason: 'already_recorded' })
+
+  // A fresh order and a void made on B after re-pairing apply normally.
+  const other = orderCreated({ shiftId: a.shiftId, ticketNumber: 9, ...pricedOn(2) })
+  expect((await api.push(a.token, [other])).results[0]!.result).toBe('applied')
+  const voidB = orderCancelled({ orderId: other.payload.orderId }, { staffId: olive })
+  expect((await api.push(b.token, [voidB])).results[0]).toMatchObject({ result: 'applied', reason: null })
+  const [o] = await db.sql`select prep_status from orders where id = ${other.payload.orderId}`
+  expect(o!.prep_status).toBe('cancelled')
+})

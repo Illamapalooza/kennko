@@ -155,6 +155,16 @@ export async function applyOrderCreated(
 
 type OrderState = { channel: string; prep_status: string }
 
+/**
+ * An order event already stored under this id. The receipt is keyed (device_id, id), but a re-paired
+ * till resends its outbox under a new device id; order_events is keyed by id alone, so the second
+ * insert would fail on every retry and block the order. Such an event is answered as recorded.
+ */
+async function eventRecorded(tx: Tx, eventId: string): Promise<boolean> {
+  const [row] = await tx`select 1 from order_events where id = ${eventId}`
+  return row !== undefined
+}
+
 async function loadOrder(tx: Tx, orderId: string): Promise<OrderState | undefined> {
   // Locked so a prep change and a cancel for the same order (or an admin action) cannot interleave.
   const [row] = await tx<OrderState[]>`select channel, prep_status from orders where id = ${orderId} for update`
@@ -170,6 +180,7 @@ export async function applyPrepStatus(
   now: Date,
 ): Promise<Applied> {
   const { orderId, to } = event.payload
+  if (await eventRecorded(tx, event.id)) return applied('already_recorded')
   const order = await loadOrder(tx, orderId)
   if (!order) return held('order_unknown')
   // Online prep belongs to admin until Plan 5.
@@ -194,6 +205,7 @@ export async function applyCancelled(
   now: Date,
 ): Promise<Applied> {
   const { orderId, reason } = event.payload
+  if (await eventRecorded(tx, event.id)) return applied('already_recorded')
   const order = await loadOrder(tx, orderId)
   if (!order) return held('order_unknown')
   if (order.channel !== 'counter') return flagged('online_order')
