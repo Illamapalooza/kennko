@@ -23,8 +23,8 @@ describe('daily backup', () => {
   it('writes a copy that opens as a till with the same sales', () => {
     const dir = tempDir()
     const store = createStore(path.join(dir, 'pos.db'))
-    store.startShift(50000, T)
-    store.createOrder(menu, sale, T)
+    store.startShift(50000, T, null)
+    store.createOrder(menu, sale, T, null)
 
     const { file, copy } = backupDay((to) => store.snapshot(to), path.join(dir, 'backups'), '2026-11-17')
     expect(path.basename(file)).toBe('pos-2026-11-17.db')
@@ -41,10 +41,10 @@ describe('daily backup', () => {
     const dir = tempDir()
     const store = createStore(path.join(dir, 'pos.db'))
     const backups = path.join(dir, 'backups')
-    store.startShift(50000, T)
-    store.createOrder(menu, sale, T)
+    store.startShift(50000, T, null)
+    store.createOrder(menu, sale, T, null)
     backupDay((to) => store.snapshot(to), backups, '2026-11-17')
-    store.createOrder(menu, sale, T + 60_000)
+    store.createOrder(menu, sale, T + 60_000, null)
     const { file } = backupDay((to) => store.snapshot(to), backups, '2026-11-17')
 
     expect(fs.readdirSync(backups)).toEqual(['pos-2026-11-17.db'])

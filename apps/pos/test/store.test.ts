@@ -32,83 +32,83 @@ describe('built-in menu', () => {
 describe('till', () => {
   it('refuses orders until the till is open', () => {
     const store = createStore(':memory:')
-    expect(() => store.createOrder(menu, order(), T)).toThrow(/Open the till/)
+    expect(() => store.createOrder(menu, order(), T, null)).toThrow(/Open the till/)
   })
 
   it('takes an order, numbers it, and works out change', () => {
     const store = createStore(':memory:')
-    store.startShift(100000, T)
-    const first = store.createOrder(menu, order(), T)
+    store.startShift(100000, T, null)
+    const first = store.createOrder(menu, order(), T, null)
     expect(first.number).toBe(1)
     expect(first.totalCentavos).toBe((10000 + 4000) * 2)
     expect(first.changeCentavos).toBe(50000 - 28000)
     expect(first.status).toBe('queued')
     expect(first.lines[0]).toMatchObject({ name: 'Café Latte', iceLevel: 'less', note: 'less sweet' })
-    const second = store.createOrder(menu, order({ payment: { method: 'gcash', ref: ' 1234 5678 ' }, discount: { label: 'Senior / PWD 20%', kind: 'percent', value: 20 } }), T)
+    const second = store.createOrder(menu, order({ payment: { method: 'gcash', ref: ' 1234 5678 ' }, discount: { label: 'Senior / PWD 20%', kind: 'percent', value: 20 } }), T, null)
     expect(second.number).toBe(2)
     expect(second.discountCentavos).toBe(5600)
     expect(second.totalCentavos).toBe(22400)
     expect(second.paymentRef).toBe('1234 5678')
     expect(second.tenderedCentavos).toBeNull()
     // numbering restarts on a new Manila day
-    expect(store.createOrder(menu, order(), T + 24 * 3600 * 1000).number).toBe(1)
+    expect(store.createOrder(menu, order(), T + 24 * 3600 * 1000, null).number).toBe(1)
   })
 
   it('refuses short cash and unknown payment', () => {
     const store = createStore(':memory:')
-    store.startShift(0, T)
-    expect(() => store.createOrder(menu, order({ payment: { method: 'cash', tenderedCentavos: 100 } }), T)).toThrow(/less than the total/)
-    expect(() => store.createOrder(menu, order({ payment: { method: 'card' as any } }), T)).toThrow(OrderError)
+    store.startShift(0, T, null)
+    expect(() => store.createOrder(menu, order({ payment: { method: 'cash', tenderedCentavos: 100 } }), T, null)).toThrow(/less than the total/)
+    expect(() => store.createOrder(menu, order({ payment: { method: 'card' as any } }), T, null)).toThrow(OrderError)
     expect(store.ordersForDay('2026-11-17')).toHaveLength(0)
   })
 
   it('moves orders through the flow and back', () => {
     const store = createStore(':memory:')
-    store.startShift(0, T)
-    const { id } = store.createOrder(menu, order(), T)
-    expect(store.advance(id, T).status).toBe('preparing')
-    expect(store.advance(id, T).status).toBe('serving')
-    expect(store.undo(id, T).status).toBe('preparing')
-    store.advance(id, T)
-    expect(store.advance(id, T).status).toBe('done')
-    expect(() => store.advance(id, T)).toThrow(/finished/)
+    store.startShift(0, T, null)
+    const { id } = store.createOrder(menu, order(), T, null)
+    expect(store.advance(id, T, null).status).toBe('preparing')
+    expect(store.advance(id, T, null).status).toBe('serving')
+    expect(store.undo(id, T, null).status).toBe('preparing')
+    store.advance(id, T, null)
+    expect(store.advance(id, T, null).status).toBe('done')
+    expect(() => store.advance(id, T, null)).toThrow(/finished/)
     expect(store.activeOrders()).toHaveLength(0)
   })
 
   it('voids, tracks cash, and closes with a count', () => {
     const store = createStore(':memory:')
-    store.startShift(100000, T)
-    const a = store.createOrder(menu, order(), T)
-    const b = store.createOrder(menu, order(), T)
-    expect(() => store.voidOrder(a.id, '  ', T)).toThrow(/why/)
-    expect(store.voidOrder(a.id, 'wrong drink', T).status).toBe('voided')
-    expect(() => store.voidOrder(a.id, 'again', T)).toThrow(/already voided/)
-    store.cashMove('out', 5000, 'ice', T)
-    expect(() => store.cashMove('out', 0, 'x', T)).toThrow(OrderError)
-    expect(() => store.endShift(0, '', T)).toThrow(/still in progress/)
-    store.advance(b.id, T); store.advance(b.id, T); store.advance(b.id, T)
+    store.startShift(100000, T, null)
+    const a = store.createOrder(menu, order(), T, null)
+    const b = store.createOrder(menu, order(), T, null)
+    expect(() => store.voidOrder(a.id, '  ', T, null)).toThrow(/why/)
+    expect(store.voidOrder(a.id, 'wrong drink', T, null).status).toBe('voided')
+    expect(() => store.voidOrder(a.id, 'again', T, null)).toThrow(/already voided/)
+    store.cashMove('out', 5000, 'ice', T, null)
+    expect(() => store.cashMove('out', 0, 'x', T, null)).toThrow(OrderError)
+    expect(() => store.endShift(0, '', T, null)).toThrow(/still in progress/)
+    store.advance(b.id, T, null); store.advance(b.id, T, null); store.advance(b.id, T, null)
     const shift = store.openShift()!
     expect(store.shiftSummary(shift).expectedCashCentavos).toBe(100000 + 28000 - 5000)
-    const closed = store.endShift(123000, 'all good', T + 1000)
+    const closed = store.endShift(123000, 'all good', T + 1000, null)
     expect(closed.shift.closedAt).toBe(T + 1000)
     expect(closed.summary.voidCount).toBe(1)
     expect(store.openShift()).toBeNull()
-    expect(() => store.voidOrder(b.id, 'late', T)).toThrow(/already closed/)
+    expect(() => store.voidOrder(b.id, 'late', T, null)).toThrow(/already closed/)
     expect(store.recentShifts()).toHaveLength(1)
   })
 
   it('gives the wall drinks and steps, never money', () => {
     const store = createStore(':memory:')
-    store.startShift(0, T)
+    store.startShift(0, T, null)
     const a = store.createOrder(menu, order({
       customerName: 'Ana',
       lines: [
         { menuItemId: latte.id, size: 'M', modifierIds: [], quantity: 1, iceLevel: null, iceServe: null, note: '' },
         { menuItemId: latte.id, size: 'L', modifierIds: [oat.id], quantity: 2, iceLevel: null, iceServe: null, note: '' },
       ],
-    }), T)
-    const b = store.createOrder(menu, order(), T)
-    store.voidOrder(b.id, 'mistake', T + 5000)
+    }), T, null)
+    const b = store.createOrder(menu, order(), T, null)
+    store.voidOrder(b.id, 'mistake', T + 5000, null)
     const feed = wallOrders([...store.activeOrders(), ...store.recentlyFinished(T)])
     expect(feed).toEqual([
       { id: a.id, number: 1, name: 'Ana', items: [{ name: 'Café Latte', qty: 3 }], status: 'queued', createdAt: T, updatedAt: T },
@@ -118,18 +118,35 @@ describe('till', () => {
     expect(store.recentlyFinished(T + 6000)).toEqual([])
   })
 
+  it('names the person a void or cash move is credited to, while the till knows them', () => {
+    const store = createStore(':memory:')
+    const MIA = '55555555-5555-4555-8555-555555555555'
+    store.replaceStaffCache([{ id: MIA, fullName: 'Mia Santos', role: 'manager', pinHash: 'x' }])
+    store.startShift(0, T, MIA)
+    const a = store.createOrder(menu, order(), T, MIA)
+    const b = store.createOrder(menu, order(), T, null)
+    expect(a.voidedByName).toBeNull()
+    expect(store.voidOrder(a.id, 'wrong drink', T, MIA).voidedByName).toBe('Mia Santos')
+    expect(store.voidOrder(b.id, 'mistake', T, null).voidedByName).toBeNull()
+    expect(store.ordersForDay('2026-11-17').find((o) => o.id === a.id)!.voidedByName).toBe('Mia Santos')
+    expect(store.cashMove('out', 100, 'ice', T, MIA).staffName).toBe('Mia Santos')
+    store.replaceStaffCache([])
+    expect(store.getOrder(a.id).voidedByName).toBeNull()
+    expect(store.cashMoves(store.openShift()!.id)[0].staffName).toBeNull()
+  })
+
   it('honours sold-out marks', () => {
     const store = createStore(':memory:')
-    store.setAvailable(latte.id, false)
+    store.setAvailable(latte.id, false, T, null, { outbox: false })
     expect(store.soldOut()).toEqual([latte.id])
-    store.setAvailable(latte.id, true)
+    store.setAvailable(latte.id, true, T, null, { outbox: false })
     expect(store.soldOut()).toEqual([])
   })
 
   it('exports a spreadsheet-safe CSV', () => {
     const store = createStore(':memory:')
-    store.startShift(0, T)
-    store.createOrder(menu, order({ customerName: '=SUM(A1)' }), T)
+    store.startShift(0, T, null)
+    store.createOrder(menu, order({ customerName: '=SUM(A1)' }), T, null)
     const csv = reportCsv(store.ordersForDay('2026-11-17'))
     const rows = csv.trim().split('\r\n')
     expect(rows).toHaveLength(2)

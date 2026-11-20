@@ -276,22 +276,23 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const body = await readBody(req)
   const done = (payload: unknown) => { broadcast(); return json(res, 200, payload) }
 
-  if (route === '/api/orders') return done(store.createOrder(menu(), body, now))
+  if (route === '/api/orders') return done(store.createOrder(menu(), body, now, null))
 
   const orderAction = /^\/api\/orders\/(\d+)\/(advance|undo|void)$/.exec(route)
   if (orderAction) {
     const id = Number(orderAction[1])
-    if (orderAction[2] === 'advance') return done(store.advance(id, now))
-    if (orderAction[2] === 'undo') return done(store.undo(id, now))
+    if (orderAction[2] === 'advance') return done(store.advance(id, now, null))
+    if (orderAction[2] === 'undo') return done(store.undo(id, now, null))
     await checkPin(req, body.managerPin, 'manager')
-    return done(store.voidOrder(id, body.reason, now))
+    return done(store.voidOrder(id, body.reason, now, null))
   }
 
   if (route === '/api/menu/availability') {
     if (typeof body.itemId !== 'string' || !baseMenu.categories.some((c) => c.items.some((i) => i.id === body.itemId))) {
       throw new OrderError('That drink is not on the menu.')
     }
-    store.setAvailable(body.itemId, Boolean(body.available))
+    // Sent to Kennko only while connected (Ruling 14). Credited to nobody until sessions are wired in (Task 10).
+    store.setAvailable(body.itemId, Boolean(body.available), now, null, { outbox: loadDevice(DATA) !== null })
     return done(menu())
   }
   if (route === '/api/menu/sync') {
@@ -316,14 +317,14 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return json(res, 200, { ok: true })
   }
 
-  if (route === '/api/till/open') return done(store.startShift(body.floatCentavos, now))
+  if (route === '/api/till/open') return done(store.startShift(body.floatCentavos, now, null))
   if (route === '/api/till/cash') {
     if (body.kind === 'out') await checkPin(req, body.managerPin, 'manager')
-    return done(store.cashMove(body.kind, body.amountCentavos, body.reason, now))
+    return done(store.cashMove(body.kind, body.amountCentavos, body.reason, now, null))
   }
   if (route === '/api/till/close') {
     await checkPin(req, body.managerPin, 'manager')
-    const closed = store.endShift(body.countedCentavos, body.note, now)
+    const closed = store.endShift(body.countedCentavos, body.note, now, null)
     backup()
     return done(closed)
   }

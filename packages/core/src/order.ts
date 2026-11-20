@@ -36,6 +36,8 @@ export type Order = {
   updatedAt: number
   voidedAt: number | null
   voidReason: string | null
+  /** Who approved the void, when the till knows them (counter orders only). */
+  voidedByName?: string | null
 }
 
 export type Shift = {
@@ -54,6 +56,8 @@ export type CashMove = {
   amountCentavos: number
   reason: string
   at: number
+  /** Who is credited with the cash move, when the till knows them. */
+  staffName?: string | null
 }
 
 /** Calendar day in Manila (UTC+8, no daylight saving). */
