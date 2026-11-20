@@ -28,6 +28,12 @@ export default async function AdminMenuPage({
         </p>
       ) : null}
 
+      {denied === 'manager-only' ? (
+        <p className="admin-notice" role="alert">
+          Only the owner and managers can see reports.
+        </p>
+      ) : null}
+
       {missing ? (
         <p className="admin-notice" role="alert">
           That item no longer exists.

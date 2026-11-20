@@ -2,25 +2,31 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import type { StaffRole } from '@/lib/auth/types'
 
-type AdminNavProps = { ordersToCheck: number; isOwner: boolean }
+type AdminNavProps = { ordersToCheck: number; role: StaffRole; attentionCount?: number }
 
-type NavLink = { href: string; label: string; exact?: boolean; ownerOnly?: boolean }
+type NavLink = { href: string; label: string; exact?: boolean; minRole?: 'manager' | 'owner' }
 
 const LINKS: NavLink[] = [
   { href: '/admin', label: 'Overview', exact: true },
   { href: '/admin/orders', label: 'Orders' },
+  { href: '/admin/reports', label: 'Reports', minRole: 'manager' },
   { href: '/admin/menu', label: 'Menu' },
-  { href: '/admin/staff', label: 'Staff', ownerOnly: true },
-  { href: '/admin/devices', label: 'Tills', ownerOnly: true },
+  { href: '/admin/staff', label: 'Staff', minRole: 'owner' },
+  { href: '/admin/devices', label: 'Tills', minRole: 'owner' },
+  { href: '/admin/attention', label: 'Needs a look', minRole: 'owner' },
 ]
 
-export function AdminNav({ ordersToCheck, isOwner }: AdminNavProps) {
+const RANK: Record<StaffRole, number> = { barista: 0, manager: 1, owner: 2 }
+const visible = (link: NavLink, role: StaffRole) => !link.minRole || RANK[role] >= RANK[link.minRole]
+
+export function AdminNav({ ordersToCheck, role, attentionCount = 0 }: AdminNavProps) {
   const pathname = usePathname()
 
   return (
     <nav className="admin-nav" aria-label="Admin">
-      {LINKS.filter((l) => isOwner || !l.ownerOnly).map((link) => {
+      {LINKS.filter((l) => visible(l, role)).map((link) => {
         const active = link.exact
           ? pathname === link.href
           : pathname === link.href || pathname.startsWith(`${link.href}/`)
@@ -34,6 +40,11 @@ export function AdminNav({ ordersToCheck, isOwner }: AdminNavProps) {
             {link.label}
             {link.href === '/admin/orders' && ordersToCheck > 0 ? (
               <span className="admin-nav-badge">{ordersToCheck}</span>
+            ) : null}
+            {link.href === '/admin/attention' && attentionCount > 0 ? (
+              <span className="admin-nav-badge" aria-label={`${attentionCount} need a look`}>
+                {attentionCount}
+              </span>
             ) : null}
           </Link>
         )

@@ -57,6 +57,8 @@ public signup).
 | Upload and remove product photos | no | no | yes |
 | Add staff, change roles, deactivate accounts | no | no | yes |
 | Issue till PINs (Staff screen) | no | no | yes |
+| Day report (Reports screen, `/v1/reports/day/:date`) | no | yes | yes |
+| Needs a look: set aside held till receipts, mark flagged ones seen, close a stuck shift, retry a till | no | no | yes |
 
 A manager has barista-level access on the website; owner-only stays owner-only. Staff are
 managed through the API (`/v1/staff`), not Supabase: the Staff screen adds people, changes roles and

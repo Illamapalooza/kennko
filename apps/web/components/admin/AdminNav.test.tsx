@@ -9,47 +9,75 @@ import { AdminNav } from './AdminNav'
 describe('AdminNav', () => {
   it('marks the active link', () => {
     path = '/admin/menu/new'
-    render(<AdminNav ordersToCheck={0} isOwner />)
+    render(<AdminNav ordersToCheck={0} role="owner" />)
     expect(screen.getByRole('link', { name: 'Menu' }).getAttribute('aria-current')).toBe('page')
     expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBeNull()
   })
 
   it('only marks Overview on exactly /admin', () => {
     path = '/admin'
-    render(<AdminNav ordersToCheck={0} isOwner />)
+    render(<AdminNav ordersToCheck={0} role="owner" />)
     expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe('page')
   })
 
   it('hides Staff from a barista', () => {
     path = '/admin'
-    render(<AdminNav ordersToCheck={0} isOwner={false} />)
+    render(<AdminNav ordersToCheck={0} role="barista" />)
     expect(screen.queryByRole('link', { name: 'Staff' })).toBeNull()
   })
 
   it('shows Staff to an owner', () => {
     path = '/admin'
-    render(<AdminNav ordersToCheck={0} isOwner />)
+    render(<AdminNav ordersToCheck={0} role="owner" />)
     expect(screen.getByRole('link', { name: 'Staff' }).getAttribute('href')).toBe('/admin/staff')
   })
 
   it('shows Tills to an owner and hides it from everyone else', () => {
     path = '/admin'
-    const { unmount } = render(<AdminNav ordersToCheck={0} isOwner />)
+    const { unmount } = render(<AdminNav ordersToCheck={0} role="owner" />)
     expect(screen.getByRole('link', { name: 'Tills' }).getAttribute('href')).toBe('/admin/devices')
     unmount()
-    render(<AdminNav ordersToCheck={0} isOwner={false} />)
+    render(<AdminNav ordersToCheck={0} role="barista" />)
     expect(screen.queryByRole('link', { name: 'Tills' })).toBeNull()
   })
 
   it('shows a badge with the count of orders waiting', () => {
     path = '/admin'
-    render(<AdminNav ordersToCheck={2} isOwner />)
+    render(<AdminNav ordersToCheck={2} role="owner" />)
     expect(screen.getByText('2')).toBeTruthy()
   })
 
   it('shows no badge at zero', () => {
     path = '/admin'
-    render(<AdminNav ordersToCheck={0} isOwner />)
+    render(<AdminNav ordersToCheck={0} role="owner" />)
     expect(screen.queryByText('0')).toBeNull()
+  })
+
+  it('shows Reports to a manager but not Staff, Tills or Needs a look', () => {
+    path = '/admin'
+    render(<AdminNav ordersToCheck={0} role="manager" attentionCount={3} />)
+    expect(screen.getByRole('link', { name: 'Reports' }).getAttribute('href')).toBe('/admin/reports')
+    expect(screen.queryByRole('link', { name: 'Staff' })).toBeNull()
+    expect(screen.queryByRole('link', { name: /Needs a look/ })).toBeNull()
+  })
+
+  it('hides Reports from a barista', () => {
+    path = '/admin'
+    render(<AdminNav ordersToCheck={0} role="barista" />)
+    expect(screen.queryByRole('link', { name: 'Reports' })).toBeNull()
+  })
+
+  it('shows Needs a look to the owner with a badge when something waits', () => {
+    path = '/admin'
+    render(<AdminNav ordersToCheck={0} role="owner" attentionCount={4} />)
+    const link = screen.getByRole('link', { name: /Needs a look/ })
+    expect(link.getAttribute('href')).toBe('/admin/attention')
+    expect(link.textContent).toContain('4')
+  })
+
+  it('shows no attention badge at zero', () => {
+    path = '/admin'
+    render(<AdminNav ordersToCheck={0} role="owner" attentionCount={0} />)
+    expect(screen.getByRole('link', { name: 'Needs a look' }).textContent).toBe('Needs a look')
   })
 })

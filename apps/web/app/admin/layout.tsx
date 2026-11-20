@@ -7,6 +7,7 @@ import { AdminNav } from '@/components/admin/AdminNav'
 import { PublishBar } from '@/components/admin/PublishBar'
 import { AutoRefresh } from '@/components/admin/AutoRefresh'
 import { getMenuStatus, type MenuStatus } from '@/lib/menu/status'
+import { staffFetch } from '@/lib/api/client'
 import { countOrdersToCheck } from '@/lib/admin/overview-data'
 import './admin.css'
 
@@ -16,6 +17,13 @@ export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
   manifest: '/admin/manifest.webmanifest',
   appleWebApp: { capable: true, title: 'Kennko Admin', statusBarStyle: 'default' },
+}
+
+async function loadAttentionCount(): Promise<number> {
+  const res = await staffFetch('/v1/attention/count')
+  if (!res.ok) return 0
+  const body = (await res.json()) as { count?: unknown }
+  return typeof body.count === 'number' ? body.count : 0
 }
 
 export default async function AdminLayout({
@@ -41,7 +49,7 @@ export default async function AdminLayout({
 
   const isOwner = staff.role === 'owner'
   // Chrome data fails soft: a broken count must not take down every admin page.
-  const [ordersToCheck, status] = await Promise.all([
+  const [ordersToCheck, status, attentionCount] = await Promise.all([
     countOrdersToCheck()
       .then((n) => n ?? 0)
       .catch((e) => {
@@ -49,6 +57,8 @@ export default async function AdminLayout({
         return 0
       }),
     getMenuStatus().catch((): MenuStatus => ({ ok: false })),
+    // Only the owner sees Needs a look, so only the owner's page asks for the count.
+    isOwner ? loadAttentionCount().catch(() => 0) : Promise.resolve(0),
   ])
 
   return (
@@ -57,7 +67,7 @@ export default async function AdminLayout({
       <aside className="admin-side">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="admin-wordmark" src="/brand/wordmark-white.png" alt="Kennko Coffee" />
-        <AdminNav ordersToCheck={ordersToCheck} isOwner={isOwner} />
+        <AdminNav ordersToCheck={ordersToCheck} role={staff.role} attentionCount={attentionCount} />
         <div className="admin-user">
           <span>
             {staff.fullName} · {staff.role}

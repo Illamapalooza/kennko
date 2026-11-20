@@ -49,3 +49,10 @@ export async function requireOwner(): Promise<StaffMember> {
   if (staff.role !== 'owner') redirect('/admin/menu?denied=owner-only')
   return staff
 }
+
+/** Owner or manager: the day report. A barista has no business with the till's money. */
+export async function requireManager(): Promise<StaffMember> {
+  const staff = await requireStaff()
+  if (staff.role === 'barista') redirect('/admin/menu?denied=manager-only')
+  return staff
+}

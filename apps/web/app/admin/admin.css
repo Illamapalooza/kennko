@@ -392,3 +392,28 @@
 .till-countdown { font-weight: 700; }
 .till-countdown.is-low { background: var(--amber-soft); border: 2px solid var(--amber); border-radius: 999px; padding: 2px 12px; justify-self: center; }
 @media (min-width: 921px) { .till-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Reports and Needs a look. Tables scroll inside their card, never the page. */
+.report { display: grid; gap: var(--space-3); }
+.report-nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.report-nav .btn { min-height: 44px; display: inline-flex; align-items: center; }
+.report-section h3 { margin: 16px 0 8px; font-size: 1rem; }
+.report-big { font-size: 2rem; font-weight: 800; color: var(--blue); margin: 0 0 4px; }
+.report-scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.report-table { border-collapse: collapse; width: 100%; min-width: 420px; background: var(--white); }
+.report-table th, .report-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.report-table th { background: var(--blue-soft); font-size: 0.85rem; }
+.report-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.report-pairs { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 0; }
+.report-pairs dt { font-weight: 700; }
+.report-pairs dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.report-pill { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: var(--amber-soft); color: var(--ink); font-weight: 700; }
+.report-flag { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--amber-soft); border: 1px solid var(--amber); font-weight: 700; }
+.report-note { font-size: 0.85rem; color: var(--ink-soft); margin: 0; }
+.attention-list { display: grid; gap: 12px; margin-bottom: var(--space-4); }
+.attention-row { display: grid; gap: 8px; }
+.attention-row p { margin: 0; }
+.attention-form { display: grid; gap: 8px; }
+.attention-form .admin-field { margin-bottom: 0; }
+.attention-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.attention-row .btn, .attention-retry .btn, .attention-form .btn { min-height: 44px; justify-self: start; }
