@@ -486,18 +486,19 @@ No change.
 - Update as in Plan 3 step 4 (`git pull`, then `deploy\windows\setup.cmd`, which runs `npm run pos:build` and restarts).
 - The startup log's Sync line gains `, N online order(s) in the queue` once an online order is waiting.
 - Reload every tablet after the update. Old tabs keep the old Orders board until reloaded.
+- Do not run the till with PIN mode off (`staffPin` `""`, see `apps/pos/README.md`, "PIN modes") while online orders are on: the live feed then needs no sign-in and carries delivery addresses and phones to anyone on the shop LAN.
 
 ### 5. Wall
 
-Do this at the same time as step 4. On the wall computer, `git pull`, then stop and restart `npm run wall:pos` from the repo root (see `wall/README.md`, "Following the till").
+Do this at the same time as step 4. On the wall computer, `git pull`, then stop and restart `npm run wall:pos` from the repo root (see `wall/README.md`, "Following the till"). Then reload the wall page (twice if needed: the first load may still come from the wall's saved offline copy). W numbers must read W3, not 5003.
 
 ### 6. Live checks
 
 - Place a ₱ test online pickup order on the website. In admin, press **Confirm payment**. Within 15 s it appears on the till's Orders board as `W<n>` with an **Online** pill, and on the wall with the customer's first name.
 - Tap **Start** on the till: the phone that placed the order gets "W<n> is being prepared", and admin shows Preparing after a refresh.
-- In admin press **Mark ready**: the till follows within 15 s, and the till's button now reads **Picked up**.
+- In admin press **Mark ready for pickup**: the till follows within 15 s, and the till's button now reads **Picked up**.
 - Pull the shop computer's network cable and tap **Picked up**: the ticket leaves the board and the badge shows "Offline: changes waiting to send". Reconnect: the badge clears, admin shows Completed, and the customer got exactly one "complete" notification.
-- A delivery test order shows the address, barangay and phone on the ticket, and **Out for delivery** sends "W<n> is on its way".
+- A delivery test order shows the address, barangay and phone on the ticket, and **Out for delivery** sends "W<n> is on its way"; then **Delivered** completes it.
 - Press **Cancel order** in admin on an online order: it leaves the till and the wall within 15 s (at the till's next sync).
 - In admin › Tills press **Disconnect** on the till: its online tickets disappear.
 
