@@ -315,22 +315,54 @@ No new environment variables. Smoke checks:
 - `GET /v1/sync/pull` without a token returns 401.
 - `GET /v1/devices/me` with a real till token still answers (it stays for tills not yet upgraded).
 
-### 3. Concurrency check (once, before pairing the shop till)
+### 3. Concurrency and import check (once, before pairing the shop till)
 
-The test database (PGlite) shares one backend session, so it cannot prove that two pushes from the same till at the same moment are safe. Check it against the real database through the pooler:
+The test database (PGlite) shares one backend session, so it cannot prove that two pushes from the same till at the same moment are safe. Check it against the real database through the pooler. This also runs the history import as `kennko_api` once before the shop till pairs.
 
 1. In admin › Tills, add a throwaway till (for example "sync test") and pair it with the code. Use a throwaway device, not the shop till.
-2. Save one push body as `push.json` (event shape: see `apps/api/src/sync/`; a `shift.opened` for a new shift id is the simplest).
+2. Make a new shift id with `uuidgen | tr A-Z a-z` and another for the event id. Save this as `push.json`, with the two ids in place of `<uuid>` (event id first, then the shift id):
+
+```json
+{"events":[{"id":"<uuid>","seq":1,"kind":"shift.opened","occurredAt":"2026-11-21T08:00:00+08:00","staffId":null,"payload":{"shiftId":"<uuid>","openingFloatCentavos":100000}}]}
+```
+
 3. With the throwaway device's token in `$TOKEN` (type it with `read -rs TOKEN`, never in a file), send it twice at the same moment:
 
 ```sh
-curl -s -X POST <api>/v1/sync/push -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @push.json > a.json &
-curl -s -X POST <api>/v1/sync/push -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @push.json > b.json &
+curl -sS -w '\n%{http_code}\n' -X POST <api>/v1/sync/push -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @push.json > a.json &
+curl -sS -w '\n%{http_code}\n' -X POST <api>/v1/sync/push -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @push.json > b.json &
 wait; cat a.json b.json
 ```
 
-4. Expect one reply with the event `applied` and the other with it `duplicate`. Two `applied`, or a 500, means stop and do not pair the shop till.
-5. Delete `a.json`, `b.json` and `push.json`. In admin › Tills, revoke the throwaway device.
+4. Expect both to end in `200`, one reply with the event `applied` and the other with it `duplicate`. The second reply waits on the first one's lock, so it can take a moment longer. A `400` means the body is wrong: fix `push.json` and try again; it is not a pass. Two `applied`, or a `500`, means stop and do not pair the shop till.
+5. Make the timing and import files (they reuse the shift id from `push.json`):
+
+```sh
+node -e '
+const { randomUUID: u } = require("crypto"); const fs = require("fs");
+const shiftId = JSON.parse(fs.readFileSync("push.json")).events[0].payload.shiftId;
+const events = Array.from({ length: 50 }, (_, i) => ({ id: u(), seq: i + 2, kind: "cash.moved", occurredAt: "2026-11-21T08:05:00+08:00", staffId: null, payload: { shiftId, id: u(), kind: "in", amountCentavos: 100, reason: "Sync test" } }));
+fs.writeFileSync("push50.json", JSON.stringify({ events }));
+const shift = () => ({ id: u(), openedAt: "2026-10-01T08:00:00+08:00", openingFloatCentavos: 0, closedAt: "2026-10-01T09:00:00+08:00", countedCentavos: 0, expectedCentavos: 0, note: "sync test", openedByStaff: null, closedByStaff: null });
+fs.writeFileSync("import1.json", JSON.stringify({ shifts: [shift()], orders: [], cashMoves: [] }));
+fs.writeFileSync("import100.json", JSON.stringify({ shifts: Array.from({ length: 100 }, shift), orders: [], cashMoves: [] }));
+'
+```
+
+6. One import chunk with one legacy shift. Expect `{"inserted":1,"existing":0,"rejected":0}` and `200`; send it again and expect `existing` 1. A `500` means stop: the import cannot run as `kennko_api`.
+
+```sh
+curl -sS -w '\n%{http_code}\n' -X POST <api>/v1/sync/import -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @import1.json
+```
+
+7. Time one 50-event push and one 100-row import (the till's largest requests). Each should answer `200` well within the till's 15 s timeout; note the times.
+
+```sh
+curl -sS -o /dev/null -w '%{http_code} %{time_total}s\n' -X POST <api>/v1/sync/push -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @push50.json
+curl -sS -o /dev/null -w '%{http_code} %{time_total}s\n' -X POST <api>/v1/sync/import -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @import100.json
+```
+
+8. Delete `a.json`, `b.json`, `push.json`, `push50.json`, `import1.json` and `import100.json`. In admin › Tills, revoke the throwaway device. Its open shift, its ₱50 of test cash-ins and its 101 legacy shifts stay in the database; they are harmless once the device is revoked (no till can push to that shift again) and all carry the throwaway device's id.
 
 ### 4. Website
 
@@ -341,7 +373,7 @@ No change in this plan (admin already lists online orders only).
 - Close the till first if possible.
 - Take a manual backup copy of `data/pos.db` (the whole `apps\pos\data` folder is safest).
 - Update as in Plan 3 step 4 (`git pull`, then `deploy\windows\setup.cmd`, which runs `npm run pos:build` and restarts).
-- The startup log shows `Sync: importing N rows`, then `Sync: up to date`. Until the history import finishes, the startup log and the Menu screen show "Copying sales history to Kennko: N left." Pairing and Check now do not wait for it: pairing answers within about 5 s and Check now within about 10 s, and the import keeps going in the background.
+- The till's startup line is `Sync: paired, every 15 s, N old records to copy to Kennko` while the history import has rows left, and `Sync: paired, every 15 s` (no suffix) once it is done. While it runs, the Menu screen shows "Copying sales history to Kennko: N left." Pairing and Check now do not wait for it: pairing answers within about 5 s and Check now within about 10 s, and the import keeps going in the background.
 - Reload every tablet after updating. Old tabs keep the old screens until reloaded.
 - Check in Supabase (read-only): `select count(*) from orders where 'legacy' = any(flags);` equals the till's order count. Restart the till: it imports nothing new.
 - Rows the API could not store (legacy or pushed) are kept as held receipts, not dropped. See them with:
@@ -371,3 +403,33 @@ These need the live API, so they were not done during the build. Check them at 7
 - The sync pills and the offline badge.
 - Menu › Check now (including "Still checking — the menu updates by itself.").
 - The sold-out PIN prompt.
+
+### Runbook: `pos.db` on a paired till, and a stuck open shift
+
+**Never replace or restore `data/pos.db` on a paired till without closing its shift first** (Till › Close, so the close reaches Kennko). The server allows one open shift per till. A restored `pos.db` has forgotten the shift that is open on the server, so the next `shift.opened` from that till is held behind it and the till's new sales wait too (they stay safe on the till and send once the old shift is closed). The same applies to copying `pos.db` from another computer.
+
+If it happens anyway, Julius runs this in the Supabase SQL editor; an admin button comes in Plan 6.
+
+Find the stuck shift (read-only):
+
+```sql
+select id, device_id, opened_at from shifts where closed_at is null;
+```
+
+Close it by hand, using the `id` from above. Put the counted cash if known (else `0`) and say why in the note:
+
+```sql
+update shifts
+set closed_at = now(),
+    counted_centavos = 0,
+    expected_centavos = null,
+    note = 'Closed by hand: pos.db was replaced on the till',
+    updated_at = now()
+where id = '<shift id>' and closed_at is null;
+```
+
+The till's held events retry on its next push (within 15 s) and apply once nothing blocks them. Check with:
+
+```sql
+select kind, reason, count(*) from sync_events where result = 'held' group by 1, 2;
+```
