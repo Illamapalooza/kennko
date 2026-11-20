@@ -48,6 +48,7 @@ Things to know:
 - **The certificate is limited to local networks.** The till's certificate authority can only sign for private addresses, `localhost` and `.local` names, so it cannot be used to pose as a website on the internet. Its key is `data/cert/ca.key`; keep it on the till computer.
 - **Renewal is automatic.** The till's certificate lasts about 13 months and is remade at startup in its last month. The authority tablets trust lasts 10 years.
 - **Updates arrive on the next open.** After `npm run pos:build`, an installed tablet picks up the new screens the next time the app is opened or reloaded.
+- **Reload every tablet after updating the till.** A tab left open from before an update keeps the old screens; after the switch to session PINs, an old tab keeps sending its PIN the old way and is refused until it is reloaded and the PIN typed once more.
 
 ## Settings
 
@@ -55,8 +56,8 @@ Copy `config.example.json` to `config.json` and edit it. **Change both PINs befo
 
 | Key | Meaning |
 |---|---|
-| `staffPin` | Asked once per device before the till opens. `""` turns it off. |
-| `managerPin` | Asked for voids, cash out, closing the till and updating the menu. |
+| `staffPin` | Opens the till. Typed once per browser; the till then remembers that browser for 16 hours (until Lock, or the browser is closed), even across a restart of the till. The manager PIN opens it too. `""` turns it off. |
+| `managerPin` | Asked for voids, cash out, closing the till and updating the menu. If it is `""`, those are blocked: an empty entry is never accepted. |
 | `shop` | Name, address, phone and footer printed on receipts. |
 | `discounts` | One-tap discounts. `kind` is `percent` (1 to 100) or `amount` (centavos). |
 | `api` | `{ "url" }`, the Kennko API the menu update reads from (`GET <url>/v1/menu`). Defaults to the `KENNKO_API_URL` environment variable. An old `website` block is ignored. |

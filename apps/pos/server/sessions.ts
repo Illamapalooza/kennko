@@ -7,7 +7,11 @@ export type Who = { staffId: string | null; name: string | null; role: 'staff' |
 /** A till session lasts one long working day from when the PIN was typed. */
 export const SESSION_MS = 16 * 60 * 60 * 1000
 
+// Browsers scope cookies by host, not by port or scheme, and an http response may not overwrite a Secure cookie.
+// So the https port uses its own name: a device that moves between the two addresses never gets stuck.
 const COOKIE = 'kennko_pos_session'
+const SECURE_COOKIE = '__Secure-kennko_pos_session'
+const cookieName = (secure: boolean) => (secure ? SECURE_COOKIE : COOKIE)
 const hash = (token: string) => createHash('sha256').update(token).digest('hex')
 
 /**
@@ -53,19 +57,24 @@ export function createSessions(db: DatabaseSync, now: () => number) {
 
 export type Sessions = ReturnType<typeof createSessions>
 
-/** No Max-Age: the cookie lasts until the browser closes, and the till ends it sooner after SESSION_MS. */
+/**
+ * No Max-Age: the cookie lasts until the browser closes, and the till ends it sooner after SESSION_MS.
+ * `secure` (the https port) uses the `__Secure-` name, which browsers only accept with Secure.
+ */
 export function sessionCookie(token: string | null, secure: boolean): string {
-  const parts = [`${COOKIE}=${token ?? ''}`, 'HttpOnly', 'SameSite=Strict', 'Path=/']
-  if (token === null) parts.push('Expires=Thu, 01 Jan 1970 00:00:00 GMT')
+  const parts = [`${cookieName(secure)}=${token ?? ''}`, 'HttpOnly', 'SameSite=Strict', 'Path=/']
+  if (token === null) parts.push('Max-Age=0', 'Expires=Thu, 01 Jan 1970 00:00:00 GMT')
   if (secure) parts.push('Secure')
   return parts.join('; ')
 }
 
-export function readSessionCookie(header: string | undefined): string | undefined {
+/** The session token from a Cookie header, under the name for the scheme the request came in on. */
+export function readSessionCookie(header: string | undefined, secure = false): string | undefined {
   if (!header) return undefined
+  const name = cookieName(secure)
   for (const part of header.split(';')) {
     const eq = part.indexOf('=')
-    if (eq > 0 && part.slice(0, eq).trim() === COOKIE) return part.slice(eq + 1).trim() || undefined
+    if (eq > 0 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim() || undefined
   }
   return undefined
 }

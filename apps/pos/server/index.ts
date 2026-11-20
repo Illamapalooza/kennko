@@ -147,7 +147,7 @@ async function checkPin(req: http.IncomingMessage, given: unknown, need: 'staff'
 /** The session this request carries, or a 401 so the device shows the PIN screen. Off mode needs none. */
 function needSession(req: http.IncomingMessage): void {
   if (pins.mode() === 'off') return
-  if (!sessions.get(readSessionCookie(req.headers.cookie))) throw new PinError('Enter your PIN to open the till.', 401)
+  if (!sessions.get(readSessionCookie(req.headers.cookie, cameInSecure(req)))) throw new PinError('Enter your PIN to open the till.', 401)
 }
 
 /** Secure cookies only on the https port, or plain-http tablets would never send them back. */
@@ -188,7 +188,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (route === '/api/session') {
     if (req.method === 'GET') {
-      const who = sessions.get(readSessionCookie(req.headers.cookie))
+      const who = sessions.get(readSessionCookie(req.headers.cookie, cameInSecure(req)))
       if (who) return json(res, 200, { role: who.role, name: who.name })
       if (pins.mode() === 'off') return json(res, 200, { role: 'staff', name: null })
       throw new PinError('Enter your PIN to open the till.', 401)
@@ -196,7 +196,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (req.method === 'POST') {
       const body = await readBody(req)
       const who = await checkPin(req, body.pin, 'staff')
-      sessions.end(readSessionCookie(req.headers.cookie))
+      sessions.end(readSessionCookie(req.headers.cookie, cameInSecure(req)))
       const token = sessions.start(who)
       res.setHeader('set-cookie', sessionCookie(token, cameInSecure(req)))
       return json(res, 200, { role: who.role, name: who.name })
@@ -204,7 +204,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return json(res, 405, { error: 'Method not allowed.' })
   }
   if (req.method === 'POST' && route === '/api/session/end') {
-    sessions.end(readSessionCookie(req.headers.cookie))
+    sessions.end(readSessionCookie(req.headers.cookie, cameInSecure(req)))
     res.setHeader('set-cookie', sessionCookie(null, cameInSecure(req)))
     return json(res, 200, { ok: true })
   }

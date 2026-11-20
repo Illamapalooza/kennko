@@ -97,9 +97,23 @@ describe('session cookie', () => {
     expect(readSessionCookie(undefined)).toBeUndefined()
   })
 
+  it('reads the cookie named for the scheme the request came in on', () => {
+    expect(readSessionCookie('__Secure-kennko_pos_session=sec', true)).toBe('sec')
+    expect(readSessionCookie('__Secure-kennko_pos_session=sec', false)).toBeUndefined()
+    expect(readSessionCookie('kennko_pos_session=plain', true)).toBeUndefined()
+    const both = 'kennko_pos_session=plain; __Secure-kennko_pos_session=sec'
+    expect(readSessionCookie(both, true)).toBe('sec')
+    expect(readSessionCookie(both, false)).toBe('plain')
+    expect(readSessionCookie('__Secure-kennko_pos_session=sec; kennko_pos_session=plain')).toBe('plain')
+  })
+
+  it('uses the __Secure- name on https and the plain name on http', () => {
+    expect(sessionCookie('abc', true).startsWith('__Secure-kennko_pos_session=abc;')).toBe(true)
+    expect(sessionCookie('abc', false).startsWith('kennko_pos_session=abc;')).toBe(true)
+  })
+
   it('is HttpOnly, Strict and lasts as long as the browser session', () => {
     const cookie = sessionCookie('abc', true)
-    expect(cookie.startsWith('kennko_pos_session=abc;')).toBe(true)
     for (const part of ['HttpOnly', 'SameSite=Strict', 'Path=/', 'Secure']) expect(cookie).toContain(part)
     expect(cookie).not.toContain('Max-Age')
     expect(sessionCookie('abc', false)).not.toContain('Secure')
@@ -108,6 +122,11 @@ describe('session cookie', () => {
   it('expires the cookie when there is no token', () => {
     const cookie = sessionCookie(null, false)
     expect(cookie.startsWith('kennko_pos_session=;')).toBe(true)
-    expect(cookie).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/)
+    expect(cookie).toContain('Max-Age=0')
+    expect(cookie).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT')
+    const secure = sessionCookie(null, true)
+    expect(secure.startsWith('__Secure-kennko_pos_session=;')).toBe(true)
+    expect(secure).toContain('Secure')
+    expect(secure).toContain('Max-Age=0')
   })
 })
