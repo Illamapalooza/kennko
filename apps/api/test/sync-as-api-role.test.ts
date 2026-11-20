@@ -728,6 +728,73 @@ describe('every route as kennko_api', () => {
     expect(rl!.n).toBeGreaterThan(0)
   })
 
+  it('admin customers and stamps to check: lookup, detail, card mode, points, apply, discard, Needs a look as kennko_api', async () => {
+    const member = '00000000-0000-4000-8000-0000000000b4'
+    const bare = makePublicCode(randomInt)
+    await asSuper(async () => {
+      await db.sql`insert into auth.users (id, email) values (${member}, 'admin-view@x.test')`
+      await db.sql`insert into customers (id, public_code, display_name, stamp_mode, age_confirmed_at, privacy_accepted_at,
+          privacy_version, created_at)
+        values (${member}, ${bare}, 'Paula Paper', 'paper', ${NOW}, ${NOW}, '2026-11', ${NOW})`
+    })
+    const code = formatPublicCode(bare)
+    const managerJwt = await signFor(MANAGER_LOGIN)
+
+    // Two paper stamps through the till.
+    const [open] = await asSuper(() => db.sql<{ id: string }[]>`select id from shifts where device_id = ${deviceId} and closed_at is null`)
+    const stampIds: string[] = []
+    for (const ticketNumber of [70, 71]) {
+      const sale = orderCreated({ shiftId: open!.id, ticketNumber, menuVersion: null }, { staffId: BARISTA })
+      const stamp = stampAdded({ orderId: sale.payload.orderId }, { staffId: BARISTA })
+      const res = await push([sale, customerLinked({ orderId: sale.payload.orderId, publicCode: code }, { staffId: BARISTA }), stamp])
+      expect(res.results.map((r) => r.reason)).toEqual(['unknown_version', null, 'mode_was_paper'])
+      stampIds.push(stamp.payload.stampId)
+    }
+
+    const byName = (await ok('GET', '/v1/customers?q=paula', managerJwt)) as unknown as { id: string }[]
+    expect(byName.map((c) => c.id)).toEqual([member])
+    const byCode = (await ok('GET', `/v1/customers?q=${encodeURIComponent(code)}`, ownerJwt)) as unknown as { id: string }[]
+    expect(byCode.map((c) => c.id)).toEqual([member])
+    const detail = await call('GET', `/v1/customers/${member}`, managerJwt)
+    expect(detail.status, detail.text).toBe(200)
+    expect(detail.text).not.toContain('admin-view@x.test')
+    expect((detail.json().paperStamps as unknown[]).length).toBe(2)
+
+    const toCheck = (await ok('GET', '/v1/stamps/to-check', managerJwt)) as unknown as { id: string }[]
+    expect(toCheck.map((s) => s.id)).toEqual(expect.arrayContaining(stampIds))
+    const view = await ok('GET', '/v1/attention', ownerJwt)
+    expect((view.stamps as { id: string }[]).map((s) => s.id)).toEqual(expect.arrayContaining(stampIds))
+    const before = (await ok('GET', '/v1/attention/count', ownerJwt)).count as number
+
+    expect((await call('POST', `/v1/stamps/${stampIds[0]}/apply`, managerJwt)).json().code).toBe('STILL_PAPER')
+    expect(await ok('POST', `/v1/customers/${member}/stamp-mode`, managerJwt, { mode: 'digital' })).toEqual({
+      stampMode: 'digital',
+      changed: true,
+    })
+    await ok('POST', `/v1/stamps/${stampIds[0]}/apply`, managerJwt)
+    await ok('POST', `/v1/stamps/${stampIds[1]}/discard`, managerJwt)
+    expect((await ok('GET', '/v1/attention/count', ownerJwt)).count).toBe(before - 2)
+    // Paper customers still earn: 14 for each sale, then the adjustment.
+    expect(await ok('POST', `/v1/customers/${member}/points`, ownerJwt, { delta: 25, note: 'Welcome back' })).toEqual({
+      points: 53,
+    })
+
+    const state = await asSuper(async () => ({
+      stamps: await db.sql`select card_id, flags, resolved_by from stamps where customer_id = ${member} order by stamped_at`,
+      receipts: await db.sql`select resolve_note from sync_events where kind = 'stamp.added' and payload->>'stampId' in ${db.sql(stampIds)}
+        order by seq`,
+      ledger: await db.sql`select delta, reason, created_by_staff from points_ledger
+        where customer_id = ${member} and reason = 'adjustment'`,
+      mode: await db.sql`select stamp_mode, stamp_mode_set_by from customers where id = ${member}`,
+    }))
+    expect(state.stamps[0]!.card_id).not.toBeNull()
+    expect(state.stamps[1]).toMatchObject({ card_id: null, flags: ['mode_was_paper', 'discarded'] })
+    expect(state.receipts.map((r) => r.resolve_note)).toEqual(['Stamp applied', 'Stamp discarded'])
+    expect(state.ledger.map((r) => [r.delta, r.reason, r.created_by_staff])).toEqual([[25, 'adjustment', OWNER]])
+    expect(state.mode[0]!.stamp_mode).toBe('digital')
+    expect(state.mode[0]!.stamp_mode_set_by).not.toBeNull()
+  })
+
   it('publishMenu from the deploy helper also works as kennko_api', async () => {
     await asSuper(() => db.sql`update menu_variants set price_centavos = 13000 where item_id = ${latteId}`)
     const r = await publishMenu(db.sql, OWNER)

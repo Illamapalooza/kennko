@@ -1,9 +1,11 @@
-import { randomUUID } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
+import { formatPublicCode, makePublicCode } from '@kennko/core'
 import type { AttentionEvent, AttentionView, CounterOrderPayload, FlaggedOrder, ImportOrder, OpenShift } from '@kennko/core'
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { PushPayload, PushSender } from '../src/push/send.js'
 import { startTestDb, type TestDb } from './pg.js'
 import {
+  customerLinked,
   orderCreated,
   prepStatus,
   publishTwoVersions,
@@ -11,6 +13,7 @@ import {
   seedStaff,
   shiftClosed,
   shiftOpened,
+  stampAdded,
   syncApp,
   type TwoVersions,
 } from './sync-helpers.js'
@@ -451,6 +454,61 @@ describe('the lock and post-commit pushes', () => {
     expect(sent.map((p) => p.title)).toEqual(['W950 is being prepared'])
     const [row] = await db.sql`select prep_status from orders where id = ${orderId}`
     expect(row!.prep_status).toBe('preparing')
+  })
+})
+
+describe('stamps to check (Plan 7, Ruling 13)', () => {
+  test('a stamp for a paper customer is listed under stamps and counted, until it is applied or discarded', async () => {
+    const till = await tillWithShift('Stamp till')
+    const id = randomUUID()
+    const bare = makePublicCode(randomInt)
+    await db.sql`insert into auth.users (id, email) values (${id}, 'paper@x.test')`
+    await db.sql`insert into customers (id, public_code, display_name, stamp_mode, age_confirmed_at, privacy_accepted_at,
+        privacy_version, created_at)
+      values (${id}, ${bare}, 'Paper Pia', 'paper', ${NOW}, ${NOW}, '2026-11', ${NOW})`
+    const code = formatPublicCode(bare)
+    const stampOne = async () => {
+      const s = sale(till.shiftId)
+      const stamp = stampAdded({ orderId: s.payload.orderId })
+      const res = await api.push(till.token, [s, customerLinked({ orderId: s.payload.orderId, publicCode: code }), stamp])
+      expect(res.results.map((r) => r.reason)).toEqual([null, null, 'mode_was_paper'])
+      return { stampId: stamp.payload.stampId, receiptId: stamp.id, orderId: s.payload.orderId }
+    }
+
+    const before = await count()
+    const first = await stampOne()
+    expect(await count()).toBe(before + 1)
+    const second = await stampOne()
+    expect(await count()).toBe(before + 2)
+
+    const open = await view()
+    expect(open.stamps.map((s) => s.id)).toEqual(expect.arrayContaining([first.stampId, second.stampId]))
+    expect(open.stamps.find((s) => s.id === first.stampId)).toMatchObject({
+      orderId: first.orderId,
+      customerId: id,
+      customerCode: code,
+      displayName: 'Paper Pia',
+      customerMode: 'paper',
+      deviceName: 'Stamp till',
+    })
+    // The receipt itself is not listed again among the events.
+    expect(eventIn(open, first.receiptId)).toBeUndefined()
+
+    // Discard the second; switch to digital and apply the first.
+    expect((await call('POST', `/v1/stamps/${second.stampId}/discard`)).status).toBe(200)
+    expect(await count()).toBe(before + 1)
+    expect((await call('POST', `/v1/customers/${id}/stamp-mode`, { mode: 'digital' })).status).toBe(200)
+    expect((await call('POST', `/v1/stamps/${first.stampId}/apply`)).status).toBe(200)
+    expect(await count()).toBe(before)
+    const after = await view()
+    expect(after.stamps.map((s) => s.id)).not.toContain(first.stampId)
+    expect(after.stamps.map((s) => s.id)).not.toContain(second.stampId)
+
+    // Both receipts now sit among the resolved ones with their notes; resolved never lists stamps.
+    const resolved = await view('resolved')
+    expect(resolved.stamps).toEqual([])
+    expect(eventIn(resolved, first.receiptId)).toMatchObject({ resolveNote: 'Stamp applied', resolvedByName: 'Olive' })
+    expect(eventIn(resolved, second.receiptId)).toMatchObject({ resolveNote: 'Stamp discarded' })
   })
 })
 

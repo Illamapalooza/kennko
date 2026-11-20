@@ -1,5 +1,6 @@
 import { eventSummary, ticketLabel, type AttentionEvent, type AttentionView, type FlaggedOrder, type OpenShift } from '@kennko/core'
 import type postgres from 'postgres'
+import { countPaperStamps, paperStamps } from '../loyalty/admin.js'
 
 type Sql = postgres.Sql | postgres.TransactionSql
 
@@ -180,11 +181,11 @@ export async function readAttention(sql: Sql, show: 'open' | 'resolved'): Promis
     events: await events(sql, show),
     orders: await orders(sql, show),
     shifts: show === 'open' ? await openShifts(sql) : [],
-    stamps: [], // Plan 7 Task 7 fills this
+    stamps: show === 'open' ? await paperStamps(sql) : [],
   }
 }
 
-/** The admin badge: open receipts, unseen flagged orders, and open shifts that block a till. */
+/** The admin badge: open receipts, unseen flagged orders, open shifts that block a till, and stamps to check. */
 export async function countAttention(sql: Sql): Promise<number> {
   const [row] = await sql<{ n: number }[]>`
     select
@@ -193,5 +194,5 @@ export async function countAttention(sql: Sql): Promise<number> {
       + (select count(*)::int from shifts sh where sh.closed_at is null and exists (
           select 1 from sync_events e
           where e.device_id = sh.device_id and e.result = 'held' and e.reason = 'another_shift_open')) as n`
-  return row!.n
+  return row!.n + (await countPaperStamps(sql))
 }

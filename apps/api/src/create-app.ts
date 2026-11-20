@@ -5,7 +5,7 @@ import type { AppEnv } from './auth.js'
 import { apiError } from './http.js'
 import type { AuthAdmin } from './auth-admin.js'
 import { attentionRoutes } from './routes/attention.js'
-import { customerRoutes, stampCardRoutes } from './routes/customers.js'
+import { customerRoutes, stampCardRoutes, stampRoutes } from './routes/customers.js'
 import { deviceRoutes } from './routes/devices.js'
 import { meRoutes } from './routes/me.js'
 import { menuRoutes } from './routes/menu.js'
@@ -72,6 +72,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route('/v1/reports', reportRoutes(deps))
   app.route('/v1/staff', staffRoutes(deps))
   app.route('/v1/stamp-cards', stampCardRoutes(deps))
+  app.route('/v1/stamps', stampRoutes(deps))
   app.route('/v1/sync', syncRoutes(deps))
 
   return app

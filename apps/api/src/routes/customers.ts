@@ -1,9 +1,18 @@
 import { LOOKUPS_PER_MINUTE, normalisePublicCode, type TillCustomer } from '@kennko/core'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { z } from 'zod'
-import { requireDevice, type AppEnv } from '../auth.js'
+import { requireDevice, requireStaff, type AppEnv } from '../auth.js'
 import type { AppDeps } from '../create-app.js'
-import { apiError } from '../http.js'
+import { apiError, invalid } from '../http.js'
+import {
+  addAdjustment,
+  customerDetail,
+  paperStamps,
+  resolvePaperStamp,
+  searchCustomers,
+  setStampMode,
+  type Failure,
+} from '../loyalty/admin.js'
 import { claimFreeDrink, unclaim } from '../loyalty/cards.js'
 import { customerByCode, lockCustomer, tillCustomer } from '../loyalty/customers.js'
 import { hit } from '../rate-limit.js'
@@ -19,6 +28,31 @@ const claimSchema = z.object({
 const releaseSchema = z.object({ claimId: z.uuid() })
 
 const body = async (c: { req: { json(): Promise<unknown> } }) => c.req.json().catch(() => null)
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** A path id that is not a uuid is simply not found. */
+function uuidParam(c: Context<AppEnv>, name: string): string {
+  const id = c.req.param(name) ?? ''
+  if (!UUID.test(id)) throw apiError(404, 'NOT_FOUND', 'Not found')
+  return id
+}
+const failed = (c: Context<AppEnv>, out: Failure) => c.json({ code: out.code, message: out.message }, out.status)
+
+const modeSchema = z.object({ mode: z.enum(['digital', 'paper']) })
+const pointsSchema = z.object({
+  delta: z
+    .number()
+    .int()
+    .min(-10_000)
+    .max(10_000)
+    .refine((d) => d !== 0),
+  note: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine((s) => !s.includes('\u0000')),
+})
 
 const badCode = () => apiError(400, 'BAD_CODE', 'That is not a Kennko card code. Check it and try again.')
 const unknownCustomer = () => apiError(404, 'UNKNOWN_CUSTOMER', 'No Kennko card has that code.')
@@ -41,6 +75,56 @@ export function customerRoutes(deps: AppDeps): Hono<AppEnv> {
     c.header('Cache-Control', 'no-store')
     return c.json(found as TillCustomer)
   })
+
+  // Admin (Ruling 17): lookup, detail and card mode for owners and managers; point adjustments for the owner.
+  app.get('/', requireStaff(deps, 'manager'), async (c) => {
+    c.header('Cache-Control', 'no-store')
+    return c.json(await searchCustomers(deps.sql, c.req.query('q') ?? ''))
+  })
+
+  app.get('/:id', requireStaff(deps, 'manager'), async (c) => {
+    const found = await customerDetail(deps.sql, uuidParam(c, 'id'))
+    if (!found) throw apiError(404, 'NOT_FOUND', 'Not found')
+    c.header('Cache-Control', 'no-store')
+    return c.json(found)
+  })
+
+  app.post('/:id/stamp-mode', requireStaff(deps, 'manager'), async (c) => {
+    const customerId = uuidParam(c, 'id')
+    const parsed = modeSchema.safeParse(await body(c))
+    if (!parsed.success) return invalid('mode is digital or paper.')
+    const out = await setStampMode(deps.sql, { customerId, mode: parsed.data.mode, staffId: c.get('staff').id, now: deps.now() })
+    return out.ok ? c.json({ stampMode: out.stampMode, changed: out.changed }) : failed(c, out)
+  })
+
+  app.post('/:id/points', requireStaff(deps, 'owner'), async (c) => {
+    const customerId = uuidParam(c, 'id')
+    const parsed = pointsSchema.safeParse(await body(c))
+    if (!parsed.success) return invalid('Give whole points from -10000 to 10000 (not 0) and a note (1 to 200 characters).')
+    const out = await addAdjustment(deps.sql, { customerId, ...parsed.data, staffId: c.get('staff').id, now: deps.now() })
+    return out.ok ? c.json({ points: out.points }) : failed(c, out)
+  })
+
+  return app
+}
+
+/** Stamps to check (Ruling 13): paper-mode stamps a manager applies once the customer is digital, or discards. */
+export function stampRoutes(deps: AppDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>()
+  app.use('*', requireStaff(deps, 'manager'))
+
+  app.get('/to-check', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    return c.json(await paperStamps(deps.sql))
+  })
+
+  for (const action of ['apply', 'discard'] as const) {
+    app.post(`/:id/${action}`, async (c) => {
+      const stampId = uuidParam(c, 'id')
+      const out = await resolvePaperStamp(deps.sql, { stampId, action, staffId: c.get('staff').id, now: deps.now() })
+      return out.ok ? c.json({ ok: true }) : failed(c, out)
+    })
+  }
 
   return app
 }

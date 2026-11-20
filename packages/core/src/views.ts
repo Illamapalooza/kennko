@@ -1,6 +1,7 @@
 import type { IceLevel, IceServe } from './ice.ts'
 import type { StampMode } from './loyalty.ts'
 import type { PaymentStatus, PrepStatus } from './order-status.ts'
+import type { PaperStamp } from './sync.ts'
 
 /**
  * What the API's customer-facing reads return. Raw fields (statuses, ice): the website maps them
@@ -131,4 +132,45 @@ export type MeView = {
     card: { stamps: { stampedAt: string }[]; fullCards: number } | null
     points: number
   } | null
+}
+
+/**
+ * Admin › Customers (owners and managers, Ruling 17): one row of a lookup by code or display name. Never an email:
+ * those live only in Supabase Auth. `stamps` are on the open digital card, `fullCards` wait for a claim.
+ */
+export type CustomerListItem = {
+  id: string
+  /** Formatted: `KC-XXX-XXX-XXX`. */
+  publicCode: string
+  displayName: string
+  stampMode: StampMode
+  stamps: number
+  fullCards: number
+  points: number
+  joinedAt: string
+}
+
+/** One customer for admin: the last 10 cards (newest first), the last 50 ledger rows (newest first), open paper stamps. */
+export type CustomerDetail = CustomerListItem & {
+  /** The staff member who last switched the card mode (their name), or null when it was never switched by hand. */
+  stampModeSetBy: string | null
+  stampModeSetAt: string | null
+  cards: {
+    id: string
+    startedAt: string
+    filledAt: string | null
+    claimedAt: string | null
+    claimedTicket: string | null
+    stamps: { id: string; ticket: string; stampedAt: string; flags: string[] }[]
+  }[]
+  ledger: {
+    id: string
+    delta: number
+    reason: 'order' | 'order_reversed' | 'cosmetic' | 'adjustment'
+    ticket: string | null
+    note: string | null
+    byName: string | null
+    createdAt: string
+  }[]
+  paperStamps: PaperStamp[]
 }

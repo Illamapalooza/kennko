@@ -320,7 +320,8 @@ describe('paper customers (Ruling 13)', () => {
     expect(r.status).toBe(200)
     const view = (await r.json()) as AttentionView
     expect(view.events.map((e) => e.id)).not.toContain(stamp.id)
-    // Listing it under `stamps` is Plan 7 Task 7's (readAttention fills `stamps` there).
+    // It is listed under "Stamps to check" instead.
+    expect(view.stamps.map((x) => x.id)).toContain(stamp.payload.stampId)
   })
 })
 
