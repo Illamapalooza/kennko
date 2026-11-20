@@ -392,6 +392,22 @@ describe('every route as kennko_api', () => {
     expect((await call('GET', '/v1/attention', baristaJwt)).status).toBe(403)
   })
 
+  it('day report: owner reads 2026-11-21 as kennko_api, with the seeded totals', async () => {
+    const r = await ok('GET', '/v1/reports/day/2026-11-21', ownerJwt)
+    const [sums] = await asSuper(
+      () => db.sql`
+        select count(*)::int as orders, coalesce(sum(total_centavos), 0)::int as total,
+          count(*) filter (where channel = 'counter')::int as counter
+        from orders where business_day = '2026-11-21' and prep_status <> 'cancelled' and payment_status = 'paid'`,
+    )
+    expect(sums!.counter).toBeGreaterThan(0)
+    expect(r.sales).toMatchObject({ orders: sums!.orders, totalCentavos: sums!.total, counter: { orders: sums!.counter } })
+    const shifts = r.shifts as { cashSalesCentavos: number }[]
+    expect(shifts.length).toBeGreaterThan(0)
+    expect((r.held as { rows: unknown[] }).rows).toEqual([])
+    expect((await call('GET', '/v1/reports/day/2026-11-21', baristaJwt)).status).toBe(403)
+  })
+
   it('publishMenu from the deploy helper also works as kennko_api', async () => {
     await asSuper(() => db.sql`update menu_variants set price_centavos = 13000 where item_id = ${latteId}`)
     const r = await publishMenu(db.sql, OWNER)

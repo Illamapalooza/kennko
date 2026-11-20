@@ -9,6 +9,7 @@ import { menuRoutes } from './routes/menu.js'
 import { ordersRoutes } from './routes/orders.js'
 import { paymentRoutes } from './routes/payments.js'
 import { pushRoutes } from './routes/push.js'
+import { reportRoutes } from './routes/reports.js'
 import { staffRoutes } from './routes/staff.js'
 import { syncRoutes } from './routes/sync.js'
 import type { PushSender } from './push/send.js'
@@ -57,6 +58,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route('/v1/orders', ordersRoutes(deps))
   app.route('/v1/payments', paymentRoutes(deps))
   app.route('/v1/push', pushRoutes(deps))
+  app.route('/v1/reports', reportRoutes(deps))
   app.route('/v1/staff', staffRoutes(deps))
   app.route('/v1/sync', syncRoutes(deps))
 
