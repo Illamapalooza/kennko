@@ -1,13 +1,13 @@
 import 'server-only'
 
-type SendArgs = { to: string[]; subject: string; text: string }
+type SendArgs = { to: string[]; subject: string; text: string; html?: string }
 
 /**
  * A missing RESEND_API_KEY logs and continues rather than throwing. Email is a
  * notification, not the record of the order -- losing a paid order because a
  * key was not configured would be far worse than a missed email.
  */
-export async function sendEmail({ to, subject, text }: SendArgs): Promise<boolean> {
+export async function sendEmail({ to, subject, text, html }: SendArgs): Promise<boolean> {
   const key = process.env.RESEND_API_KEY
   const from = process.env.ORDER_EMAIL_FROM ?? 'Kennko Coffee <onboarding@resend.dev>'
 
@@ -27,7 +27,7 @@ export async function sendEmail({ to, subject, text }: SendArgs): Promise<boolea
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from, to, subject, text }),
+      body: JSON.stringify({ from, to, subject, text, ...(html ? { html } : {}) }),
     })
 
     if (!response.ok) {

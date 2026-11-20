@@ -6,6 +6,9 @@ import { getAdminClient } from '@/lib/supabase/admin'
 import { requireStaff } from '@/lib/auth/session'
 import { staffFetch } from '@/lib/api/client'
 import { sendEmail } from '@/lib/email/send'
+import { buildReceipt } from '@/lib/receipts/receipt'
+import { loadReceiptOrder, loadShopSettings } from '@/lib/receipts/load'
+import { receiptHtml, receiptText, escapeHtml } from '@/lib/receipts/email'
 import { formatManilaDateTime } from '@/lib/format/time'
 import {
   customerConfirmSubject, customerConfirmBody,
@@ -95,6 +98,37 @@ async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: 
   }
 }
 
+type EmailContent = { subject: string; text: string; html?: string }
+
+/**
+ * Today's confirmation, plus the e-receipt when it can be built. A receipt problem of any kind
+ * (load error, unverified payment) falls back to the plain confirmation, never blocks it.
+ */
+async function confirmationWithReceipt(d: OrderEmailData): Promise<EmailContent> {
+  const plain = { subject: customerConfirmSubject(d), text: customerConfirmBody(d) }
+  try {
+    const order = await loadReceiptOrder(d.orderCode)
+    if (!order) return plain
+    const receipt = buildReceipt(order, await loadShopSettings(), 'email')
+    if (!receipt) return plain
+    const base = (process.env.NEXT_PUBLIC_SITE_URL || 'https://kennko.vercel.app').replace(/\/+$/, '')
+    const link = `${base}/order/${encodeURIComponent(d.orderCode)}/receipt`
+    return {
+      subject: plain.subject,
+      text: `${plain.text}\n\n${receiptText(receipt)}\n\nView or print your receipt: ${link}`,
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#111111;">
+<p>Hi ${escapeHtml(d.customerName)},</p>
+<p>We checked your GCash payment and your order ${escapeHtml(d.orderCode)} is confirmed. Thanks for ordering from Kennko Coffee.</p>
+${receiptHtml(receipt)}
+<p>View or print your receipt: <a href="${escapeHtml(link)}" style="color:#0055FF;">${escapeHtml(link)}</a></p>
+</div>`,
+    }
+  } catch (cause) {
+    console.error('Receipt for the confirmation email failed; sending without it', cause)
+    return plain
+  }
+}
+
 /**
  * The API call already succeeded; a mail problem must never turn that into an error for staff.
  * The send is awaited (it never throws): it is the customer's only confirmation, and a serverless
@@ -102,11 +136,11 @@ async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: 
  */
 async function notifyCustomer(
   paymentId: string,
-  compose: (data: OrderEmailData) => { subject: string; text: string },
+  compose: (data: OrderEmailData) => EmailContent | Promise<EmailContent>,
 ) {
   try {
     const mail = await emailFor(paymentId)
-    if (mail) await sendEmail({ to: [mail.to], ...compose(mail.data) })
+    if (mail) await sendEmail({ to: [mail.to], ...(await compose(mail.data)) })
   } catch (cause) {
     console.error('Customer email failed after the payment action succeeded', cause)
   }
@@ -123,9 +157,7 @@ export async function confirmPayment(paymentId: string): Promise<Result> {
   if (!result.ok) return result
 
   // Only now does the customer hear anything -- the whole point of the verification gate.
-  await notifyCustomer(paymentId, (d) => ({
-    subject: customerConfirmSubject(d), text: customerConfirmBody(d),
-  }))
+  await notifyCustomer(paymentId, confirmationWithReceipt)
   refresh()
   return result
 }

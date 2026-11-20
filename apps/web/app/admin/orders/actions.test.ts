@@ -10,6 +10,26 @@ vi.mock('next/cache', () => ({ revalidatePath: (...a: unknown[]) => revalidatePa
 vi.mock('@/lib/auth/session', () => ({ requireStaff: vi.fn(async () => ({ id: 's1', role: 'owner' })) }))
 vi.mock('@/lib/api/client', () => ({ staffFetch: (...a: unknown[]) => staffFetch(...a) }))
 vi.mock('@/lib/email/send', () => ({ sendEmail: (...a: unknown[]) => sendEmail(...a) }))
+let receiptThrows = false
+let receiptPaid = true
+vi.mock('@/lib/receipts/load', () => ({
+  loadReceiptOrder: async () => {
+    if (receiptThrows) throw new Error('receipt db down')
+    return {
+      orderCode: 'KNK-7F3Q', ticket: 'W3', customerName: 'Ana Cruz', fulfilment: 'pickup',
+      deliveryAddress: null, deliveryBarangay: null, paidAt: '2026-11-20T04:30:00Z',
+      paymentStatus: receiptPaid ? 'paid' : 'unpaid', prepStatus: 'preparing', cancelledAt: null,
+      reference: '1234567891234', subtotalCentavos: 29000, discountCentavos: 0,
+      deliveryFeeCentavos: 0, totalCentavos: 29000,
+      lines: [{ itemName: 'Spanish Latte', variantLabel: '16oz', quantity: 2,
+        unitPriceCentavos: 14500, lineTotalCentavos: 29000, options: [] }],
+    }
+  },
+  loadShopSettings: async () => ({
+    displayName: 'Kennko Coffee', registeredName: null, tin: null, address: 'Butuan',
+    phone: null, facebookUrl: null, receiptFooter: 'Ask for your official receipt.',
+  }),
+}))
 vi.mock('@/lib/supabase/server', () => ({
   getServerClient: async () => ({ from: () => ({ update }) }),
 }))
@@ -50,6 +70,8 @@ const reply = (status: number, body: unknown = {}) =>
 beforeEach(() => {
   vi.clearAllMocks()
   adminThrows = false
+  receiptThrows = false
+  receiptPaid = true
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -120,6 +142,41 @@ describe('customer email data', () => {
     // 08:00 UTC is 4:00 PM in Manila.
     expect(mail.text).toContain('4:00 PM')
     expect(mail.text).toContain('Nov 20, 2026')
+  })
+})
+
+describe('confirmation email receipt', () => {
+  type Mail = { subject: string; text: string; html?: string }
+  it('adds the e-receipt and a receipt link', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    await confirmPayment('p1')
+    const mail = sendEmail.mock.calls[0][0] as Mail
+    expect(mail.subject).toBe('Your Kennko order KNK-7F3Q is confirmed')
+    expect(mail.html).toContain('View or print your receipt: ')
+    expect(mail.html).toContain('/order/KNK-7F3Q/receipt')
+    expect(mail.html).toContain('THIS IS NOT AN OFFICIAL RECEIPT')
+    expect(mail.text).toContain('THIS IS NOT AN OFFICIAL RECEIPT')
+  })
+  it('still sends the plain confirmation when the receipt fails to load', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    receiptThrows = true
+    await confirmPayment('p1')
+    const mail = sendEmail.mock.calls[0][0] as Mail
+    expect(mail.html).toBeUndefined()
+    expect(mail.text).toContain('is confirmed')
+  })
+  it('still sends the plain confirmation when no receipt can be built', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    receiptPaid = false
+    await confirmPayment('p1')
+    const mail = sendEmail.mock.calls[0][0] as Mail
+    expect(mail.html).toBeUndefined()
+    expect(mail.text).toContain('is confirmed')
+  })
+  it('reject emails carry no html', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    await rejectPayment('p1', 'No match')
+    expect((sendEmail.mock.calls[0][0] as Mail).html).toBeUndefined()
   })
 })
 
