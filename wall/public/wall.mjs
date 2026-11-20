@@ -93,6 +93,9 @@ function bell() {
   duckTimer = setTimeout(() => { audio.volume = baseVolume(); }, 1900);
 }
 
+// What the customer was told: "W3" for an online order, else the counter number.
+const shownNumber = (order) => order.label ?? String(order.id);
+
 // ---------- ready banner ----------
 const banners = [];
 let bannerBusy = false;
@@ -101,7 +104,7 @@ function showBanner() {
   const order = banners.shift();
   if (!order) return;
   bannerBusy = true;
-  $("banner-number").textContent = String(order.id);
+  $("banner-number").textContent = shownNumber(order);
   $("banner-name").textContent = order.name ? `for ${order.name}` : "";
   $("banner").hidden = false;
   bell();
@@ -115,7 +118,7 @@ function row(order, fresh) {
   const drinks = itemsLabel(order.items);
   if (order.name) text.append(el("b", order.name), el("small", drinks));
   else text.append(el("b", drinks));
-  li.append(el("strong", String(order.id)), text);
+  li.append(el("strong", shownNumber(order)), text);
   return li;
 }
 
@@ -128,7 +131,7 @@ function renderBoard(state, freshIds) {
   $("b-serving").replaceChildren(...view.serving.shown.map((o) => row(o, freshIds.has(o.id))));
   $("m-preparing").textContent = view.preparing.more ? `+${view.preparing.more} more` : "";
   $("m-serving").textContent = view.serving.more ? `+${view.serving.more} more` : "";
-  const chips = view.queued.shown.map((o) => el("span", String(o.id)));
+  const chips = view.queued.shown.map((o) => el("span", shownNumber(o)));
   if (view.queued.more) chips.push(el("span", `+${view.queued.more}`));
   $("b-queued").replaceChildren(...chips);
 }

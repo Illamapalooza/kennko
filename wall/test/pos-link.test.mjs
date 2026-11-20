@@ -19,6 +19,42 @@ test("two open orders that share a number across midnight stay apart", () => {
   assert.deepEqual(state.orders.map((o) => [o.id, o.status]), [[1, "serving"], [1001, "queued"]]);
 });
 
+test("a counter order and an online order with the same number stay apart, W shows as W3", () => {
+  const state = fromPosFeed({ day: "2026-11-20", orders: [
+    order({ id: 7, number: 3, createdAt: 100 }),
+    order({ id: 3, number: 3, series: "W", name: "Ana", createdAt: 200 }),
+  ] }, 1);
+  assert.deepEqual(state.orders.map((o) => [o.id, o.label]), [[3, undefined], [5003, "W3"]]);
+  assert.ok(!("label" in state.orders[0]));
+  assert.equal(state.seq, 5003);
+});
+
+test("a counter order keeps its wall id whether or not online orders are around", () => {
+  const counter = [order({ id: 7, number: 3, createdAt: 100 }), order({ id: 8, number: 4, createdAt: 300 })];
+  const alone = fromPosFeed({ day: "2026-11-20", orders: counter }, 1);
+  const withW = fromPosFeed({ day: "2026-11-20", orders: [order({ id: 1, number: 1, series: "W", createdAt: 50 }), ...counter, order({ id: 2, number: 3, series: "W", createdAt: 350 })] }, 1);
+  const ids = (s) => s.orders.filter((o) => !o.label).map((o) => o.id);
+  assert.deepEqual(ids(withW), ids(alone));
+});
+
+test("two W1s across midnight stay apart", () => {
+  const state = fromPosFeed({ day: "2026-11-21", orders: [
+    order({ id: 20, number: 1, series: "W", createdAt: 200 }),
+    order({ id: 10, number: 1, series: "W", createdAt: 100 }),
+  ] }, 1);
+  assert.deepEqual(state.orders.map((o) => [o.id, o.label]), [[5001, "W1"], [6001, "W1"]]);
+});
+
+test("orders are taken oldest first by createdAt, then id, so an older W order claims its number first", () => {
+  const state = fromPosFeed({ day: "2026-11-21", orders: [
+    order({ id: 5, number: 1, createdAt: 300 }),
+    order({ id: 9, number: 1, series: "W", createdAt: 100 }),
+    order({ id: 2, number: 1, createdAt: 300 }),
+  ] }, 1);
+  // W (oldest) is first; the two counter 1s share a time, so the lower id keeps 1 and the other moves aside
+  assert.deepEqual(state.orders.map((o) => [o.id, o.label]).sort((a, b) => a[0] - b[0]), [[1, undefined], [1001, undefined], [5001, "W1"]]);
+});
+
 test("a voided order is a cancelled one on the wall, a done one stays done", () => {
   const state = fromPosFeed({ day: "2026-11-17", orders: [order({ id: 1, number: 1, status: "voided" }), order({ id: 2, number: 2, status: "done" })] }, 1);
   assert.deepEqual(state.orders.map((o) => o.status), ["cancelled", "done"]);

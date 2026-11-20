@@ -35,8 +35,12 @@ up on the till walks in as a customer cat, and the wall shows the queue and call
 | **Ready** | Bell and "Order 4 for Dana is ready!"; the number moves to **Now serving**; the server cat carries the drink over |
 | **Done** | The cat finishes and leaves; the number drops off |
 | Void | The order is taken off the wall |
+| Online order paid | Comes in like any other, shown as **W3** with the customer's first name |
+| Online order out for delivery | Leaves the wall (delivery orders are not called at the counter) |
+| Online order cancelled | The order is taken off the wall |
 
-- The number on the wall is the order number the till shows after payment and prints on the receipt.
+- The number on the wall is the order number the till shows after payment and prints on the receipt. Online orders
+  carry a `W` in front (W3) and are separate from counter number 3; the banner reads "Order W3 for Ana is ready!".
 - The wall only receives drink names, first names and steps. It never sees prices or payments.
 - The till is looked for at `http://localhost:4466`. If it runs on another computer, pass its address
   (`--pos http://192.168.1.20:4466`) or set `"posUrl"` in `config.json`.

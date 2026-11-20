@@ -16,18 +16,23 @@ export function fromPosFeed(feed, baristas) {
   const orders = [];
   const taken = new Set();
   // Oldest first, so if yesterday's last order is still open after midnight it keeps its number.
-  for (const o of [...feed.orders].sort((a, b) => (a?.id ?? 0) - (b?.id ?? 0))) {
+  // Counter and online orders have separate id sequences, so the till's id alone cannot order them.
+  const age = (a, b) => (a?.createdAt ?? 0) - (b?.createdAt ?? 0) || (a?.id ?? 0) - (b?.id ?? 0);
+  for (const o of [...feed.orders].sort(age)) {
     const status = WALL_STATUS[o?.status];
     if (!status || !Number.isInteger(o.id) || o.id < 1) return null;
     if (!Number.isInteger(o.number) || o.number < 1) return null;
     if (!Number.isFinite(o.createdAt) || !Number.isFinite(o.updatedAt) || !Array.isArray(o.items)) return null;
     const items = o.items.filter((l) => typeof l?.name === "string" && Number.isInteger(l?.qty) && l.qty > 0).map((l) => ({ name: l.name, qty: l.qty }));
     if (items.length === 0) continue;
+    // Online (W) orders live in their own range, so a counter order's wall id never depends on them.
+    // An older till sends no series; its orders are all counter orders.
+    const online = o.series === "W";
     // Numbers restart each day, so two open orders can share one across midnight; the newer one is moved aside.
-    let id = o.number;
+    let id = online ? 5000 + o.number : o.number;
     while (taken.has(id)) id += 1000;
     taken.add(id);
-    orders.push({ id, name: typeof o.name === "string" ? o.name.slice(0, 16) : "", items, status, createdAt: o.createdAt, updatedAt: o.updatedAt });
+    orders.push({ id, ...(online ? { label: `W${o.number}` } : {}), name: typeof o.name === "string" ? o.name.slice(0, 16) : "", items, status, createdAt: o.createdAt, updatedAt: o.updatedAt });
   }
   orders.sort((a, b) => a.id - b.id);
   return { day: feed.day, seq: orders.reduce((max, o) => Math.max(max, o.id), 0), baristas, orders };
