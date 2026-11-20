@@ -41,9 +41,23 @@ export async function addStaff(formData: FormData): Promise<Result> {
   }
 
   const result = await callApi('/v1/staff', 'POST', body, STAFF_MESSAGES)
-  if (!result.ok) return result
+  if (!result.ok) {
+    // The invite above made a login nobody can use without a staff row; take it back so a retry can invite again.
+    if (body.userId) await deleteInvitedUser(body.userId)
+    return result
+  }
   revalidatePath('/admin/staff')
   return { ok: true }
+}
+
+/** Best effort: a failure here is logged and the API's error is still what the owner sees. */
+async function deleteInvitedUser(userId: string): Promise<void> {
+  try {
+    const { error } = await getAdminClient().auth.admin.deleteUser(userId)
+    if (error) console.error(`Could not delete the invited login ${userId}: ${error.message}`)
+  } catch (err) {
+    console.error(`Could not delete the invited login ${userId}:`, err)
+  }
 }
 
 export async function updateStaff(

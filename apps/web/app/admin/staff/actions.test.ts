@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const staffFetch = vi.fn()
 const revalidatePath = vi.fn()
 const inviteUserByEmail = vi.fn()
+const deleteUser = vi.fn()
 const requireOwner = vi.fn(async () => ({ id: 's1', role: 'owner' }))
 const serverFrom = vi.fn()
 
@@ -10,7 +11,14 @@ vi.mock('next/cache', () => ({ revalidatePath: (...a: unknown[]) => revalidatePa
 vi.mock('@/lib/auth/session', () => ({ requireOwner: () => requireOwner() }))
 vi.mock('@/lib/api/client', () => ({ staffFetch: (...a: unknown[]) => staffFetch(...a) }))
 vi.mock('@/lib/supabase/admin', () => ({
-  getAdminClient: () => ({ auth: { admin: { inviteUserByEmail: (...a: unknown[]) => inviteUserByEmail(...a) } } }),
+  getAdminClient: () => ({
+    auth: {
+      admin: {
+        inviteUserByEmail: (...a: unknown[]) => inviteUserByEmail(...a),
+        deleteUser: (...a: unknown[]) => deleteUser(...a),
+      },
+    },
+  }),
 }))
 vi.mock('@/lib/supabase/server', () => ({
   getServerClient: async () => ({ from: (...a: unknown[]) => serverFrom(...a) }),
@@ -80,6 +88,34 @@ describe('addStaff', () => {
     staffFetch.mockResolvedValue(json(409, { code: 'ALREADY_STAFF', message: 'That login already belongs to a staff member.' }))
     const result = await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))
     expect(result).toEqual({ ok: false, message: 'That login already belongs to a staff member.' })
+  })
+
+  it('deletes the just-invited login when the API refuses the person', async () => {
+    inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'u-9' } }, error: null })
+    deleteUser.mockResolvedValue({ data: {}, error: null })
+    staffFetch.mockResolvedValue(json(409, { code: 'ALREADY_STAFF', message: 'That login already belongs to a staff member.' }))
+    const result = await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))
+    expect(result).toEqual({ ok: false, message: 'That login already belongs to a staff member.' })
+    expect(deleteUser).toHaveBeenCalledWith('u-9')
+  })
+
+  it('still returns the API error when deleting the invited login fails', async () => {
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {})
+    inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'u-9' } }, error: null })
+    deleteUser.mockRejectedValue(new Error('auth down'))
+    staffFetch.mockRejectedValue(new Error('network'))
+    const result = await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))
+    expect(result).toEqual({ ok: false, message: "Couldn't reach the server. Try again." })
+    expect(deleteUser).toHaveBeenCalledWith('u-9')
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('does not delete any login when there was no invite', async () => {
+    staffFetch.mockResolvedValue(json(400, { code: 'BAD_REQUEST', message: 'Name is too long.' }))
+    const result = await addStaff(form({ full_name: 'Ana', role: 'barista' }))
+    expect(result).toEqual({ ok: false, message: 'Name is too long.' })
+    expect(deleteUser).not.toHaveBeenCalled()
   })
 
   it('reports an invite failure without calling the API', async () => {

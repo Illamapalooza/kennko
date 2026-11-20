@@ -11,7 +11,7 @@ export function DeviceRow({ till }: { till: TillView }) {
   const disconnect = () => {
     if (
       till.status === 'paired' &&
-      !window.confirm(`Disconnect ${till.name}? It keeps selling, but stops syncing until it is paired again.`)
+      !window.confirm(`Disconnect ${till.name}? It keeps selling but stops syncing, and keeps the PINs it had until it is paired again.`)
     ) {
       return
     }
