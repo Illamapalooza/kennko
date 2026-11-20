@@ -279,3 +279,95 @@ These need the live API, so they were not done during the build. Check them afte
 - Till "This till" card.
 - Till Connect this till flow.
 - The first name showing on the narrow rail.
+
+## Plan 4: till sync
+
+Plan 3 must be deployed first (tills paired, personal PINs working). Deploy in this order. Migration 0017 adds `shifts`, `cash_moves`, `sync_events`, the counter-order columns on `orders` and the till-sync checks. It is additive: the deployed API and website keep working until the new API is live.
+
+### 1. Migration 0017 (Julius)
+
+First, in the Supabase SQL editor, run this read-only pre-flight:
+
+```sql
+select count(*) from orders where channel = 'counter';
+```
+
+Expect `0`. Anything else means stop and ask: 0017's checks scan `orders` and would reject existing counter rows.
+
+Apply 0017 as one whole file, **outside opening hours if possible** (its checks scan `orders` under a lock). From `apps/api`, dry run first. It must list only 0017:
+
+```sh
+npx supabase db push --dry-run
+```
+
+Then apply:
+
+```sh
+npx supabase db push
+```
+
+### 2. API deploy
+
+No new environment variables. Smoke checks:
+
+- `GET /health` returns 200.
+- `POST /v1/sync/push` with `Authorization: Bearer kd_x` returns 401.
+- `GET /v1/sync/pull` without a token returns 401.
+- `GET /v1/devices/me` with a real till token still answers (it stays for tills not yet upgraded).
+
+### 3. Concurrency check (once, before pairing the shop till)
+
+The test database (PGlite) shares one backend session, so it cannot prove that two pushes from the same till at the same moment are safe. Check it against the real database through the pooler:
+
+1. In admin › Tills, add a throwaway till (for example "sync test") and pair it with the code. Use a throwaway device, not the shop till.
+2. Save one push body as `push.json` (event shape: see `apps/api/src/sync/`; a `shift.opened` for a new shift id is the simplest).
+3. With the throwaway device's token in `$TOKEN` (type it with `read -rs TOKEN`, never in a file), send it twice at the same moment:
+
+```sh
+curl -s -X POST <api>/v1/sync/push -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @push.json > a.json &
+curl -s -X POST <api>/v1/sync/push -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @push.json > b.json &
+wait; cat a.json b.json
+```
+
+4. Expect one reply with the event `applied` and the other with it `duplicate`. Two `applied`, or a 500, means stop and do not pair the shop till.
+5. Delete `a.json`, `b.json` and `push.json`. In admin › Tills, revoke the throwaway device.
+
+### 4. Website
+
+No change in this plan (admin already lists online orders only).
+
+### 5. Till (shop computer)
+
+- Close the till first if possible.
+- Take a manual backup copy of `data/pos.db` (the whole `apps\pos\data` folder is safest).
+- Update as in Plan 3 step 4 (`git pull`, then `deploy\windows\setup.cmd`, which runs `npm run pos:build` and restarts).
+- The startup log shows `Sync: importing N rows`, then `Sync: up to date`. Until the history import finishes, the startup log and the Menu screen show "Copying sales history to Kennko: N left." Pairing and Check now do not wait for it: pairing answers within about 5 s and Check now within about 10 s, and the import keeps going in the background.
+- Reload every tablet after updating. Old tabs keep the old screens until reloaded.
+- Check in Supabase (read-only): `select count(*) from orders where 'legacy' = any(flags);` equals the till's order count. Restart the till: it imports nothing new.
+- Rows the API could not store (legacy or pushed) are kept as held receipts, not dropped. See them with:
+
+```sql
+select kind, reason, count(*) from sync_events where result = 'held' group by 1, 2;
+```
+
+  An admin view for them comes in Plan 6.
+
+### 6. Live checks
+
+- Ring a ₱ test sale: within seconds an `orders` row appears with `channel 'counter'` and no flags.
+- Void it with the owner's PIN: it becomes `cancelled` + `refunded`, and `cancelled_by_staff` is the owner.
+- Mark a drink sold out on the till (it asks for a PIN): admin shows it sold out. Switch it back in admin: the till follows within 15 s.
+- Pull the shop computer's network cable and ring two sales: the badge says "Offline: 2 sales waiting to send". Reconnect: the badge clears and both rows arrive once.
+
+### 7. Menu
+
+Publish a price change in admin. The till's Menu screen shows the new version within 15 s, without a PIN.
+
+### 8. Visual checks not yet done
+
+These need the live API, so they were not done during the build. Check them at 768 px and 1024 px wide:
+
+- Till Gate in per-person mode.
+- The sync pills and the offline badge.
+- Menu › Check now (including "Still checking — the menu updates by itself.").
+- The sold-out PIN prompt.
