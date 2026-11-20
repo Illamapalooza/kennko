@@ -671,6 +671,63 @@ describe('every route as kennko_api', () => {
     expect(auth.deleted).toContain(leaver)
   })
 
+  it('till customers: lookup, claim, release and a pull with customers and online card state as kennko_api', async () => {
+    const member = '00000000-0000-4000-8000-0000000000b3'
+    const bare = makePublicCode(randomInt)
+    const onlineId = await asSuper(async () => {
+      await db.sql`insert into auth.users (id, email) values (${member}, 'till@x.test')`
+      await db.sql`insert into customers (id, public_code, display_name, stamp_mode, age_confirmed_at, privacy_accepted_at,
+          privacy_version, created_at)
+        values (${member}, ${bare}, 'Till Member', 'digital', ${NOW}, ${NOW}, '2026-11', ${NOW})`
+      // Two full cards waiting, so one claim can be released and another kept.
+      for (let i = 0; i < 2; i++) {
+        await db.sql`insert into stamp_cards (customer_id, started_at, filled_at) values (${member}, ${NOW}, ${NOW})`
+      }
+      const [o] = await db.sql`
+        insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
+          ticket_series, ticket_number, customer_name, customer_phone, customer_email, fulfil_at,
+          subtotal_centavos, total_centavos, created_at, updated_at, customer_id)
+        values ('online', 'KNK-TILL1', 'pickup', 'placed', 'paid', '2026-11-21', 'W', 970, 'T',
+          '09170000000', 'till@x.test', ${NOW}, 12000, 12000, ${NOW}, ${NOW}, ${member})
+        returning id`
+      await db.sql`insert into order_lines (order_id, item_id, item_name, variant_code, variant_label, unit_price_centavos,
+          quantity, line_total_centavos)
+        values (${o!.id}, ${latteId}, 'Latte', 'M', 'Medium', 12000, 1, 12000)`
+      await db.sql`insert into payments (order_id, method, amount_centavos, reference, status)
+        values (${o!.id}, 'gcash', 12000, 'GC-TILL1', 'verified')`
+      return o!.id as string
+    })
+    const code = formatPublicCode(bare)
+
+    expect(await ok('GET', `/v1/customers/by-code/${code}`, deviceToken)).toEqual({
+      code,
+      catName: null,
+      stampMode: 'digital',
+      stamps: 0,
+      fullCards: 2,
+    })
+    const kept = randomUUID()
+    const dropped = randomUUID()
+    expect((await ok('POST', '/v1/stamp-cards/claim', deviceToken, { claimId: kept, code, staffId: BARISTA })).customer).toMatchObject({
+      fullCards: 1,
+    })
+    await ok('POST', '/v1/stamp-cards/claim', deviceToken, { claimId: dropped, code, staffId: null })
+    expect(await ok('POST', '/v1/stamp-cards/release', deviceToken, { claimId: dropped })).toEqual({ released: true })
+
+    // A sale linked on this till brings the customer into the pull.
+    const [open] = await asSuper(() => db.sql<{ id: string }[]>`select id from shifts where device_id = ${deviceId} and closed_at is null`)
+    const sale = orderCreated({ shiftId: open!.id, ticketNumber: 60, menuVersion: null }, { staffId: BARISTA })
+    const res = await push([sale, customerLinked({ orderId: sale.payload.orderId, publicCode: code }, { staffId: BARISTA })])
+    // The unpriced sale is stored flagged; the link applies either way.
+    expect(res.results.map((r) => r.result)).toEqual(['flagged', 'applied'])
+    const state = await ok('GET', '/v1/sync/pull', deviceToken)
+    expect(state.customers).toContainEqual({ code, catName: null, stampMode: 'digital', stamps: 0, fullCards: 0 })
+    const online = (state.onlineOrders as { id: string; card: string | null }[]).find((o) => o.id === onlineId)
+    expect(online?.card).toBe('stamp')
+    const [rl] = await asSuper(() => db.sql`select count(*)::int as n from rate_limits where key like 'lookup:%'`)
+    expect(rl!.n).toBeGreaterThan(0)
+  })
+
   it('publishMenu from the deploy helper also works as kennko_api', async () => {
     await asSuper(() => db.sql`update menu_variants set price_centavos = 13000 where item_id = ${latteId}`)
     const r = await publishMenu(db.sql, OWNER)

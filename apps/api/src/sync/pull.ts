@@ -1,11 +1,50 @@
-import type { PullState } from '@kennko/core'
+import { LINKED_RECENT_MS, normalisePublicCode, type PullState, type TillCustomer } from '@kennko/core'
 import type postgres from 'postgres'
+import { tillCustomer } from '../loyalty/customers.js'
 import { readMenuVersion } from '../menu/read.js'
 import { readPinRoster } from '../staff/pin-roster.js'
 import { readOnlineQueue } from './online-orders.js'
 
-/** What a till needs to catch up: the menu if newer than `tillVersion`, sold-out ids, PIN roster, shop details. */
-export async function readPullState(sql: postgres.Sql, tillVersion: number | null, now: Date): Promise<PullState> {
+/** At most this many recent customers per pull. */
+export const RECENT_CUSTOMERS_MAX = 50
+
+/**
+ * The customers linked through this till in the last 30 minutes (`LINKED_RECENT_MS`), newest link first, each once,
+ * as `TillCustomer` and nothing more. Found by the code in this device's applied `customer.linked` receipts; codes are
+ * compared after `normalisePublicCode`, never as raw text. A customer deleted since the link is simply left out.
+ */
+export async function readRecentCustomers(sql: postgres.Sql, deviceId: string, now: Date): Promise<TillCustomer[]> {
+  const since = new Date(now.getTime() - LINKED_RECENT_MS)
+  const links = await sql<{ code: string | null }[]>`
+    select payload->>'publicCode' as code from sync_events
+    where device_id = ${deviceId} and kind = 'customer.linked' and result = 'applied' and received_at >= ${since}
+    order by received_at desc, seq desc`
+  const codes: string[] = []
+  for (const l of links) {
+    const bare = l.code === null ? null : normalisePublicCode(l.code)
+    if (bare !== null && !codes.includes(bare)) codes.push(bare)
+    if (codes.length === RECENT_CUSTOMERS_MAX) break
+  }
+  if (codes.length === 0) return []
+  // One snapshot, so a customer found here is still there for tillCustomer.
+  return (await sql.begin('isolation level repeatable read read only', async (tx) => {
+    const rows = await tx<{ id: string; public_code: string }[]>`
+      select id, public_code from customers where public_code in ${tx(codes)}`
+    const idOf = new Map(rows.map((r) => [r.public_code, r.id]))
+    const out: TillCustomer[] = []
+    for (const code of codes) {
+      const id = idOf.get(code)
+      if (id) out.push(await tillCustomer(tx, id))
+    }
+    return out
+  })) as TillCustomer[]
+}
+
+/**
+ * What a till needs to catch up: the menu if newer than `tillVersion`, sold-out ids, PIN roster, shop details, the
+ * paid online queue and the customers linked on this till recently.
+ */
+export async function readPullState(sql: postgres.Sql, tillVersion: number | null, now: Date, deviceId: string): Promise<PullState> {
   const [latest] = await sql<{ version: string | number }[]>`select version from menu_snapshots order by version desc limit 1`
   let menu: PullState['menu'] = null
   if (latest) {
@@ -29,6 +68,7 @@ export async function readPullState(sql: postgres.Sql, tillVersion: number | nul
     soldOut,
     staff,
     onlineOrders: await readOnlineQueue(sql, now),
+    customers: await readRecentCustomers(sql, deviceId, now),
     shop: { name: shop?.display_name ?? 'Kennko Coffee', address: shop?.address ?? '', phone: shop?.phone ?? null },
   }
 }

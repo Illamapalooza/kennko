@@ -128,12 +128,18 @@ describe('online orders in the pull', () => {
     for (const o of state.onlineOrders!) expect(isOnlineQueueOrder(o), o.id).toBe(true)
   })
 
+  test('card is null on every order with no linked customer', async () => {
+    const { state } = await getState()
+    expect(state.onlineOrders!.map((o) => o.card)).toEqual(state.onlineOrders!.map(() => null))
+  })
+
   test('allowlist: only the planned keys, and no private value anywhere', async () => {
     const { state, raw } = await getState()
     const orders = state.onlineOrders as OnlineQueueOrder[]
     for (const o of orders) {
       expect(Object.keys(o).sort()).toEqual([
         'businessDay',
+        'card',
         'createdAt',
         'customerName',
         'customerNote',
@@ -189,6 +195,7 @@ describe('online orders in the pull', () => {
       'customer_phone',
       'delivery_address',
       'delivery_barangay',
+      'customer_id',
     ])
     expect([...ONLINE_LINE_COLUMNS]).toEqual([
       'id',

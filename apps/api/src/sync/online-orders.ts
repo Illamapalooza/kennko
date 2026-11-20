@@ -1,11 +1,21 @@
-import { ONLINE_PULL_MAX, ONLINE_RECENT_MS, type IceLevel, type IceServe, type OnlineQueueOrder, type PrepStatus } from '@kennko/core'
+import {
+  hasDrink,
+  ONLINE_PULL_MAX,
+  ONLINE_RECENT_MS,
+  type IceLevel,
+  type IceServe,
+  type OnlineQueueOrder,
+  type PrepStatus,
+  type StampMode,
+} from '@kennko/core'
 import type postgres from 'postgres'
 
 /**
  * The only columns the pull may read from `orders`, `order_lines` and `order_line_options`. Each query selects
  * exactly its list (as identifiers), so a column added to the table later never reaches a till by accident.
  * No email, GCash reference, proof path, order code, staff note, map pin, user id or money. The phone and
- * address are read for every order but only unfinished delivery orders carry them out of this file.
+ * address are read for every order but only unfinished delivery orders carry them out of this file. `customer_id`
+ * is read only to work out `card` and never leaves this file.
  */
 export const ONLINE_ORDER_COLUMNS = [
   'id',
@@ -21,6 +31,7 @@ export const ONLINE_ORDER_COLUMNS = [
   'customer_phone',
   'delivery_address',
   'delivery_barangay',
+  'customer_id',
 ] as const
 export const ONLINE_LINE_COLUMNS = [
   'id',
@@ -49,6 +60,7 @@ type OrderRow = {
   customer_phone: string | null
   delivery_address: string | null
   delivery_barangay: string | null
+  customer_id: string | null
 }
 type LineRow = {
   id: string
@@ -62,6 +74,37 @@ type LineRow = {
   note: string | null
 }
 type OptionRow = { line_id: string; option_name: string }
+
+type Card = OnlineQueueOrder['card']
+
+/**
+ * "Stamp at pickup": `paper` when the linked customer is on paper, `stamped` when the order has a live stamp,
+ * `stamp` when it is linked and has a drink, otherwise null.
+ */
+async function readCards(sql: postgres.Sql, orders: OrderRow[]): Promise<Map<string, Card>> {
+  const linked = orders.filter((o) => o.customer_id !== null)
+  const cards = new Map<string, Card>()
+  if (linked.length === 0) return cards
+  const orderIds = linked.map((o) => o.id)
+  const modes = await sql<{ id: string; stamp_mode: StampMode }[]>`
+    select id, stamp_mode from customers where id in ${sql(linked.map((o) => o.customer_id!))}`
+  const stamped = await sql<{ order_id: string }[]>`
+    select order_id from stamps where order_id in ${sql(orderIds)} and not ('forgiven' = any(flags))`
+  const kinds = await sql<{ order_id: string; kind: 'drink' | 'food' | null }[]>`
+    select l.order_id, c.kind from order_lines l
+    left join menu_items i on i.id = l.item_id
+    left join menu_categories c on c.id = i.category_id
+    where l.order_id in ${sql(orderIds)}`
+  const modeOf = new Map(modes.map((m) => [m.id, m.stamp_mode]))
+  const stampedIds = new Set(stamped.map((s) => s.order_id))
+  for (const o of linked) {
+    const mode = modeOf.get(o.customer_id!)
+    if (mode === undefined) continue
+    const lines = kinds.filter((k) => k.order_id === o.id)
+    cards.set(o.id, mode === 'paper' ? 'paper' : stampedIds.has(o.id) ? 'stamped' : hasDrink(lines) ? 'stamp' : null)
+  }
+  return cards
+}
 
 const day = (d: string | Date) => (typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10))
 
@@ -105,6 +148,8 @@ export async function readOnlineQueue(sql: postgres.Sql, now: Date): Promise<Onl
     linesByOrder.set(l.order_id, list)
   }
 
+  const cards = await readCards(sql, orders)
+
   return orders.map((o) => ({
     id: o.id,
     businessDay: day(o.business_day),
@@ -122,5 +167,6 @@ export async function readOnlineQueue(sql: postgres.Sql, now: Date): Promise<Onl
       o.fulfilment === 'delivery' && o.prep_status !== 'completed'
         ? { address: o.delivery_address ?? '', barangay: o.delivery_barangay ?? '', phone: o.customer_phone ?? '' }
         : null,
+    card: cards.get(o.id) ?? null,
   }))
 }
