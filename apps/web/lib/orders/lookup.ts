@@ -6,6 +6,8 @@ import { iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
 export type PublicOrder = {
   orderCode: string
   stage: OrderStage
+  /** Payment was verified at some point (paid or refunded): the receipt page has something to show. */
+  hasConfirmedPayment: boolean
   /** The customer's number, e.g. W3. */
   ticket: string
   fulfilment: 'pickup' | 'delivery'
@@ -36,6 +38,7 @@ export async function lookupOrder(code: string): Promise<PublicOrder | null> {
   return {
     orderCode: data.order_code,
     stage: orderStage(data.prep_status, data.payment_status, data.cancelled_at != null),
+    hasConfirmedPayment: data.payment_status === 'paid' || data.payment_status === 'refunded',
     ticket: ticketLabel(data.ticket_series, data.ticket_number),
     fulfilment: data.fulfilment,
     fulfilAt: data.fulfil_at,

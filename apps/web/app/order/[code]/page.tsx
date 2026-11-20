@@ -73,6 +73,9 @@ export default async function OrderStatusPage({
         </div>
 
         <div className="done-actions">
+          {order.hasConfirmedPayment ? (
+            <a className="sheet-add" href={`/order/${order.orderCode}/receipt`}>View receipt</a>
+          ) : null}
           <a className="sheet-add" href={customer ? '/orders' : '/account'}>My orders</a>
           <a className="done-secondary" href="/order">Order again</a>
         </div>
