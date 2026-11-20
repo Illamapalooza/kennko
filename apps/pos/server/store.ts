@@ -374,6 +374,25 @@ export function createStore(file: string) {
       })
     },
 
+    /**
+     * Takes the website's sold-out list, then replays this till's unsent toggles on top in the order they were made,
+     * so a mark the website has not heard about yet is not undone by the pull (Ruling 14). One transaction.
+     */
+    replaceSoldOut(ids: string[]): void {
+      tx(() => {
+        db.prepare('delete from sold_out').run()
+        const off = db.prepare('insert or ignore into sold_out (item_id) values (?)')
+        const on = db.prepare('delete from sold_out where item_id = ?')
+        for (const id of ids) off.run(id)
+        for (const row of db.prepare("select payload from outbox where kind = 'menu.availability' order by seq").all() as any[]) {
+          const p = JSON.parse(row.payload)
+          if (typeof p?.itemId !== 'string') continue
+          if (p.available) on.run(p.itemId)
+          else off.run(p.itemId)
+        }
+      })
+    },
+
     /** Prices the order from the menu, checks the payment, and saves it. Nothing is saved unless all of it holds. */
     createOrder(menu: Menu, input: NewOrder, now: number, by: By): Order {
       by = checkBy(by)

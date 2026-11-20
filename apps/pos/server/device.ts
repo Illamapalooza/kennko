@@ -20,7 +20,7 @@ const ROLES = new Set(['owner', 'manager', 'barista'])
 // yet would still count towards per-person mode, so it is dropped.
 const PIN_HASH = /^scrypt\$16384\$8\$1\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/
 // The API's own 401 codes for a device token. Any other 401 (a hosting protection page, say) is not the API speaking.
-const REVOKED_CODES = new Set(['DEVICE_REVOKED', 'UNAUTHENTICATED'])
+export const REVOKED_CODES: ReadonlySet<string> = new Set(['DEVICE_REVOKED', 'UNAUTHENTICATED'])
 const UNREACHABLE = 'Could not reach the website. Check the internet and try again.'
 const base = (apiUrl: string) => apiUrl.trim().replace(/\/+$/, '')
 
@@ -75,6 +75,21 @@ const isCachedStaff = (s: any): s is CachedStaff =>
   Boolean(s) && typeof s.id === 'string' && s.id !== '' && typeof s.fullName === 'string' && ROLES.has(s.role) && typeof s.pinHash === 'string' && PIN_HASH.test(s.pinHash)
 
 /**
+ * The rows of a staff list from the API the till can use: well-formed, a known role, a PIN hash in the format the till
+ * checks, first of each id. Used for `GET /v1/devices/me` and the sync pull alike.
+ */
+export function cleanStaff(list: unknown[]): CachedStaff[] {
+  const seen = new Set<string>()
+  const staff: CachedStaff[] = []
+  for (const s of list) {
+    if (!isCachedStaff(s) || seen.has(s.id)) continue
+    seen.add(s.id)
+    staff.push({ id: s.id, fullName: s.fullName, role: s.role, pinHash: s.pinHash })
+  }
+  return staff
+}
+
+/**
  * Asks the API who may use this till. Never throws: anything but a clear answer counts as offline, including a 401
  * that does not carry the API's DEVICE_REVOKED or UNAUTHENTICATED code.
  */
@@ -92,21 +107,14 @@ export async function fetchDeviceInfo(apiUrl: string, token: string, fetchFn: ty
     if (!res.ok) return { status: 'offline' }
     const body: any = await res.json()
     if (!body || !Array.isArray(body.staff)) return { status: 'offline' }
-    const seen = new Set<string>()
-    const staff: CachedStaff[] = []
-    for (const s of body.staff) {
-      if (!isCachedStaff(s) || seen.has(s.id)) continue
-      seen.add(s.id)
-      staff.push({ id: s.id, fullName: s.fullName, role: s.role, pinHash: s.pinHash })
-    }
-    return { status: 'ok', staff }
+    return { status: 'ok', staff: cleanStaff(body.staff) }
   } catch {
     return { status: 'offline' }
   }
 }
 
 /**
- * Applies one refresh to the till. ok: the cache is replaced, then sessions end for people no longer in it, and
+ * Applies one refresh to the till, from `GET /v1/devices/me` or the sync pull (`{ status: 'ok', staff }`). ok: the cache is replaced, then sessions end for people no longer in it, and
  * shared (config PIN) sessions end once per-person mode is on. revoked: the device file is marked, the cache kept.
  * offline: nothing. Returns true when the caller should tell the tablets.
  */

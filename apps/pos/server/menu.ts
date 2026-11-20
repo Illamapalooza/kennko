@@ -73,3 +73,39 @@ export async function fetchApiMenu(apiUrl: string, now: number): Promise<Menu> {
   if (menu.categories.length === 0) throw empty()
   return menu
 }
+
+const SNAPSHOT_FILE = 'menu-snapshot.json'
+const isText = (v: unknown) => typeof v === 'string'
+const isList = (v: unknown, each: (x: any) => boolean) => Array.isArray(v) && v.every(each)
+
+/** True when `raw` has the shape of a published menu snapshot, deep enough that the till can build its menu from it. */
+export function isMenuSnapshot(raw: any): raw is MenuSnapshot {
+  return Boolean(raw) && Number.isInteger(raw.version) && raw.version >= 1 && isText(raw.publishedAt)
+    && isList(raw.categories, (c) => Boolean(c) && isText(c.id) && isText(c.name) && (c.kind === 'drink' || c.kind === 'food')
+      && isList(c.items, (i) => Boolean(i) && isText(i.id) && isText(i.name) && typeof i.isAvailable === 'boolean'
+        && isList(i.optionGroupIds, isText)
+        && isList(i.variants, (v) => Boolean(v) && isText(v.id) && isText(v.code) && Number.isInteger(v.priceCentavos) && typeof v.isAvailable === 'boolean')))
+    && isList(raw.optionGroups, (g) => Boolean(g) && isText(g.id) && isText(g.name) && Number.isInteger(g.maxSelect)
+      && isList(g.options, (o) => Boolean(o) && isText(o.id) && isText(o.name) && Number.isInteger(o.priceCentavos) && typeof o.isAvailable === 'boolean'))
+    && isList(raw.discountPresets, (d) => Boolean(d) && isText(d.id) && isText(d.label) && (d.kind === 'percent' || d.kind === 'amount') && typeof d.value === 'number')
+}
+
+/** The raw snapshot pulled from the website, kept as data/menu-snapshot.json (tmp + rename, so never half a file). */
+export function saveSnapshot(dataDir: string, s: MenuSnapshot): void {
+  fs.mkdirSync(dataDir, { recursive: true })
+  const file = path.join(dataDir, SNAPSHOT_FILE)
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify(s, null, 2))
+  fs.renameSync(`${file}.tmp`, file)
+}
+
+/** The saved snapshot, or null when there is none or it is not a snapshot. */
+export function loadSnapshot(dataDir: string): MenuSnapshot | null {
+  let raw: unknown
+  try { raw = JSON.parse(fs.readFileSync(path.join(dataDir, SNAPSHOT_FILE), 'utf8')) } catch (err: any) {
+    if (err.code !== 'ENOENT') console.warn(`  data/${SNAPSHOT_FILE} could not be read (${err.message}); ignoring it.`)
+    return null
+  }
+  if (isMenuSnapshot(raw)) return raw
+  console.warn(`  data/${SNAPSHOT_FILE} is not a menu snapshot; ignoring it.`)
+  return null
+}
