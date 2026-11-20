@@ -18,8 +18,14 @@ export function backupDay(snapshot: (file: string) => void, dir: string, day: st
   const file = path.join(dir, name)
   const temp = `${file}.part`
   fs.rmSync(temp, { force: true })
-  snapshot(temp)
-  fs.renameSync(temp, file)
+  try {
+    snapshot(temp)
+    fs.renameSync(temp, file)
+  } catch (err) {
+    // A copy cut short (say, the online-order scrub failed) may still hold customer details: never leave it behind.
+    fs.rmSync(temp, { force: true })
+    throw err
+  }
   prune(dir, keep)
 
   let copy: string | null = null

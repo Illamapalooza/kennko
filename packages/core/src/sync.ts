@@ -229,8 +229,9 @@ function isOnlineQueueLine(x: unknown): x is OnlineQueueLine {
 }
 
 /**
- * Shape check for one pulled online order. Delivery details exist exactly when it is a delivery still to be handed
- * over: a completed delivery comes without them (the till only needs the address and phone until hand-off).
+ * Shape check for one pulled online order. A pickup has no delivery details; a delivery still to be handed over has
+ * them. A completed delivery may come either way (the API drops them; an older one did not), and the till stores it
+ * without them.
  */
 export function isOnlineQueueOrder(x: unknown): x is OnlineQueueOrder {
   if (!isObj(x)) return false
@@ -242,8 +243,9 @@ export function isOnlineQueueOrder(x: unknown): x is OnlineQueueOrder {
   if (x.customerNote !== null && !isStr(x.customerNote)) return false
   if (!isStr(x.prepStatus) || !PREP_STATUSES.includes(x.prepStatus)) return false
   if (!Array.isArray(x.lines) || !x.lines.every(isOnlineQueueLine)) return false
-  if (x.fulfilment === 'delivery' && x.prepStatus !== 'completed') {
+  if (x.fulfilment === 'delivery') {
     const d = x.delivery
+    if (d === null && x.prepStatus === 'completed') return true
     return isObj(d) && isStr(d.address) && isStr(d.barangay) && isStr(d.phone)
   }
   return x.delivery === null

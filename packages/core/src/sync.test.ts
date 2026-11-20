@@ -138,7 +138,8 @@ test('isOnlineQueueOrder', () => {
   expect(isOnlineQueueOrder({ ...deliveryFixture, delivery: null })).toBe(false)
   // A finished delivery has been handed over: the pull drops its address and phone (final fix 6).
   expect(isOnlineQueueOrder({ ...deliveryFixture, prepStatus: 'completed', delivery: null })).toBe(true)
-  expect(isOnlineQueueOrder({ ...deliveryFixture, prepStatus: 'completed' })).toBe(false)
+  expect(isOnlineQueueOrder({ ...deliveryFixture, prepStatus: 'completed' })).toBe(true) // an older API still sends them
+  expect(isOnlineQueueOrder({ ...pickupFixture, prepStatus: 'completed', delivery: { address: 'x', barangay: 'y', phone: 'z' } })).toBe(false)
   expect(isOnlineQueueOrder({ ...pickupFixture, prepStatus: 'completed' })).toBe(true)
   expect(isOnlineQueueOrder({ ...pickupFixture, prepStatus: 'eaten' })).toBe(false)
   expect(isOnlineQueueOrder({ ...pickupFixture, id: 'W3' })).toBe(false)

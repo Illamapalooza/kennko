@@ -108,6 +108,13 @@ describe('daily backup', () => {
     expect(copyError).toBeTruthy()
   })
 
+  it('removes the half-written copy when the snapshot fails after writing it (no customer data left behind)', () => {
+    const dir = tempDir()
+    expect(() => backupDay((to) => { fs.writeFileSync(to, 'phone 09171234567'); throw new Error('scrub failed') }, dir, '2026-11-17'))
+      .toThrow('scrub failed')
+    expect(fs.readdirSync(dir)).toEqual([])
+  })
+
   it('leaves the last good backup in place when the snapshot fails', () => {
     const dir = tempDir()
     backupDay((to) => fs.writeFileSync(to, 'good'), dir, '2026-11-17')

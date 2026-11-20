@@ -537,7 +537,11 @@ export function createStore(file: string) {
       tx(() => {
         db.prepare('delete from online_orders').run()
         const add = db.prepare('insert into online_orders (id, prep_status, updated_at, data) values (?, ?, ?, ?)')
-        for (const o of orders) add.run(o.id, o.prepStatus, Date.parse(o.updatedAt) || 0, JSON.stringify(o))
+        // A completed delivery has been handed over: its address and phone are never kept (Ruling P5-3).
+        for (const o of orders) {
+          const kept = o.prepStatus === 'completed' ? { ...o, delivery: null } : o
+          add.run(o.id, o.prepStatus, Date.parse(o.updatedAt) || 0, JSON.stringify(kept))
+        }
         const get = db.prepare('select prep_status, data from online_orders where id = ?')
         const set = db.prepare('update online_orders set prep_status = ?, updated_at = ? where id = ?')
         for (const row of db.prepare("select payload, occurred_at from outbox where kind = 'order.prep_status' order by seq").all() as any[]) {

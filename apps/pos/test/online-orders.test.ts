@@ -65,6 +65,19 @@ describe('online orders on the till', () => {
     expect(store.onlineOrders()).toEqual([])
   })
 
+  it('stores a completed delivery without its address and phone, whichever shape the pull sent', () => {
+    const store = createStore(':memory:')
+    const done = { ...delivery, prepStatus: 'completed' as const }
+    store.replaceOnlineOrders([done])
+    expect(store.onlineOrders()[0].delivery).toBeNull()
+    expect((store.db.prepare('select data from online_orders').get() as any).data).not.toContain('09171234567')
+    store.replaceOnlineOrders([{ ...done, delivery: null }])
+    expect(store.onlineOrders()).toEqual([{ ...done, delivery: null }])
+    // An unfinished delivery keeps them.
+    store.replaceOnlineOrders([delivery])
+    expect(store.onlineOrders()[0].delivery).toEqual(delivery.delivery)
+  })
+
   it('leaves the table as it was when the list is malformed', () => {
     const store = createStore(':memory:')
     store.replaceOnlineOrders([pickup])
