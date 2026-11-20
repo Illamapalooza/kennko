@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Menu, OnlineQueueOrder, PrepStatus } from '@kennko/core'
-import { ONLINE_TO_WALL, wallMenu, wallOnlineOrders } from '../server/wall-feed.ts'
+import { makePublicCode } from '@kennko/core'
+import { builtInMenu } from '../server/menu.ts'
+import { createStore } from '../server/store.ts'
+import { ONLINE_TO_WALL, wallMenu, wallOnlineOrders, wallSnapshot } from '../server/wall-feed.ts'
 
 const order: OnlineQueueOrder = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -88,5 +91,28 @@ describe('the wall menu', () => {
     }
     walk(wallMenu(menu))
     expect([...keys].sort()).toEqual(['category', 'items', 'name', 'star'])
+  })
+})
+
+describe('loyalty never reaches the wall (Review Focus 3)', () => {
+  it('a linked, stamped order and a stamped online order carry no code, customerCode or stamp key', () => {
+    const store = createStore(':memory:')
+    const menu = builtInMenu(0)
+    const latte = menu.categories[0]!.items[0]!
+    const T = Date.UTC(2026, 10, 21, 2, 0)
+    store.startShift(0, T, null)
+    const code = makePublicCode(() => 5)
+    const sold = store.createOrder(menu, {
+      lines: [{ menuItemId: latte.id, size: latte.prices[0]!.size, modifierIds: [], quantity: 1, iceLevel: 'regular', iceServe: 'mixed', note: '' }],
+      type: 'takeout', customerName: 'Ana', customerCode: code, payment: { method: 'gcash' },
+    }, T, null)
+    store.stampOrder(sold.id, T, null)
+    store.replaceOnlineOrders([{ ...order, fulfilment: 'pickup', delivery: null, card: 'stamp' }])
+    store.stampOnline(order.id, T, null)
+    const text = JSON.stringify(wallSnapshot(store, menu, T))
+    expect(text).toContain('"number":1')
+    expect(text).not.toMatch(/KC-/)
+    expect(text).not.toContain(code)
+    expect(text).not.toMatch(/customerCode|"stamp|"card"|stamped|freeDrink|reward/i)
   })
 })

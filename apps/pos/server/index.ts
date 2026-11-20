@@ -16,13 +16,14 @@ import { setupPage } from './setup-page.ts'
 import { loadConfig } from './config.ts'
 import { fetchApiMenu, loadMenu, loadSnapshot, saveSnapshot, splitSoldOut, tillDiscounts, tillMenu } from './menu.ts'
 import { createStore } from './store.ts'
+import { chargeWithFreeDrink, lookupCustomer } from './kennko-api.ts'
 import { createPinDirectory } from './pins.ts'
 import { checkPinFresh, createPinRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice } from './device.ts'
 import { createSync, syncReady } from './sync.ts'
 import { bounded } from './wait.ts'
 import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
 import { reportCsv } from './report.ts'
-import { WALL_LINGER_MS, wallMenu, wallOnlineOrders, wallOrders } from './wall-feed.ts'
+import { wallMenu, wallSnapshot as wallFeed } from './wall-feed.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
@@ -64,6 +65,8 @@ setInterval(backup, 60 * 60 * 1000).unref()
  * The sync with the Kennko API (sync.ts): imports old history once, pushes the outbox, pulls the menu, sold-out marks,
  * staff, shop details and paid online orders. It runs in the background. Only pairing (5 s), "Check now" (10 s) and the wrong-PIN refresh
  * (2.5 s) wait on it, and only that long (Ruling P4-7); a longer run lands by itself. Every write kicks it after answering.
+ * Outside it, only the card lookup and the free-drink claim call the API (kennko-api.ts, 5 s each); linking and
+ * stamping go through the outbox.
  */
 const sync = createSync({
   store, sessions, pins, dataDir: DATA, apiUrl: config.api.url,
@@ -109,18 +112,7 @@ const snapshot = () => JSON.stringify({
 })
 // The projector wall follows the till through its own feed: drink names and steps only, so it needs no PIN.
 const wallClients = new Set<http.ServerResponse>()
-const wallSnapshot = () => {
-  const now = Date.now()
-  const since = now - WALL_LINGER_MS
-  return JSON.stringify({
-    now, day: manilaDay(now),
-    menu: wallMenu(menu()),
-    orders: [
-      ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)]),
-      ...wallOnlineOrders([...store.activeOnlineOrders(), ...store.recentlyFinishedOnline(since)]),
-    ],
-  })
-}
+const wallSnapshot = () => JSON.stringify(wallFeed(store, menu(), Date.now()))
 function broadcast() {
   version += 1
   const frame = `data: ${snapshot()}\n\n`
@@ -299,6 +291,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       return
     }
     if (route === '/api/menu') return json(res, 200, menu())
+    // A Kennko card by code (Plan 7): a typo is a 400 here; the one lookup that waits on the API, for at most 5 s.
+    const lookup = /^\/api\/customers\/([^/]{1,120})$/.exec(route)
+    if (lookup) {
+      let code = ''
+      try { code = decodeURIComponent(lookup[1]!) } catch { /* refused as a typo below */ }
+      return json(res, 200, await lookupCustomer(store, DATA, config.api.url, code))
+    }
     if (route === '/api/orders') {
       const day = url.searchParams.get('day')
       return json(res, 200, store.ordersForDay(isDay(day) ? day : manilaDay(now)))
@@ -331,7 +330,26 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   // Every successful write: tell the tablets, answer, then nudge the sync (it never runs on the request's time).
   const done = (payload: unknown) => { broadcast(); json(res, 200, payload); sync.kick() }
 
-  if (route === '/api/orders') return done(store.createOrder(menu(), body, now, by))
+  if (route === '/api/orders') {
+    // The free drink (Ruling 10): a manager PIN, then the claim online (5 s at most), then the sale. Anything short of
+    // a successful claim saves nothing. Without `reward`, a free-drink line is refused by the store.
+    if (body.reward) {
+      const manager = await checkPin(req, body.managerPin, 'manager')
+      return done(await chargeWithFreeDrink({
+        store, menu: menu(), dataDir: DATA, apiUrl: config.api.url, input: body, reward: body.reward, now, by, managerStaffId: manager.staffId,
+      }))
+    }
+    return done(store.createOrder(menu(), body, now, by))
+  }
+
+  // Kennko cards on counter sales (Plan 7): local writes plus outbox rows, never waiting on the network.
+  const customerAction = /^\/api\/orders\/(\d+)\/(customer|customer\/remove|stamp)$/.exec(route)
+  if (customerAction) {
+    const id = Number(customerAction[1])
+    if (customerAction[2] === 'customer') return done(store.linkCustomer(id, body.code, now, by))
+    if (customerAction[2] === 'customer/remove') return done(store.unlinkCustomer(id, now, by))
+    return done(store.stampOrder(id, now, by))
+  }
 
   const orderAction = /^\/api\/orders\/(\d+)\/(advance|undo|void)$/.exec(route)
   if (orderAction) {
@@ -344,7 +362,9 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
 
   // An online order's next prep step (Plan 5): a local write plus an outbox row, credited to the session's person;
   // Kennko hears about it on the next sync. No Back and no Void here: the customer was told, and admin cancels.
-  const onlineAction = /^\/api\/online\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/advance$/i.exec(route)
+  const onlineAction = /^\/api\/online\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/(advance|stamp)$/i.exec(route)
+  // "Stamp at pickup" for an online order the pull marked to stamp (Plan 7), through the outbox like a step.
+  if (onlineAction?.[2] === 'stamp') return done(store.stampOnline(onlineAction[1]!, now, by))
   if (onlineAction) {
     // The step the barista saw: a second tap on the same ticket (or a second tablet) is refused, not a second step.
     if (typeof body.from !== 'string') throw new OrderError('Reload the till, then try again.')
@@ -397,6 +417,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     await checkPin(req, body.managerPin, 'manager')
     forgetDevice(DATA) // the staff cache stays, so the same PINs keep working
     store.clearOnlineOrders() // customer phone and address do not stay on a disconnected computer (Plan 5 Ruling 10)
+    store.clearCustomerCache()
     broadcast() // the tablets' sync status now says not connected
     return json(res, 200, { ok: true })
   }

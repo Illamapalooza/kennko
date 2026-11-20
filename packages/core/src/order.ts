@@ -38,6 +38,12 @@ export type Order = {
   voidReason: string | null
   /** Who approved the void, when the till knows them (counter orders only). */
   voidedByName?: string | null
+  /** The Kennko card linked to the sale, formatted `KC-XXX-XXX-XXX`, or null. Never shown on the wall. */
+  customerCode: string | null
+  /** The till stamped the linked card for this sale. */
+  stamped: boolean
+  /** The sale used a claimed free drink (one ₱0-base reward line). */
+  freeDrink: boolean
 }
 
 export type Shift = {

@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ADDON_LIMIT_MESSAGE, liveDrinkMenu, type Menu, type MenuSnapshot } from '@kennko/core'
+import { ADDON_LIMIT_MESSAGE, liveDrinkMenu, makePublicCode, type Menu, type MenuSnapshot } from '@kennko/core'
 import { createStore, type NewOrder } from '../server/store.ts'
 import { builtInMenu } from '../server/menu.ts'
 
@@ -397,6 +397,37 @@ const OLD_SCHEMA = `
     pin_hash text not null
   );
 `
+
+describe('loyalty events in the outbox (Plan 7)', () => {
+  it('link, stamp, unlink and the free drink are order rows; an online stamp keeps the server id and no local id', () => {
+    const store = createStore(':memory:')
+    store.startShift(0, T, ANA)
+    const code = makePublicCode(() => 11)
+    const order = store.createOrder(menu, { ...sale(), customerCode: code }, T, ANA)
+    store.stampOrder(order.id, T, BEN)
+    store.unlinkCustomer(order.id, T, BEN)
+    expect(rows(store).slice(2)).toEqual([
+      { kind: 'customer.linked', entity: 'order', entity_local_id: order.id, staff_id: ANA, occurred_at: T },
+      { kind: 'stamp.added', entity: 'order', entity_local_id: order.id, staff_id: BEN, occurred_at: T },
+      { kind: 'customer.unlinked', entity: 'order', entity_local_id: order.id, staff_id: BEN, occurred_at: T },
+    ])
+    const uid = (store.db.prepare('select uid from orders where id = ?').get(order.id) as any).uid
+    expect(store.outboxEvents().slice(2).map((e) => (e.payload as any).orderId)).toEqual([uid, uid, uid])
+    // Payloads keep no uuid of the order: it is read from the row at send time (Ruling 8).
+    const stored = store.db.prepare("select payload from outbox where kind in ('customer.linked','customer.unlinked')").all() as any[]
+    expect(stored.map((r) => JSON.parse(r.payload))).toEqual([{ publicCode: code }, {}])
+  })
+
+  it('a loyalty event waits for its order uuid like the sale itself', () => {
+    const store = createStore(':memory:')
+    store.startShift(0, T, ANA)
+    const order = store.createOrder(menu, sale(), T, ANA)
+    store.db.prepare('delete from outbox').run()
+    store.linkCustomer(order.id, makePublicCode(() => 2), T, ANA)
+    store.db.prepare('update orders set uid = null where id = ?').run(order.id)
+    expect(store.outboxEvents()).toEqual([])
+  })
+})
 
 describe('upgrade from the till before Plan 4', () => {
   const oldFile = () => {

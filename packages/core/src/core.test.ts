@@ -102,7 +102,7 @@ describe('orders', () => {
     expect(manilaDay(Date.UTC(2026, 10, 16, 15, 59))).toBe('2026-11-16')
   })
   it('summarises a shift and leaves voids out of sales and cash', () => {
-    const base = { day: '2026-11-17', type: 'dine_in', customerName: '', discountLabel: null, tenderedCentavos: null, changeCentavos: null, paymentRef: null, shiftId: 1, createdAt: 0, updatedAt: 0, voidedAt: null, voidReason: null } as const
+    const base = { day: '2026-11-17', type: 'dine_in', customerName: '', discountLabel: null, tenderedCentavos: null, changeCentavos: null, paymentRef: null, shiftId: 1, createdAt: 0, updatedAt: 0, voidedAt: null, voidReason: null, customerCode: null, stamped: false, freeDrink: false } as const
     const l = (name: string, quantity: number, lineTotalCentavos: number) => ({ ...priceLine(menu, line()), name, quantity, lineTotalCentavos })
     const orders: Order[] = [
       { ...base, id: 1, number: 1, status: 'done', lines: [l('Latte', 2, 20000)], subtotalCentavos: 20000, discountCentavos: 4000, totalCentavos: 16000, paymentMethod: 'cash' },

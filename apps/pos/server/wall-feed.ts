@@ -1,4 +1,5 @@
-import type { Menu, OnlineQueueOrder, Order, OrderStatus, PrepStatus } from '@kennko/core'
+import { manilaDay, type Menu, type OnlineQueueOrder, type Order, type OrderStatus, type PrepStatus } from '@kennko/core'
+import type { Store } from './store.ts'
 
 /**
  * What the projector wall may know about an order: no prices, no payment, nothing but what is being made. `series`
@@ -63,6 +64,22 @@ export function wallOnlineOrders(orders: OnlineQueueOrder[]): WallOrder[] {
     createdAt: Date.parse(order.createdAt),
     updatedAt: Date.parse(order.updatedAt),
   }))
+}
+
+/**
+ * What `/api/wall/events` sends: the menu's drink names and the orders being made or just finished, built field by
+ * field above, so no price, payment, Kennko card code or stamp can reach the projector.
+ */
+export function wallSnapshot(store: Store, menu: Menu, now: number) {
+  const since = now - WALL_LINGER_MS
+  return {
+    now, day: manilaDay(now),
+    menu: wallMenu(menu),
+    orders: [
+      ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)]),
+      ...wallOnlineOrders([...store.activeOnlineOrders(), ...store.recentlyFinishedOnline(since)]),
+    ],
+  }
 }
 
 /** The drink names the barista cats show: category, name and bestseller star. Never a price, id or stock. */

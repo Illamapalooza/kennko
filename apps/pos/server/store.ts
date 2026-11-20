@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import {
   ADDON_LIMIT_MESSAGE, MAX_MODIFIERS, MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, canMovePrep, cleanDiscount, isOnlineQueueOrder,
-  manilaDay, nextPrepStatus, nextStatus, prevStatus, priceLines, summarise, totals,
+  formatPublicCode, hasDrink, manilaDay, nextPrepStatus, nextStatus, normalisePublicCode, prevStatus, priceLines, summarise, totals,
   type CashMove, type CounterOrderPayload, type Discount, type LineInput, type Menu, type OnlineQueueOrder, type Order, type OrderStatus,
   type OrderType, type PaymentMethod, type PrepStatus, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
+  type TillCustomer,
 } from '@kennko/core'
 import type { CachedStaff } from './pins.ts'
 
@@ -14,7 +15,14 @@ export type NewOrder = {
   customerName?: string
   discount?: Discount | null
   payment: { method: PaymentMethod; tenderedCentavos?: number; ref?: string }
+  /** A Kennko card to link in the same transaction, as typed or scanned (`KC-…` or bare). Empty or absent: none. */
+  customerCode?: string | null
 }
+
+/** Refusals the till screens show as they are. */
+export const TYPO_MESSAGE = 'That code has a typo. Check it and try again.'
+export const PAPER_STAMP_MESSAGE = 'On a paper card: stamp their paper card.'
+const CLOSED_TILL = 'That order belongs to a till that is already closed.'
 
 const SCHEMA = `
   create table if not exists shifts (
@@ -84,6 +92,8 @@ const SCHEMA = `
   );
   create table if not exists kv (key text primary key, value text not null);
   create table if not exists online_orders (id text primary key, prep_status text not null, updated_at integer not null, data text not null);
+  create table if not exists customer_cache (code text primary key, data text not null, updated_at integer not null);
+  create table if not exists online_stamps (order_id text primary key, stamp_uid text not null, at integer not null);
 `
 
 /** Columns added to tables that already exist on tills from before Plan 4 (SQLite cannot add a unique column). */
@@ -97,6 +107,10 @@ const ADDED_COLUMNS: [table: string, column: string, decl: string][] = [
   ['orders', 'menu_version', 'integer'],
   ['orders', 'cancelled_by_staff', 'text'],
   ['orders', 'needs_import', 'integer not null default 0'],
+  // Plan 7: the linked Kennko card (bare code), this sale's stamp and the free-drink claim it used.
+  ['orders', 'customer_code', 'text'],
+  ['orders', 'stamp_uid', 'text'],
+  ['orders', 'reward_claim_id', 'text'],
   ['cash_moves', 'uid', 'text'],
   ['cash_moves', 'staff_id', 'text'],
   ['cash_moves', 'needs_import', 'integer not null default 0'],
@@ -168,6 +182,9 @@ function toOrder(row: any): Order {
     totalCentavos: row.total, paymentMethod: row.payment_method, tenderedCentavos: row.tendered, changeCentavos: row.change,
     paymentRef: row.payment_ref, shiftId: row.shift_id, createdAt: row.created_at, updatedAt: row.updated_at,
     voidedAt: row.voided_at, voidReason: row.void_reason, voidedByName: row.voided_by_name ?? null,
+    customerCode: row.customer_code ? formatPublicCode(row.customer_code) : null,
+    stamped: row.stamp_uid != null,
+    freeDrink: row.reward_claim_id != null,
   }
 }
 
@@ -193,6 +210,9 @@ type StoredPayload<K extends SyncEventKind> = K extends 'order.created'
   : K extends 'order.cancelled' ? Omit<Extract<SyncEvent, { kind: K }>['payload'], 'orderId'>
   : K extends 'shift.opened' | 'shift.closed' ? Omit<Extract<SyncEvent, { kind: K }>['payload'], 'shiftId'>
   : K extends 'cash.moved' ? Omit<Extract<SyncEvent, { kind: K }>['payload'], 'id' | 'shiftId'>
+  // An online order's stamp keeps the server's `orderId`, like its prep steps.
+  : K extends 'stamp.added' ? { stampId: string } | { orderId: string; stampId: string }
+  : K extends 'customer.linked' | 'customer.unlinked' | 'reward.used' ? Omit<Extract<SyncEvent, { kind: K }>['payload'], 'orderId'>
   : Extract<SyncEvent, { kind: K }>['payload']
 
 const ENTITY: Record<SyncEventKind, 'order' | 'shift' | 'cash_move' | 'menu'> = {
@@ -201,8 +221,31 @@ const ENTITY: Record<SyncEventKind, 'order' | 'shift' | 'cash_move' | 'menu'> = 
   'customer.linked': 'order', 'customer.unlinked': 'order', 'stamp.added': 'order', 'reward.used': 'order',
 }
 
-/** An online order as the till shows it: the pulled copy, with the prep status the till holds now. */
-const toOnline = (row: any): OnlineQueueOrder => ({ ...JSON.parse(row.data), prepStatus: row.prep_status })
+/**
+ * An online order as the till shows it: the pulled copy, with the prep status the till holds now, and `stamped` while
+ * a stamp this till made is waiting for the pull to confirm it (`stamped_here`, from `online_stamps`).
+ */
+const toOnline = (row: any): OnlineQueueOrder => {
+  const data = JSON.parse(row.data)
+  return { ...data, prepStatus: row.prep_status, ...(row.stamped_here && data.card === 'stamp' ? { card: 'stamped' } : {}) }
+}
+const ONLINE = 'select o.*, s.order_id as stamped_here from online_orders o left join online_stamps s on s.order_id = o.id'
+
+const STAMP_MODES = new Set(['none', 'digital', 'paper'])
+const count = (x: unknown) => Number.isInteger(x) && (x as number) >= 0 && (x as number) <= 10_000
+/** A pulled or looked-up customer, cut down to the `TillCustomer` fields field by field, or null when it is not one. */
+export function tillCustomer(x: any): { bare: string; customer: TillCustomer } | null {
+  if (!x || typeof x !== 'object' || typeof x.code !== 'string') return null
+  const bare = normalisePublicCode(x.code)
+  if (!bare || !STAMP_MODES.has(x.stampMode) || !count(x.stamps) || !count(x.fullCards)) return null
+  return {
+    bare,
+    customer: { code: formatPublicCode(bare), catName: typeof x.catName === 'string' ? x.catName.slice(0, 40) : null, stampMode: x.stampMode, stamps: x.stamps, fullCards: x.fullCards },
+  }
+}
+
+/** The till sells drinks only (its menu is the snapshot's drink categories), so each counter line counts as a drink. */
+const counterKinds = (lines: PricedLine[]) => lines.map(() => ({ kind: null }))
 const byCreated = (a: OnlineQueueOrder, b: OnlineQueueOrder) =>
   a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 
@@ -316,13 +359,84 @@ export function createStore(file: string) {
       }
       case 'menu.availability':
         return { ...head, kind, payload: stored }
+      case 'customer.linked':
+      case 'customer.unlinked':
+      case 'reward.used': {
+        const u = orderUids.get(row.entity_local_id) as any
+        if (!u?.uid) return null
+        return { ...head, kind, payload: { orderId: u.uid, ...stored } } as SyncEvent
+      }
+      case 'stamp.added': {
+        // An online order's stamp carries the server's id, so it never waits for a local uid.
+        if (typeof stored.orderId === 'string') return { ...head, kind, payload: { orderId: stored.orderId, stampId: stored.stampId } }
+        const u = orderUids.get(row.entity_local_id) as any
+        if (!u?.uid) return null
+        return { ...head, kind, payload: { orderId: u.uid, stampId: stored.stampId } }
+      }
       default:
         return null
     }
   }
 
   const onlineRows = (where: string, ...args: any[]): OnlineQueueOrder[] =>
-    (db.prepare(`select * from online_orders ${where}`).all(...args) as any[]).map(toOnline).sort(byCreated)
+    (db.prepare(`${ONLINE} ${where}`).all(...args) as any[]).map(toOnline).sort(byCreated)
+
+  /** The bare code for what staff typed, or the typo refusal. Empty or absent: no customer. */
+  const codeOrNull = (input: unknown): string | null => {
+    if (input === undefined || input === null || input === '') return null
+    const bare = normalisePublicCode(input as string)
+    if (!bare) throw new OrderError(TYPO_MESSAGE)
+    return bare
+  }
+
+  /** An order that still belongs to the open till: not voided, its shift not closed. */
+  const changeableOrder = (id: number): Order => {
+    const order = getOrder(id)
+    if (order.status === 'voided') throw new OrderError('That order is voided.')
+    const shift = db.prepare('select closed_at from shifts where id = ?').get(order.shiftId) as any
+    if (shift?.closed_at) throw new OrderError(CLOSED_TILL)
+    return order
+  }
+
+  /** The customer as last pulled or looked up, or null. Only `TillCustomer` fields are ever stored. */
+  const cachedCustomer = (code: string): TillCustomer | null => {
+    const bare = normalisePublicCode(code)
+    if (!bare) return null
+    const row = db.prepare('select data from customer_cache where code = ?').get(bare) as any
+    if (!row) return null
+    try { return tillCustomer(JSON.parse(row.data))?.customer ?? null } catch { return null }
+  }
+
+  /**
+   * The pricing and payment checks of a sale, without writing (`createOrder` and `prepareOrder`). Nothing here reads
+   * or writes the database.
+   */
+  const priceOrder = (menu: Menu, input: NewOrder) => {
+    const lines = priceLines(menu, input.lines).map(sendableLine)
+    const cleaned = cleanDiscount(wholeDiscount(input.discount))
+    const subtotal = totals(lines, null).subtotalCentavos
+    if (subtotal > MONEY_MAX) throw new OrderError('That order is too large. Split it into two.')
+    // An amount bigger than the order takes off the subtotal anyway (discountAmount), so that is what is kept and sent.
+    const discount: Discount | null = cleaned
+      ? { ...cleaned, label: clean(cleaned.label, 40) || 'Discount', value: cleaned.kind === 'amount' ? Math.min(cleaned.value, subtotal) : cleaned.value }
+      : null
+    const sums = totals(lines, discount)
+    const type: OrderType = input.type === 'takeout' ? 'takeout' : 'dine_in'
+    const method = input.payment?.method
+    if (method !== 'cash' && method !== 'gcash') throw new OrderError('Choose cash or GCash.')
+    let tendered: number | null = null
+    let change: number | null = null
+    if (method === 'cash') {
+      tendered = money(input.payment.tenderedCentavos, 'Cash received')
+      if (tendered < sums.totalCentavos) throw new OrderError('Cash received is less than the total.')
+      change = tendered - sums.totalCentavos
+    }
+    const ref = method === 'gcash' ? clean(input.payment.ref, 40) || null : null
+    const customerName = clean(input.customerName, 24)
+    const menuVersion = Number.isInteger(menu.version) && (menu.version as number) >= 1 ? (menu.version as number) : null
+    const customerCode = codeOrNull(input.customerCode)
+    return { lines, discount, sums, type, method, tendered, change, ref, customerName, menuVersion, customerCode }
+  }
 
   return {
     /** The open database, for the till's sessions (sessions.ts). */
@@ -331,12 +445,14 @@ export function createStore(file: string) {
     /**
      * Writes a complete, consistent copy of the database to a new file. Safe while the till is in use. The copy keeps
      * no online orders: they carry customer phones and addresses (Ruling P5-3), and the next pull fetches them again.
+     * Nor the customer cache: the next pull or lookup fills it again.
      */
     snapshot(to: string) {
       db.prepare('vacuum into ?').run(to)
       const copy = new DatabaseSync(to)
       try {
         copy.exec('delete from online_orders')
+        copy.exec('delete from customer_cache')
         copy.exec('vacuum')
       } finally {
         copy.close()
@@ -427,31 +543,31 @@ export function createStore(file: string) {
       })
     },
 
-    /** Prices the order from the menu, checks the payment, and saves it. Nothing is saved unless all of it holds. */
-    createOrder(menu: Menu, input: NewOrder, now: number, by: By): Order {
+    /**
+     * Checks a sale as `createOrder` would (prices, payment, the customer code, an open till) without writing.
+     * Used before a free-drink claim, so a claim is never made for a sale that cannot be saved.
+     */
+    prepareOrder(menu: Menu, input: NewOrder): { lines: PricedLine[]; totalCentavos: number } {
+      const p = priceOrder(menu, input)
+      if (!openShift()) throw new OrderError('Open the till before taking orders.')
+      return { lines: p.lines, totalCentavos: p.sums.totalCentavos }
+    },
+
+    /**
+     * Prices the order from the menu, checks the payment, and saves it. Nothing is saved unless all of it holds.
+     * With `customerCode`, the card is linked in the same transaction (`customer.linked`). A free-drink line needs
+     * `opts.rewardClaimId`, the claim the till made online just before (Ruling 10), and is recorded as `reward.used`.
+     */
+    createOrder(menu: Menu, input: NewOrder, now: number, by: By, opts: { rewardClaimId?: string } = {}): Order {
       by = checkBy(by)
-      const lines = priceLines(menu, input.lines).map(sendableLine)
-      const cleaned = cleanDiscount(wholeDiscount(input.discount))
-      const subtotal = totals(lines, null).subtotalCentavos
-      if (subtotal > MONEY_MAX) throw new OrderError('That order is too large. Split it into two.')
-      // An amount bigger than the order takes off the subtotal anyway (discountAmount), so that is what is kept and sent.
-      const discount: Discount | null = cleaned
-        ? { ...cleaned, label: clean(cleaned.label, 40) || 'Discount', value: cleaned.kind === 'amount' ? Math.min(cleaned.value, subtotal) : cleaned.value }
-        : null
-      const sums = totals(lines, discount)
-      const type: OrderType = input.type === 'takeout' ? 'takeout' : 'dine_in'
-      const method = input.payment?.method
-      if (method !== 'cash' && method !== 'gcash') throw new OrderError('Choose cash or GCash.')
-      let tendered: number | null = null
-      let change: number | null = null
-      if (method === 'cash') {
-        tendered = money(input.payment.tenderedCentavos, 'Cash received')
-        if (tendered < sums.totalCentavos) throw new OrderError('Cash received is less than the total.')
-        change = tendered - sums.totalCentavos
+      const p = priceOrder(menu, input)
+      const claimId = opts.rewardClaimId ?? null
+      const hasReward = p.lines.some((l) => l.reward)
+      if (hasReward && claimId === null) throw new OrderError('The free drink was not claimed.')
+      if (claimId !== null && (!hasReward || p.customerCode === null || !UUID.test(claimId))) {
+        throw new OrderError('The free drink needs its line and the customer\'s code.')
       }
-      const ref = method === 'gcash' ? clean(input.payment.ref, 40) || null : null
-      const customerName = clean(input.customerName, 24)
-      const menuVersion = Number.isInteger(menu.version) && (menu.version as number) >= 1 ? (menu.version as number) : null
+      const { lines, discount, sums, type, method, tendered, change, ref, customerName, menuVersion, customerCode } = p
 
       return tx(() => {
         const shift = openShift()
@@ -461,17 +577,69 @@ export function createStore(file: string) {
         const number = (last?.n ?? 0) + 1
         const result = db.prepare(`
           insert into orders (day, number, type, customer_name, status, lines, subtotal, discount, discount_label, total,
-            payment_method, tendered, change, payment_ref, shift_id, created_at, updated_at, uid, payment_uid, menu_version)
-          values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            payment_method, tendered, change, payment_ref, shift_id, created_at, updated_at, uid, payment_uid, menu_version,
+            customer_code, reward_claim_id)
+          values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(day, number, type, customerName, JSON.stringify(lines), sums.subtotalCentavos, sums.discountCentavos,
           sums.discountCentavos > 0 ? discount!.label : null, sums.totalCentavos, method, tendered, change, ref, shift.id, now, now,
-          randomUUID(), randomUUID(), menuVersion)
+          randomUUID(), randomUUID(), menuVersion, customerCode, claimId)
         const id = Number(result.lastInsertRowid)
         record('order.created', id, by, now, {
           businessDay: day, ticketNumber: number, fulfilment: type, customerName, menuVersion, lines, discount,
           subtotalCentavos: sums.subtotalCentavos, discountCentavos: sums.discountCentavos, totalCentavos: sums.totalCentavos,
           payment: { method, tenderedCentavos: tendered, changeCentavos: change, reference: ref },
         })
+        if (customerCode !== null) record('customer.linked', id, by, now, { publicCode: customerCode })
+        if (claimId !== null) record('reward.used', id, by, now, { claimId })
+        return getOrder(id)
+      })
+    },
+
+    /** Links a Kennko card to a sale of the open till (Ruling 19). A typo'd code is refused before anything is written. */
+    linkCustomer(id: number, code: string, now: number, by: By): Order {
+      by = checkBy(by)
+      const bare = normalisePublicCode(code)
+      if (!bare) throw new OrderError(TYPO_MESSAGE)
+      return tx(() => {
+        const order = changeableOrder(id)
+        if (order.customerCode !== null) throw new OrderError('Remove the customer first.')
+        db.prepare('update orders set customer_code = ?, updated_at = ? where id = ?').run(bare, now, id)
+        record('customer.linked', id, by, now, { publicCode: bare })
+        return getOrder(id)
+      })
+    },
+
+    /**
+     * Takes the card off a sale while its till is open (Ruling 19); its stamp goes with it (the API removes it, Ruling 8).
+     * A free-drink sale keeps its card: the claim was made on that card, so voiding is the way back.
+     */
+    unlinkCustomer(id: number, now: number, by: By): Order {
+      by = checkBy(by)
+      return tx(() => {
+        const order = getOrder(id)
+        const shift = db.prepare('select closed_at from shifts where id = ?').get(order.shiftId) as any
+        if (shift?.closed_at) throw new OrderError(CLOSED_TILL)
+        if (order.customerCode === null) throw new OrderError('That order has no customer.')
+        if (order.freeDrink) throw new OrderError('This sale used their free drink. Void it instead.')
+        db.prepare('update orders set customer_code = null, stamp_uid = null, updated_at = ? where id = ?').run(now, id)
+        record('customer.unlinked', id, by, now, {})
+        return getOrder(id)
+      })
+    },
+
+    /** One stamp for the linked card, sent through the outbox. A card known to be on paper is stamped on paper instead. */
+    stampOrder(id: number, now: number, by: By): Order {
+      by = checkBy(by)
+      return tx(() => {
+        const order = getOrder(id)
+        if (order.customerCode === null) throw new OrderError('Add the customer first.')
+        if (order.status === 'voided') throw new OrderError('That order is voided.')
+        if (order.stamped) throw new OrderError('That order is already stamped.')
+        if (!hasDrink(counterKinds(order.lines))) throw new OrderError('A stamp needs a drink.')
+        if (cachedCustomer(order.customerCode)?.stampMode === 'paper') throw new OrderError(PAPER_STAMP_MESSAGE)
+        const stampId = randomUUID()
+        db.prepare('update orders set stamp_uid = ?, updated_at = ? where id = ?').run(stampId, now, id)
+        record('stamp.added', id, by, now, { stampId })
         return getOrder(id)
       })
     },
@@ -501,7 +669,7 @@ export function createStore(file: string) {
         const order = getOrder(id)
         if (order.status === 'voided') throw new OrderError('That order is already voided.')
         const shift = db.prepare('select closed_at from shifts where id = ?').get(order.shiftId) as any
-        if (shift?.closed_at) throw new OrderError('That order belongs to a till that is already closed.')
+        if (shift?.closed_at) throw new OrderError(CLOSED_TILL)
         const why = clean(reason, 120)
         if (!why) throw new OrderError('Say why the order is being voided.')
         db.prepare('update orders set prev_status = status, status = ?, voided_at = ?, void_reason = ?, cancelled_by_staff = ?, updated_at = ? where id = ?')
@@ -553,6 +721,14 @@ export function createStore(file: string) {
           if (!current) continue
           if (canMovePrep(current.prep_status, p.to, JSON.parse(current.data).fulfilment)) set.run(p.to, row.occurred_at, p.orderId)
         }
+        // A local stamp stays shown until the pull confirms it: kept only while the pull still says `stamp` and its
+        // event has not been sent. Anything else (stamped, paper, gone, or sent and not taken) is the server's word.
+        db.prepare(`
+          delete from online_stamps where not exists (
+            select 1 from online_orders o where o.id = online_stamps.order_id and json_extract(o.data, '$.card') = 'stamp'
+          ) or not exists (
+            select 1 from outbox b where b.kind = 'stamp.added' and b.entity_local_id is null and json_extract(b.payload, '$.orderId') = online_stamps.order_id
+          )`).run()
       })
     },
 
@@ -564,7 +740,7 @@ export function createStore(file: string) {
     advanceOnline(id: string, now: number, by: By, from?: PrepStatus): OnlineQueueOrder {
       by = checkBy(by)
       return tx(() => {
-        const row = db.prepare('select * from online_orders where id = ?').get(id) as any
+        const row = db.prepare(`${ONLINE} where o.id = ?`).get(id) as any
         if (!row) throw new OrderError('That online order is no longer on the till.')
         const order = toOnline(row)
         if (from !== undefined && from !== order.prepStatus) throw new OrderError('Someone already moved this order.')
@@ -576,9 +752,60 @@ export function createStore(file: string) {
       })
     },
 
+    /**
+     * "Stamp at pickup" for an online order the pull marked `card: 'stamp'`. The stamp goes through the outbox with the
+     * server's order id (Plan 5 Ruling 8), and the order shows `stamped` here until the pull confirms it.
+     */
+    stampOnline(orderId: string, now: number, by: By): OnlineQueueOrder {
+      by = checkBy(by)
+      return tx(() => {
+        const row = db.prepare(`${ONLINE} where o.id = ?`).get(orderId) as any
+        if (!row) throw new OrderError('That online order is no longer on the till.')
+        const order = toOnline(row)
+        if (order.card === 'stamped') throw new OrderError('That order is already stamped.')
+        if (order.card === 'paper') throw new OrderError(PAPER_STAMP_MESSAGE)
+        if (order.card !== 'stamp') throw new OrderError('That order has no Kennko card to stamp.')
+        const stampId = randomUUID()
+        db.prepare('insert into online_stamps (order_id, stamp_uid, at) values (?, ?, ?)').run(orderId, stampId, now)
+        record('stamp.added', null, by, now, { orderId, stampId })
+        return { ...order, card: 'stamped' }
+      })
+    },
+
     /** Drops every online order (the till was revoked or forgotten, Plan 5 Ruling 10). The outbox is left alone. */
     clearOnlineOrders(): void {
-      db.prepare('delete from online_orders').run()
+      tx(() => {
+        db.prepare('delete from online_orders').run()
+        db.prepare('delete from online_stamps').run()
+      })
+    },
+
+    cachedCustomer,
+
+    /**
+     * Takes the pulled list of customers linked through this till lately (Ruling 15). Only `TillCustomer` fields are
+     * kept, picked one by one; an entry that is not a customer is skipped, never stopping the pull (P4-4).
+     */
+    replaceCustomerCache(list: TillCustomer[], now = Date.now()): void {
+      tx(() => {
+        db.prepare('delete from customer_cache').run()
+        const add = db.prepare('insert or replace into customer_cache (code, data, updated_at) values (?, ?, ?)')
+        for (const x of Array.isArray(list) ? list : []) {
+          const c = tillCustomer(x)
+          if (c) add.run(c.bare, JSON.stringify(c.customer), now)
+        }
+      })
+    },
+
+    /** Keeps one looked-up customer until the next pull replaces the cache. */
+    cacheCustomer(x: TillCustomer, now = Date.now()): void {
+      const c = tillCustomer(x)
+      if (c) db.prepare('insert or replace into customer_cache (code, data, updated_at) values (?, ?, ?)').run(c.bare, JSON.stringify(c.customer), now)
+    },
+
+    /** Forgets every cached customer (the till was revoked or forgotten). */
+    clearCustomerCache(): void {
+      db.prepare('delete from customer_cache').run()
     },
 
     /** Orders still being made or served, oldest first, across days so nothing is stranded at midnight. */

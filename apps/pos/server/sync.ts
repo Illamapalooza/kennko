@@ -69,6 +69,8 @@ const isPullState = (b: any): b is PullState =>
   && Boolean(b.shop) && typeof b.shop.name === 'string' && typeof b.shop.address === 'string' && (b.shop.phone === null || typeof b.shop.phone === 'string')
   && (b.menu === null || (Boolean(b.menu) && Number.isInteger(b.menu.version) && (b.menu.snapshot === null || isMenuSnapshot(b.menu.snapshot))))
   && (b.onlineOrders === undefined || isOnlineList(b.onlineOrders))
+  // Entries are checked one by one when stored (a bad one is skipped); a `customers` that is not a list is garbled.
+  && (b.customers === undefined || Array.isArray(b.customers))
 
 /** Every entry a well-formed online order, no id twice. Anything else garbles the whole pull (Plan 5 Ruling 9). */
 const isOnlineList = (list: unknown): boolean =>
@@ -78,7 +80,8 @@ const isOnlineList = (list: unknown): boolean =>
  * The till's sync with the Kennko API, in the background. Each run first imports any history from before this version
  * (once, in chunks of 100), then pushes the outbox (50 events a request, oldest
  * first; every answered id is deleted, whatever the answer), then pulls the menu, sold-out marks, staff, shop
- * details and paid online orders. Nothing here is awaited by a till request: a sale never waits on the network.
+ * details, paid online orders and the customers linked here lately. Nothing here is awaited by a till request: a sale
+ * never waits on the network.
  */
 export function createSync(opts: {
   store: Store
@@ -253,6 +256,8 @@ export function createSync(opts: {
         store.replaceOnlineOrders(state.onlineOrders)
         changed.online = JSON.stringify(store.onlineOrders()) !== before
       }
+      // No key = an API from before the loyalty plan: keep the cached customers.
+      if (state.customers !== undefined) store.replaceCustomerCache(state.customers, now())
     }
 
     if (failure) {

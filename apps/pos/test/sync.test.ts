@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, type MenuSnapshot, type OnlineQueueOrder, type PullState, type PushResult, type SyncEvent } from '@kennko/core'
+import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, makePublicCode, type MenuSnapshot, type OnlineQueueOrder, type PullState, type PushResult, type SyncEvent } from '@kennko/core'
 import { hashStaffPin } from '@kennko/core/staff-pin'
 import { loadDevice, saveDevice } from '../server/device.ts'
 import { builtInMenu, loadSnapshot, saveSnapshot } from '../server/menu.ts'
@@ -556,6 +556,35 @@ describe('online orders from the pull', () => {
     await t.sync.runOnce()
     expect(loadDevice(t.dataDir)!.revokedAt).toBe(T)
     expect(t.store.onlineOrders()).toEqual([])
+  })
+})
+
+describe('customers from the pull (Plan 7)', () => {
+  const ana = { code: 'KC-AAA-AAA-AAA', catName: null, stampMode: 'digital', stamps: 2, fullCards: 0 }
+  it('a customers key that is not a list is a garbled pull and the cache is kept', async () => {
+    const t = till()
+    const code = makePublicCode(() => 4)
+    t.store.replaceCustomerCache([{ ...ana, code } as any])
+    t.api.onPull(() => json(200, { menu: null, soldOut: [], staff: [], shop: SHOP, customers: { 0: ana } }))
+    await t.sync.runOnce()
+    expect(t.sync.status().offline).toBe(true)
+    expect(t.store.cachedCustomer(code)).toMatchObject({ stamps: 2 })
+  })
+
+  it('pushes stamp and link events with the uuids filled in', async () => {
+    const t = till()
+    t.store.startShift(0, T, null)
+    const code = makePublicCode(() => 9)
+    const order = t.store.createOrder(menu, { ...sale, customerCode: code }, T, null)
+    t.store.stampOrder(order.id, T, null)
+    await t.sync.runOnce()
+    const events: SyncEvent[] = t.api.pushes()[0]!.body.events
+    const orderId = (events[1]!.payload as any).orderId
+    expect(events.slice(2)).toMatchObject([
+      { kind: 'customer.linked', payload: { orderId, publicCode: code } },
+      { kind: 'stamp.added', payload: { orderId, stampId: expect.any(String) } },
+    ])
+    expect(t.store.pending().events).toBe(0)
   })
 })
 
