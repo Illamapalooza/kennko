@@ -382,3 +382,13 @@
 .admin-main .btn.btn-secondary { min-height: 44px; }
 .staff-pin-reveal { display: grid; gap: 8px; padding: 12px; border: 2px solid var(--blue); border-radius: var(--radius-md); background: var(--white); }
 .staff-pin { display: block; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 2rem; letter-spacing: 0.15em; color: var(--blue); }
+
+/* Tills screen */
+.till-list { display: grid; gap: 12px; margin-top: 16px; }
+.till-row { display: grid; gap: 8px; }
+.till-row .btn { min-height: 44px; justify-self: start; }
+.till-code-box { display: grid; gap: 8px; padding: 16px; border: 2px solid var(--blue); border-radius: var(--radius-md); background: var(--white); text-align: center; }
+.till-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 2.5rem; letter-spacing: 0.15em; color: var(--blue); }
+.till-countdown { font-weight: 700; }
+.till-countdown.is-low { color: var(--amber); }
+@media (min-width: 921px) { .till-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

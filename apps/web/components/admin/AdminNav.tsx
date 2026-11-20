@@ -12,6 +12,7 @@ const LINKS: NavLink[] = [
   { href: '/admin/orders', label: 'Orders' },
   { href: '/admin/menu', label: 'Menu' },
   { href: '/admin/staff', label: 'Staff', ownerOnly: true },
+  { href: '/admin/devices', label: 'Tills', ownerOnly: true },
 ]
 
 export function AdminNav({ ordersToCheck, isOwner }: AdminNavProps) {

@@ -32,6 +32,15 @@ describe('AdminNav', () => {
     expect(screen.getByRole('link', { name: 'Staff' }).getAttribute('href')).toBe('/admin/staff')
   })
 
+  it('shows Tills to an owner and hides it from everyone else', () => {
+    path = '/admin'
+    const { unmount } = render(<AdminNav ordersToCheck={0} isOwner />)
+    expect(screen.getByRole('link', { name: 'Tills' }).getAttribute('href')).toBe('/admin/devices')
+    unmount()
+    render(<AdminNav ordersToCheck={0} isOwner={false} />)
+    expect(screen.queryByRole('link', { name: 'Tills' })).toBeNull()
+  })
+
   it('shows a badge with the count of orders waiting', () => {
     path = '/admin'
     render(<AdminNav ordersToCheck={2} isOwner />)
