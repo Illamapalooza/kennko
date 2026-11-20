@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
 const eq = vi.fn()
-vi.mock('next/navigation', () => ({ redirect: vi.fn() }))
+const redirect = vi.fn((to: string) => {
+  throw new Error(`redirect:${to}`)
+})
+let row: Record<string, unknown> = { id: 's-1', email: null, full_name: 'Till Only', role: 'manager', is_active: true }
+vi.mock('next/navigation', () => ({ redirect: (to: string) => redirect(to) }))
 vi.mock('@/lib/supabase/server', () => ({
   getServerClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'auth-1' } } }) },
@@ -10,9 +14,7 @@ vi.mock('@/lib/supabase/server', () => ({
         eq: (...a: unknown[]) => {
           eq(...a)
           return {
-            maybeSingle: async () => ({
-              data: { id: 's-1', email: null, full_name: 'Till Only', role: 'manager', is_active: true },
-            }),
+            maybeSingle: async () => ({ data: row }),
           }
         },
       }),
@@ -20,7 +22,28 @@ vi.mock('@/lib/supabase/server', () => ({
   }),
 }))
 
-import { getCurrentStaff, mapStaffRow } from './session'
+import { getCurrentStaff, mapStaffRow, requireManager } from './session'
+
+describe('requireManager', () => {
+  const as = (role: string) => {
+    row = { id: 's-1', email: null, full_name: 'Till Only', role, is_active: true }
+  }
+
+  it('admits owners and managers', async () => {
+    as('owner')
+    await expect(requireManager()).resolves.toMatchObject({ role: 'owner' })
+    as('manager')
+    await expect(requireManager()).resolves.toMatchObject({ role: 'manager' })
+  })
+
+  it('refuses a barista and a role it does not know', async () => {
+    as('barista')
+    await expect(requireManager()).rejects.toThrow('redirect:/admin/menu?denied=manager-only')
+    as('auditor')
+    await expect(requireManager()).rejects.toThrow('redirect:/admin/menu?denied=manager-only')
+    as('manager')
+  })
+})
 
 describe('getCurrentStaff', () => {
   it('finds the staff row by the login (user_id), not by staff id', async () => {

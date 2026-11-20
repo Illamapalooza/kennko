@@ -88,7 +88,7 @@ export function requireStaff(deps: AppDeps, role?: 'owner' | 'manager'): Middlew
       select id, role, is_active from staff where user_id = ${userId}
     `
     if (!row || !row.is_active) throw apiError(403, 'FORBIDDEN', 'Not an active staff member')
-    const allowed = role === 'owner' ? row.role === 'owner' : role === 'manager' ? row.role !== 'barista' : true
+    const allowed = role === 'owner' ? row.role === 'owner' : role === 'manager' ? row.role === 'owner' || row.role === 'manager' : true
     if (!allowed) throw apiError(403, 'FORBIDDEN', 'Insufficient role')
 
     c.set('staff', { id: row.id, role: row.role })

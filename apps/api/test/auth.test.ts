@@ -225,3 +225,14 @@ describe('staff auth', () => {
     expect(res.status).toBe(401)
   })
 })
+
+describe('requireStaff role check is an allow-list', () => {
+  it("'manager' refuses a role it does not know", async () => {
+    const sql = (async () => [{ id: 's-x', role: 'auditor', is_active: true }]) as unknown as Parameters<typeof requireStaff>[0]['sql']
+    const deps = { sql, verifyUser: async () => ({ userId: 'u-x' }) } as unknown as Parameters<typeof requireStaff>[0]
+    const app = createApp(deps)
+    app.get('/manager-up', requireStaff(deps, 'manager'), (c) => c.json(c.get('staff')))
+    const res = await app.request('/manager-up', { headers: { Authorization: 'Bearer t' } })
+    expect(res.status).toBe(403)
+  })
+})

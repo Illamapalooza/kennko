@@ -50,9 +50,9 @@ export async function requireOwner(): Promise<StaffMember> {
   return staff
 }
 
-/** Owner or manager: the day report. A barista has no business with the till's money. */
+/** Owner or manager (an allow-list, so an unknown role is refused): the day report. */
 export async function requireManager(): Promise<StaffMember> {
   const staff = await requireStaff()
-  if (staff.role === 'barista') redirect('/admin/menu?denied=manager-only')
+  if (staff.role !== 'owner' && staff.role !== 'manager') redirect('/admin/menu?denied=manager-only')
   return staff
 }
