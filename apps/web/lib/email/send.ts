@@ -47,5 +47,6 @@ export async function activeStaffEmails(): Promise<string[]> {
     .from('staff')
     .select('email')
     .eq('is_active', true)
+    .not('email', 'is', null)
   return (data ?? []).map((row: { email: string }) => row.email)
 }

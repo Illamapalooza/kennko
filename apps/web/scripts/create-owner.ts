@@ -27,7 +27,7 @@ async function main() {
   if (authError) throw authError
 
   const { error: staffError } = await db.from('staff').insert({
-    id: created.user.id,
+    user_id: created.user.id,
     email,
     full_name: fullName,
     role: 'owner',

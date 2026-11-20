@@ -50,12 +50,20 @@ Run these from `apps/web` (the repo root has `npm run dev`, `npm run build` and 
 Routes under `/admin`, signed in with Supabase Auth (email + password, no
 public signup).
 
-| Capability | Barista | Owner |
-|---|:--:|:--:|
-| See the menu, mark items sold out / available | yes | yes |
-| Add, edit, re-price, archive drinks | no | yes |
-| Upload and remove product photos | no | yes |
-| Invite staff, change roles, deactivate accounts | no | yes |
+| Capability | Barista | Manager | Owner |
+|---|:--:|:--:|:--:|
+| See the menu, mark items sold out / available | yes | yes | yes |
+| Add, edit, re-price, archive drinks | no | no | yes |
+| Upload and remove product photos | no | no | yes |
+| Add staff, change roles, deactivate accounts | no | no | yes |
+| Issue till PINs (Staff screen) | no | no | yes |
+
+A manager has barista-level access on the website; owner-only stays owner-only. Staff are
+managed through the API (`/v1/staff`), not Supabase: the Staff screen adds people, changes roles and
+issues till PINs there. A **barista needs no website login or email** (they use a PIN at the till); an
+owner needs a login, a manager may have one. The website still sends the invite email (Supabase auth
+admin needs its service key), then creates the staff row via the API. A PIN is generated, shown once, and
+never stored in the clear.
 
 **Authorisation is enforced in Postgres, not just the UI.** `public.is_owner()`
 and `public.is_active_staff()` back the RLS policies, and a `BEFORE UPDATE`

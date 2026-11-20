@@ -4,7 +4,7 @@ import type { StaffMember, StaffRole } from './types'
 
 type StaffRow = {
   id: string
-  email: string
+  email: string | null
   full_name: string
   role: StaffRole
   is_active: boolean
@@ -32,7 +32,7 @@ export async function getCurrentStaff(): Promise<StaffMember | null> {
   const { data } = await db
     .from('staff')
     .select('id, email, full_name, role, is_active')
-    .eq('id', user.id)
+    .eq('user_id', user.id)
     .maybeSingle()
 
   return mapStaffRow(data as StaffRow | null)
