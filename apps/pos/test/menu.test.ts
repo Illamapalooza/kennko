@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import type { MenuSnapshot } from '@kennko/core'
-import { fetchApiMenu } from '../server/menu.ts'
+import { builtInMenu, fetchApiMenu, loadSnapshot, tillDiscounts, tillMenu } from '../server/menu.ts'
 
 const snapshot: MenuSnapshot = {
   version: 3,
@@ -33,14 +36,22 @@ const reply = (status: number, body: unknown) => vi.fn(async (_url: string) => n
 afterEach(() => vi.unstubAllGlobals())
 
 describe('fetchApiMenu', () => {
-  it('maps a snapshot to drinks only', async () => {
+  it('returns the raw snapshot (Ruling 11: the till saves it as it came)', async () => {
     const fetchMock = reply(200, snapshot)
     vi.stubGlobal('fetch', fetchMock)
-    const menu = await fetchApiMenu('https://api.example.test/', 42)
+    const got = await fetchApiMenu('https://api.example.test/', 42)
     expect(fetchMock.mock.calls[0]![0]).toBe('https://api.example.test/v1/menu')
-    expect(menu.categories.map((c) => c.name)).toEqual(['Drinks'])
-    expect(menu.categories[0]!.items[0]!.prices).toEqual([{ size: 'M', priceCentavos: 10000 }])
-    expect(menu.updatedAt).toBe(42)
+    expect(got).toEqual(snapshot)
+  })
+
+  it('refuses an answer that is not a snapshot', async () => {
+    vi.stubGlobal('fetch', reply(200, { categories: 'nope' }))
+    await expect(fetchApiMenu('https://api.example.test', 0)).rejects.toThrow('The website gave a menu the till could not understand, so the current menu was kept.')
+  })
+
+  it('a snapshot with no drinks keeps the current menu', async () => {
+    vi.stubGlobal('fetch', reply(200, { ...snapshot, categories: [snapshot.categories[1]!] }))
+    await expect(fetchApiMenu('https://api.example.test', 0)).rejects.toThrow('The website menu came back empty, so the current menu was kept.')
   })
 
   it('an empty menu keeps the current one with the message above', async () => {
@@ -65,5 +76,108 @@ describe('fetchApiMenu', () => {
 
   it('no api url means the connection is not set up', async () => {
     await expect(fetchApiMenu('', 0)).rejects.toThrow('The website connection is not set up on this computer.')
+  })
+})
+
+const withMilk: MenuSnapshot = {
+  ...snapshot,
+  categories: [{
+    id: 'c-drinks', name: 'Drinks', kind: 'drink',
+    items: [
+      {
+        id: 'A', name: 'Americano', description: null, imagePath: null, isBestseller: false, isAvailable: true, optionGroupIds: ['g-milk'],
+        variants: [{ id: 'A-M', code: 'M', label: 'Medium', priceCentavos: 9000, temperature: 'iced', isAvailable: true }],
+      },
+      {
+        id: 'B', name: 'Breve', description: null, imagePath: null, isBestseller: false, isAvailable: true, optionGroupIds: ['g-milk'],
+        variants: [
+          { id: 'B-M', code: 'M', label: 'Medium', priceCentavos: 12000, temperature: 'iced', isAvailable: true },
+          { id: 'B-L', code: 'L', label: 'Large', priceCentavos: 13500, temperature: 'iced', isAvailable: true },
+        ],
+      },
+    ],
+  }],
+  optionGroups: [{
+    id: 'g-milk', name: 'Milk', minSelect: 0, maxSelect: 1,
+    options: [
+      { id: 'oat', name: 'Oat', priceCentavos: 2000, isAvailable: true },
+      { id: 'soy', name: 'Soy', priceCentavos: 2000, isAvailable: true },
+    ],
+  }],
+}
+
+describe('tillMenu', () => {
+  it('builds from the snapshot with items, variants and options in soldOut marked off', () => {
+    const fallback = builtInMenu(1)
+    const menu = tillMenu(withMilk, fallback, new Set(['A', 'B-L', 'oat']), 77)
+    const items = menu.categories.flatMap((c) => c.items)
+    expect(menu.version).toBe(3)
+    expect(menu.source).toBe('website')
+    expect(menu.updatedAt).toBe(77)
+    expect(items.find((i) => i.id === 'A')!.isAvailable).toBe(false)
+    const b = items.find((i) => i.id === 'B')!
+    expect(b.isAvailable).toBe(true)
+    expect(b.prices).toEqual([{ size: 'M', priceCentavos: 12000 }])
+    const milk = menu.modifierGroups.find((g) => g.id === 'g-milk')!
+    expect(milk.modifiers.find((m) => m.id === 'oat')!.isAvailable).toBe(false)
+    expect(milk.modifiers.find((m) => m.id === 'soy')!.isAvailable).toBe(true)
+    // The saved snapshot itself is not changed.
+    expect(withMilk.categories[0]!.items[0]!.isAvailable).toBe(true)
+    expect(withMilk.optionGroups[0]!.options[0]!.isAvailable).toBe(true)
+  })
+
+  it('without a snapshot uses the fallback with item-level marks and no version', () => {
+    const fallback = builtInMenu(5)
+    const first = fallback.categories[0]!.items[0]!
+    const menu = tillMenu(null, fallback, new Set([first.id]), 77)
+    expect(menu.version).toBeUndefined()
+    expect(menu.source).toBe('built-in')
+    expect(menu.categories[0]!.items[0]!.isAvailable).toBe(false)
+    expect(menu.categories[0]!.items[1]!.isAvailable).toBe(true)
+    expect(fallback.categories[0]!.items[0]!.isAvailable).toBe(true)
+  })
+})
+
+describe('tillDiscounts (Ruling 13)', () => {
+  const config = [{ label: 'Senior / PWD 20%', kind: 'percent' as const, value: 20 }]
+  afterEach(() => vi.restoreAllMocks())
+
+  it('uses the snapshot presets when there are any', () => {
+    const s = { ...snapshot, discountPresets: [{ id: 'd1', label: 'Promo 15%', kind: 'percent' as const, value: 15 }, { id: 'd2', label: 'Less 50', kind: 'amount' as const, value: 5000 }] }
+    expect(tillDiscounts(s, config)).toEqual([{ label: 'Promo 15%', kind: 'percent', value: 15 }, { label: 'Less 50', kind: 'amount', value: 5000 }])
+  })
+
+  it('uses config.json without a snapshot or with no presets', () => {
+    expect(tillDiscounts(null, config)).toEqual(config)
+    expect(tillDiscounts(snapshot, config)).toEqual(config)
+  })
+
+  it('drops non-whole presets and says so once (Ruling P4-4)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const s = { ...snapshot, discountPresets: [{ id: 'd1', label: 'Odd 12.5%', kind: 'percent' as const, value: 12.5 }, { id: 'd2', label: 'Promo 10%', kind: 'percent' as const, value: 10 }] }
+    expect(tillDiscounts(s, config)).toEqual([{ label: 'Promo 10%', kind: 'percent', value: 10 }])
+    tillDiscounts(s, config)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toContain('Odd 12.5%')
+  })
+
+  it('falls back to config.json when every preset is dropped', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const s = { ...snapshot, discountPresets: [{ id: 'd9', label: 'Weird', kind: 'percent' as const, value: 0.5 }] }
+    expect(tillDiscounts(s, config)).toEqual(config)
+  })
+})
+
+describe('loadSnapshot', () => {
+  const dirs: string[] = []
+  afterAll(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }) })
+
+  it('is null for a garbled file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kennko-menu-'))
+    dirs.push(dir)
+    fs.writeFileSync(path.join(dir, 'menu-snapshot.json'), '{"version": 3, "categ')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(loadSnapshot(dir)).toBeNull()
+    warn.mockRestore()
   })
 })

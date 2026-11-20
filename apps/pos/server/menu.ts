@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { SIZE_ORDER, liveDrinkMenu, type Menu, type MenuSnapshot } from '@kennko/core'
+import { SIZE_ORDER, liveDrinkMenu, type Discount, type Menu, type MenuSnapshot } from '@kennko/core'
 // The same list the website's seeder loads, so the till and the website start from one menu.
 import { SEED_CATEGORIES, SEED_MODIFIER_GROUPS } from '@kennko/core/seed-menu'
 
@@ -48,15 +48,12 @@ export function loadMenu(dataDir: string, now: number): Menu {
   return builtInMenu(now)
 }
 
-export function saveMenu(dataDir: string, menu: Menu): void {
-  fs.mkdirSync(dataDir, { recursive: true })
-  const file = path.join(dataDir, 'menu.json')
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(menu, null, 2))
-  fs.renameSync(`${file}.tmp`, file)
-}
-
-/** Reads the published menu from the Kennko API. Needs internet; everything else on the till does not. */
-export async function fetchApiMenu(apiUrl: string, now: number): Promise<Menu> {
+/**
+ * Reads the published menu snapshot from the Kennko API, as it came (Ruling 11: saved raw, built into the till's menu
+ * by `tillMenu`). For an unpaired till's manual pull; a paired till gets the menu with its sync. Needs internet;
+ * everything else on the till does not.
+ */
+export async function fetchApiMenu(apiUrl: string, now: number): Promise<MenuSnapshot> {
   if (!apiUrl) throw new Error('The website connection is not set up on this computer.')
   const empty = () => new Error('The website menu came back empty, so the current menu was kept.')
   let res: Response
@@ -67,11 +64,50 @@ export async function fetchApiMenu(apiUrl: string, now: number): Promise<Menu> {
   }
   if (res.status === 404) throw empty()
   if (!res.ok) throw new Error(`The website refused the menu request (${res.status}).`)
-  let snapshot: MenuSnapshot
-  try { snapshot = (await res.json()) as MenuSnapshot } catch { throw new Error('Could not reach the website. Check the internet and try again.') }
-  const menu = liveDrinkMenu(snapshot, now)
-  if (menu.categories.length === 0) throw empty()
-  return menu
+  let raw: unknown
+  try { raw = await res.json() } catch { throw new Error('Could not reach the website. Check the internet and try again.') }
+  if (!isMenuSnapshot(raw)) throw new Error('The website gave a menu the till could not understand, so the current menu was kept.')
+  if (liveDrinkMenu(raw, now).categories.length === 0) throw empty()
+  return raw
+}
+
+/**
+ * The menu the till sells from. With a pulled snapshot: a copy with every item, variant and option in `soldOut` marked
+ * unavailable, built with `liveDrinkMenu` (so it carries `version`; a sold-out variant loses its price). Without one:
+ * `fallback` (the old menu.json or the built-in menu) with item-level marks.
+ */
+export function tillMenu(snapshot: MenuSnapshot | null, fallback: Menu, soldOut: Set<string>, now: number): Menu {
+  if (!snapshot) {
+    return {
+      ...fallback,
+      categories: fallback.categories.map((c) => ({ ...c, items: c.items.map((i) => (soldOut.has(i.id) ? { ...i, isAvailable: false } : i)) })),
+    }
+  }
+  const off = <T extends { id: string; isAvailable: boolean }>(x: T): T => (soldOut.has(x.id) ? { ...x, isAvailable: false } : x)
+  return liveDrinkMenu({
+    ...snapshot,
+    categories: snapshot.categories.map((c) => ({ ...c, items: c.items.map((i) => ({ ...off(i), variants: i.variants.map(off) })) })),
+    optionGroups: snapshot.optionGroups.map((g) => ({ ...g, options: g.options.map(off) })),
+  }, now)
+}
+
+const warnedPresets = new Set<string>()
+
+/**
+ * The discounts the till offers (Ruling 13): the snapshot's presets when one is loaded and has any the till can record,
+ * else config.json's. Like config presets, a non-whole value is left out (Ruling P4-4) and logged once.
+ */
+export function tillDiscounts(snapshot: MenuSnapshot | null, configDiscounts: Discount[]): Discount[] {
+  const presets = (snapshot?.discountPresets ?? []).filter((d) => {
+    if (Number.isInteger(d.value) && d.value > 0) return true
+    const key = `${d.id}:${d.value}`
+    if (!warnedPresets.has(key)) {
+      warnedPresets.add(key)
+      console.warn(`  Discount "${d.label}" (${d.value}) from the website is not a whole number above 0, so the till leaves it out.`)
+    }
+    return false
+  })
+  return presets.length > 0 ? presets.map((d) => ({ label: d.label, kind: d.kind, value: d.value })) : configDiscounts
 }
 
 const SNAPSHOT_FILE = 'menu-snapshot.json'

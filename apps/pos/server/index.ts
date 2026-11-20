@@ -14,10 +14,11 @@ import { backupDay } from './backup.ts'
 import { ensureCertificate, tillNames, type Certificate } from './secure.ts'
 import { setupPage } from './setup-page.ts'
 import { loadConfig } from './config.ts'
-import { fetchApiMenu, loadMenu, saveMenu } from './menu.ts'
+import { fetchApiMenu, loadMenu, loadSnapshot, saveSnapshot, tillDiscounts, tillMenu } from './menu.ts'
 import { createStore } from './store.ts'
 import { createPinDirectory } from './pins.ts'
-import { checkPinFresh, createStaffRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice } from './device.ts'
+import { checkPinFresh, createPinRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice } from './device.ts'
+import { createSync } from './sync.ts'
 import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
 import { reportCsv } from './report.ts'
 import { WALL_LINGER_MS, wallOrders } from './wall-feed.ts'
@@ -34,10 +35,13 @@ const port = portArg >= 0 && Number(args[portArg + 1]) > 0 ? Number(args[portArg
 
 fs.mkdirSync(DATA, { recursive: true })
 const store = createStore(path.join(DATA, 'pos.db'))
-let baseMenu: Menu = loadMenu(DATA, Date.now())
+// The menu.json from before sync (or the built-in menu): used only until a snapshot has been pulled.
+const baseMenu: Menu = loadMenu(DATA, Date.now())
+// The snapshot pulled from the website (data/menu-snapshot.json); reloaded whenever the sync saves a newer one.
+let loadedSnapshot = loadSnapshot(DATA)
 // The PIN is typed once per browser and swapped for a session cookie; sessions live in pos.db and survive a restart.
 const sessions = createSessions(store.db, () => Date.now())
-// Each person's own PIN, checked against the staff cache in pos.db (filled from the API by refreshStaff below).
+// Each person's own PIN, checked against the staff cache in pos.db (filled by the sync's pull below).
 const pins = createPinDirectory({ staffPin: config.staffPin, managerPin: config.managerPin, staff: () => store.staffCache() })
 
 /** Copies the sales database to data/backups (and to config.backupDir when set). Never throws: a failed backup must not stop a sale. */
@@ -56,24 +60,34 @@ backup()
 setInterval(backup, 60 * 60 * 1000).unref()
 
 /**
- * Fetches who may use this till from the API and applies it (device.ts). At startup, every 5 minutes, right after
- * pairing, and on a wrong PIN at most once every 30 seconds (staff.soon), so a PIN issued a moment ago in admin works.
- * Nothing else waits on it: offline leaves the cache as it is, and a revoked till keeps selling.
+ * The sync with the Kennko API (sync.ts): imports old history once, pushes the outbox, pulls the menu, sold-out marks,
+ * staff and shop details. It runs in the background; no request waits on it except pairing, "Check now" and the
+ * bounded wrong-PIN refresh. Every write kicks it after answering.
  */
-const staff = createStaffRefresh({ dataDir: DATA, apiUrl: config.api.url, store, sessions, pins, onChange: () => broadcast() })
-const refreshStaff = staff.refresh
-setInterval(refreshStaff, 5 * 60 * 1000).unref()
+const sync = createSync({
+  store, sessions, pins, dataDir: DATA, apiUrl: config.api.url,
+  onChange: ({ menu: menuChanged }) => {
+    if (menuChanged) loadedSnapshot = loadSnapshot(DATA)
+    broadcast()
+  },
+})
+// A PIN that matches no one runs one sync (paired, not revoked, at most every 30 s, waiting at most 2.5 s; Ruling P4-1).
+const pinRefresh = createPinRefresh({ dataDir: DATA, refresh: sync.runOnce })
 
-/** The menu the till sells from: the saved menu with today's sold-out marks applied. */
-function menu(): Menu {
-  const soldOut = new Set(store.soldOut())
-  return {
-    ...baseMenu,
-    categories: baseMenu.categories.map((c) => ({
-      ...c,
-      items: c.items.map((i) => (soldOut.has(i.id) ? { ...i, isAvailable: false } : i)),
-    })),
-  }
+/** The menu the till sells from: the pulled snapshot (else the old menu) with the sold-out marks applied. */
+const menu = (): Menu => tillMenu(loadedSnapshot, baseMenu, new Set(store.soldOut()), Date.now())
+
+/** True when a drink id is on the till's menu, sold out or not. */
+const onMenu = (id: string): boolean => loadedSnapshot
+  ? loadedSnapshot.categories.some((c) => c.kind === 'drink' && c.items.some((i) => i.id === id))
+  : baseMenu.categories.some((c) => c.items.some((i) => i.id === id))
+
+/** The shop details: config.json's, with name, address and phone from the website once pulled (Ruling 12). */
+function shopDetails(): typeof config.shop {
+  let pulled: any = null
+  try { pulled = JSON.parse(store.kvGet('shop') ?? 'null') } catch { /* a broken value: config only */ }
+  if (!pulled || typeof pulled.name !== 'string' || typeof pulled.address !== 'string') return config.shop
+  return { ...config.shop, name: pulled.name, address: pulled.address, phone: typeof pulled.phone === 'string' ? pulled.phone : '' }
 }
 
 // ---------- live updates ----------
@@ -83,7 +97,8 @@ let version = 0
 // menuKey changes whenever the menu or a sold-out mark does, so every tablet knows to fetch it again.
 const snapshot = () => JSON.stringify({
   version, now: Date.now(), day: manilaDay(Date.now()), active: store.activeOrders(), shift: store.openShift(),
-  menuKey: `${baseMenu.updatedAt}:${store.soldOut().sort().join(',')}`,
+  menuKey: `${loadedSnapshot?.version ?? 0}:${baseMenu.updatedAt}:${store.soldOut().sort().join(',')}`,
+  sync: sync.status(),
 })
 // The projector wall follows the till through its own feed: drink names and steps only, so it needs no PIN.
 const wallClients = new Set<http.ServerResponse>()
@@ -144,15 +159,15 @@ const MAX_STRIKES = 8
 const LOCK_MS = 5 * 60000
 
 /**
- * Checks a typed PIN: the one that opens the till, or the manager PIN. A PIN that matches no one first refreshes the
- * staff list (throttled) and is checked once more; the whole try counts as one wrong guess against the device.
+ * Checks a typed PIN: the one that opens the till, or the manager PIN. A PIN that matches no one first runs one sync
+ * for the staff list (throttled, at most 2.5 s) and is checked once more; the whole try counts as one wrong guess.
  */
 async function checkPin(req: http.IncomingMessage, given: unknown, need: 'staff' | 'manager'): Promise<Who> {
   const ip = req.socket.remoteAddress ?? '?'
   const s = strikes.get(ip)
   if (s && s.until > Date.now()) throw new PinError('Too many wrong PINs. Try again in 5 minutes.', 429)
   const pin = typeof given === 'string' ? given : ''
-  const who = await checkPinFresh(() => (need === 'manager' ? pins.checkManager(pin) : pins.checkGate(pin)), staff.soon)
+  const who = await checkPinFresh(() => (need === 'manager' ? pins.checkManager(pin) : pins.checkGate(pin)), pinRefresh.soon)
   if (who) {
     strikes.delete(ip)
     return who
@@ -164,10 +179,29 @@ async function checkPin(req: http.IncomingMessage, given: unknown, need: 'staff'
   throw new PinError(need === 'manager' ? 'Wrong manager PIN.' : 'Wrong PIN.', need === 'manager' ? 403 : 401)
 }
 
-/** The session this request carries, or a 401 so the device shows the PIN screen. Off mode needs none. */
-function needSession(req: http.IncomingMessage): void {
-  if (pins.mode() === 'off') return
-  if (!sessions.get(readSessionCookie(req.headers.cookie, cameInSecure(req)))) throw new PinError('Enter your PIN to open the till.', 401)
+/**
+ * A person's own PIN for crediting an action (a sold-out mark, Ruling 14), on top of the session. Wrong answers 403,
+ * not 401: a 401 would lock the tablet as if its session had ended. A missing PIN is no guess and takes no strike.
+ */
+async function personalPin(req: http.IncomingMessage, given: unknown): Promise<Who> {
+  if (typeof given !== 'string' || given === '') throw new PinError('Enter your own PIN to mark a drink sold out.', 403)
+  try {
+    return await checkPin(req, given, 'staff')
+  } catch (err) {
+    if (err instanceof PinError && err.code === 401) throw new PinError('Wrong PIN.', 403)
+    throw err
+  }
+}
+
+/**
+ * The session this request carries, or a 401 so the device shows the PIN screen. Off mode needs none and gives null.
+ * Its `staffId` is who a sale, shift open, cash in or prep step is credited to (null in shared mode; Ruling 15).
+ */
+function needSession(req: http.IncomingMessage): Who | null {
+  if (pins.mode() === 'off') return null
+  const who = sessions.get(readSessionCookie(req.headers.cookie, cameInSecure(req)))
+  if (!who) throw new PinError('Enter your PIN to open the till.', 401)
+  return who
 }
 
 /** Secure cookies only on the https port, or plain-http tablets would never send them back. */
@@ -199,8 +233,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (req.method === 'GET' && route === '/api/bootstrap') {
     const device = loadDevice(DATA)
     return json(res, 200, {
-      shop: config.shop, discounts: config.discounts, pinMode: pins.mode(), websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req),
+      shop: shopDetails(), discounts: tillDiscounts(loadedSnapshot, config.discounts), pinMode: pins.mode(),
+      websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req),
       device: device ? { name: device.name, revoked: device.revokedAt !== null } : null,
+      // Paired, not revoked and the website address set: the menu screen offers "Check now" (one sync, no PIN).
+      syncConfigured: Boolean(config.api.url) && device !== null && device.revokedAt === null,
     })
   }
   if (req.method === 'GET' && route === '/api/wall/events') {
@@ -234,7 +271,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
 
   // Everything below needs a session (the cookie rides along on fetch, EventSource and the CSV link alike).
-  needSession(req)
+  const session = needSession(req)
+  const by = session?.staffId ?? null
 
   if (req.method === 'GET') {
     if (route === '/api/events') {
@@ -274,31 +312,43 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
 
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed.' })
   const body = await readBody(req)
-  const done = (payload: unknown) => { broadcast(); return json(res, 200, payload) }
+  // Every successful write: tell the tablets, answer, then nudge the sync (it never runs on the request's time).
+  const done = (payload: unknown) => { broadcast(); json(res, 200, payload); sync.kick() }
 
-  if (route === '/api/orders') return done(store.createOrder(menu(), body, now, null))
+  if (route === '/api/orders') return done(store.createOrder(menu(), body, now, by))
 
   const orderAction = /^\/api\/orders\/(\d+)\/(advance|undo|void)$/.exec(route)
   if (orderAction) {
     const id = Number(orderAction[1])
-    if (orderAction[2] === 'advance') return done(store.advance(id, now, null))
-    if (orderAction[2] === 'undo') return done(store.undo(id, now, null))
-    await checkPin(req, body.managerPin, 'manager')
-    return done(store.voidOrder(id, body.reason, now, null))
+    if (orderAction[2] === 'advance') return done(store.advance(id, now, by))
+    if (orderAction[2] === 'undo') return done(store.undo(id, now, by))
+    const manager = await checkPin(req, body.managerPin, 'manager')
+    return done(store.voidOrder(id, body.reason, now, manager.staffId))
   }
 
   if (route === '/api/menu/availability') {
-    if (typeof body.itemId !== 'string' || !baseMenu.categories.some((c) => c.items.some((i) => i.id === body.itemId))) {
-      throw new OrderError('That drink is not on the menu.')
-    }
-    // Sent to Kennko only while connected (Ruling 14). Credited to nobody until sessions are wired in (Task 10).
-    store.setAvailable(body.itemId, Boolean(body.available), now, null, { outbox: loadDevice(DATA) !== null })
+    if (typeof body.itemId !== 'string' || !onMenu(body.itemId)) throw new OrderError('That drink is not on the menu.')
+    // Per-person mode asks for the person's own PIN (any role) and credits them; otherwise the session (Ruling 14/15).
+    const credited = pins.mode() === 'per-person' ? (await personalPin(req, body.pin)).staffId : by
+    // Sent to Kennko only while connected and not disconnected in admin (Ruling 14).
+    store.setAvailable(body.itemId, Boolean(body.available), now, credited, { outbox: loadDevice(DATA)?.revokedAt === null })
     return done(menu())
   }
   if (route === '/api/menu/sync') {
+    const device = loadDevice(DATA)
+    if (device && device.revokedAt === null) {
+      // "Check now" (Ruling 11): one sync, no PIN. The pulled menu has already been applied by onChange.
+      await sync.runOnce()
+      const problem = sync.status().problem
+      if (problem) throw new OrderError(problem)
+      return done(menu())
+    }
+    // Not connected: the manager-PIN pull of the published menu, saved as the snapshot.
     await checkPin(req, body.managerPin, 'manager')
-    try { baseMenu = await fetchApiMenu(config.api.url, now) } catch (err: any) { throw new OrderError(err.message) }
-    saveMenu(DATA, baseMenu)
+    let pulled
+    try { pulled = await fetchApiMenu(config.api.url, now) } catch (err: any) { throw new OrderError(err.message) }
+    saveSnapshot(DATA, pulled)
+    loadedSnapshot = pulled
     return done(menu())
   }
 
@@ -308,23 +358,26 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     let device
     try { device = await pairWithApi(config.api.url, body.code, now) } catch (err: any) { throw new OrderError(err.message) }
     saveDevice(DATA, device)
-    await refreshStaff()
+    await sync.runOnce()
+    broadcast()
     return json(res, 200, { name: device.name })
   }
   if (route === '/api/device/forget') {
     await checkPin(req, body.managerPin, 'manager')
     forgetDevice(DATA) // the staff cache stays, so the same PINs keep working
+    broadcast() // the tablets' sync status now says not connected
     return json(res, 200, { ok: true })
   }
 
-  if (route === '/api/till/open') return done(store.startShift(body.floatCentavos, now, null))
+  if (route === '/api/till/open') return done(store.startShift(body.floatCentavos, now, by))
   if (route === '/api/till/cash') {
-    if (body.kind === 'out') await checkPin(req, body.managerPin, 'manager')
-    return done(store.cashMove(body.kind, body.amountCentavos, body.reason, now, null))
+    // Cash in is credited to the session; cash out to the manager who approved it (Ruling 15).
+    const credited = body.kind === 'out' ? (await checkPin(req, body.managerPin, 'manager')).staffId : by
+    return done(store.cashMove(body.kind, body.amountCentavos, body.reason, now, credited))
   }
   if (route === '/api/till/close') {
-    await checkPin(req, body.managerPin, 'manager')
-    const closed = store.endShift(body.countedCentavos, body.note, now, null)
+    const manager = await checkPin(req, body.managerPin, 'manager')
+    const closed = store.endShift(body.countedCentavos, body.note, now, manager.staffId)
     backup()
     return done(closed)
   }
@@ -415,7 +468,7 @@ server.on('error', (err: any) => {
 })
 
 server.listen(port, '0.0.0.0', () => {
-  refreshStaff()
+  sync.start()
   const lan = LAN().map((address) => `http://${address}:${port}/`)
   const shift = store.openShift()
   console.log(`\n  KENNKO POS${DEV ? '  (development)' : ''}`)
@@ -426,11 +479,16 @@ server.listen(port, '0.0.0.0', () => {
     console.log(`  Install as app:  open ${lan[0] ?? `http://localhost:${port}/`}setup on each tablet, once`)
     console.log(`  Secure address:  ${[...(named ? [named] : []), ...LAN()].map((n) => `https://${n}:${config.securePort}/`).join('   ') || `https://localhost:${config.securePort}/`}`)
   } else if (!DEV) console.log(`  Install as app:  not available. ${secureProblem}`)
-  console.log(`  Menu:            ${baseMenu.source === 'website' ? 'from the website' : 'built-in'}, ${baseMenu.categories.reduce((n, c) => n + c.items.length, 0)} drinks`)
+  const startMenu = menu()
+  console.log(`  Menu:            ${loadedSnapshot ? `from the website, version ${loadedSnapshot.version}` : startMenu.source === 'website' ? 'from the website (saved before sync)' : 'built-in'}, ${startMenu.categories.reduce((n, c) => n + c.items.length, 0)} drinks`)
   console.log(`  Till:            ${shift ? `open, expecting ${formatPesos(store.shiftSummary(shift).expectedCashCentavos)} in the drawer` : 'closed'}`)
   console.log(`  Backup:          ${lastBackup}`)
   const device = loadDevice(DATA)
   console.log(`  Kennko account:  ${device ? (device.revokedAt !== null ? `disconnected in admin (was "${device.name}")` : `connected as "${device.name}"`) : 'not connected (Menu › This till)'}`)
+  const s = sync.status()
+  const waiting = s.pendingEvents ? `, ${s.pendingEvents} change${s.pendingEvents === 1 ? '' : 's'} waiting to send` : ''
+  const importing = s.importing ? `, ${s.importing} old record${s.importing === 1 ? '' : 's'} to copy to Kennko` : ''
+  console.log(`  Sync:            ${!s.paired ? 'pending (not connected yet)' : s.revoked ? 'stopped (disconnected in admin)' : config.api.url ? 'paired, every 15 s' : 'paired, but the website address is not set'}${waiting}${importing}`)
   console.log(`  PINs:            ${({ off: 'off', shared: 'shared, from config.json', 'per-person': "each person's own" } as const)[pins.mode()]}`)
   if (pins.mode() !== 'per-person' && (config.staffPin === '1234' || config.managerPin === '0000')) console.log('  PINs are still the defaults (staff 1234, manager 0000). Change them in config.json before real use.')
   console.log('  Press Ctrl+C to stop.\n')

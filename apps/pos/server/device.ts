@@ -90,31 +90,7 @@ export function cleanStaff(list: unknown[]): CachedStaff[] {
 }
 
 /**
- * Asks the API who may use this till. Never throws: anything but a clear answer counts as offline, including a 401
- * that does not carry the API's DEVICE_REVOKED or UNAUTHENTICATED code.
- */
-export async function fetchDeviceInfo(apiUrl: string, token: string, fetchFn: typeof fetch = fetch): Promise<DeviceInfo> {
-  if (!apiUrl.trim()) return { status: 'offline' }
-  try {
-    const res = await fetchFn(`${base(apiUrl)}/v1/devices/me`, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    })
-    if (res.status === 401) {
-      const body: any = await res.json().catch(() => null)
-      return REVOKED_CODES.has(body?.code) ? { status: 'revoked' } : { status: 'offline' }
-    }
-    if (!res.ok) return { status: 'offline' }
-    const body: any = await res.json()
-    if (!body || !Array.isArray(body.staff)) return { status: 'offline' }
-    return { status: 'ok', staff: cleanStaff(body.staff) }
-  } catch {
-    return { status: 'offline' }
-  }
-}
-
-/**
- * Applies one refresh to the till, from `GET /v1/devices/me` or the sync pull (`{ status: 'ok', staff }`). ok: the cache is replaced, then sessions end for people no longer in it, and
+ * Applies one refresh to the till, from the sync pull (`{ status: 'ok', staff }`) or its revoked answer. ok: the cache is replaced, then sessions end for people no longer in it, and
  * shared (config PIN) sessions end once per-person mode is on. revoked: the device file is marked, the cache kept.
  * offline: nothing. Returns true when the caller should tell the tablets.
  */
@@ -140,35 +116,14 @@ const SOON_MS = 30_000
 const SOON_WAIT_MS = 2_500
 
 /**
- * The till's staff refresh. `refresh` fetches who may use this till and applies it; runs one at a time, so a slow
- * answer for an old pairing cannot land after a new one. `soon` is the same refresh for a wrong PIN, so a PIN issued
- * in admin a moment ago works on the next try: paired, not revoked and at most once every 30 seconds, else it does
+ * The wrong-PIN refresh (Ruling P4-1), so a PIN issued in admin a moment ago works on the next try. `soon` runs one
+ * sync (`refresh`, which pulls the staff list): paired, not revoked and at most once every 30 seconds, else it does
  * nothing. It waits at most 2.5 seconds; a slower answer still lands in the cache for the next try. It resolves true
  * when it asked the API (whatever the answer, or none yet).
  */
-export function createStaffRefresh(opts: {
-  dataDir: string; apiUrl: string; store: Store; sessions: Sessions; pins: PinDirectory; onChange: () => void
-  fetchFn?: typeof fetch; now?: () => number
-}) {
+export function createPinRefresh(opts: { dataDir: string; refresh: () => Promise<void>; now?: () => number }) {
   const now = opts.now ?? Date.now
-  let chain: Promise<void> = Promise.resolve()
   let lastSoon = -Infinity
-
-  function refresh(): Promise<void> {
-    chain = chain.then(async () => {
-      try {
-        const device = loadDevice(opts.dataDir)
-        if (!device || device.revokedAt !== null) return
-        const result = await fetchDeviceInfo(opts.apiUrl, device.token, opts.fetchFn)
-        if (loadDevice(opts.dataDir)?.token !== device.token) return // forgotten or paired again while asking
-        if (applyDeviceInfo(opts.store, opts.sessions, opts.pins, result, opts.dataDir, now())) opts.onChange()
-        if (result.status === 'revoked') console.warn('  This till was disconnected in admin. It keeps selling; connect it again from the Menu screen.')
-      } catch (err: any) {
-        console.error(`  Could not refresh the staff list: ${err.message}`)
-      }
-    })
-    return chain
-  }
 
   async function soon(): Promise<boolean> {
     const device = loadDevice(opts.dataDir)
@@ -178,12 +133,12 @@ export function createStaffRefresh(opts: {
     lastSoon = t
     let timer: ReturnType<typeof setTimeout> | undefined
     const waited = new Promise<void>((resolve) => { timer = setTimeout(resolve, SOON_WAIT_MS); timer.unref?.() })
-    await Promise.race([refresh(), waited])
+    await Promise.race([opts.refresh().catch(() => {}), waited])
     clearTimeout(timer)
     return true
   }
 
-  return { refresh, soon }
+  return { soon }
 }
 
 /**

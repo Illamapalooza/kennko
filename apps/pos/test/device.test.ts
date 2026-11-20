@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { hashStaffPin } from '@kennko/core/staff-pin'
-import { applyDeviceInfo, checkPinFresh, createStaffRefresh, fetchDeviceInfo, forgetDevice, loadDevice, pairWithApi, saveDevice, type DeviceFile } from '../server/device.ts'
+import { applyDeviceInfo, checkPinFresh, cleanStaff, createPinRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice, type DeviceFile } from '../server/device.ts'
+import { createSync } from '../server/sync.ts'
 import { createPinDirectory, type CachedStaff } from '../server/pins.ts'
 import { createSessions } from '../server/sessions.ts'
 import { createStore } from '../server/store.ts'
@@ -95,21 +96,13 @@ describe('the device file', () => {
   })
 })
 
-describe('fetching the device info', () => {
-  it('sends the device token and returns the staff on a 200', async () => {
-    const api = fakeFetch(() => reply(200, { device: { id: 'd-1', name: 'Counter', ticketSeries: 'C' }, staff: [bea, ana] }))
-    const result = await fetchDeviceInfo(URL_, TOKEN, api.fn)
-    expect(result).toEqual({ status: 'ok', staff: [bea, ana] })
-    expect(api.calls[0]!.url).toBe(`${URL_}/v1/devices/me`)
-    expect(new Headers(api.calls[0]!.init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`)
+describe('cleaning a staff list from the API', () => {
+  it('drops rows it cannot use, and repeats of an id', () => {
+    expect(cleanStaff([bea, { ...ana, role: 'owner' }, { id: '', fullName: 'X', role: 'barista', pinHash: bea.pinHash }, { ...bea, fullName: 'Bea again' }, null]))
+      .toEqual([bea, { ...ana, role: 'owner' }])
   })
 
-  it('drops staff rows it cannot use', async () => {
-    const api = fakeFetch(() => reply(200, { staff: [bea, { id: 'x', fullName: 'X', role: 'janitor', pinHash: 'h' }, { id: 'y' }] }))
-    expect(await fetchDeviceInfo(URL_, TOKEN, api.fn)).toEqual({ status: 'ok', staff: [bea] })
-  })
-
-  it('drops rows whose hash is not in the pinned scrypt format, so they cannot turn per-person on', async () => {
+  it('drops rows whose hash is not in the pinned scrypt format, so they cannot turn per-person on', () => {
     const odd = [
       { ...ana, id: 'm-2', pinHash: 'plain-text' },
       { ...ana, id: 'm-3', pinHash: ana.pinHash.replace('scrypt$16384$', 'scrypt$1024$') },
@@ -117,27 +110,11 @@ describe('fetching the device info', () => {
       { ...ana, id: 'm-5', pinHash: `${ana.pinHash}$extra` },
       { ...ana, id: 'm-6', pinHash: ana.pinHash.replace(/\$[^$]+$/, '$not+base64url') },
     ]
-    const result = await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => reply(200, { staff: [bea, ...odd] })).fn)
-    expect(result).toEqual({ status: 'ok', staff: [bea] })
+    const staff = cleanStaff([bea, ...odd])
+    expect(staff).toEqual([bea])
     const t = till([])
-    applyDeviceInfo(t.store, t.sessions, t.pins, result, tempDir(), T)
+    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'ok', staff }, tempDir(), T)
     expect(t.pins.mode()).toBe('shared')
-  })
-
-  it('is revoked on a 401 from the API (DEVICE_REVOKED or UNAUTHENTICATED)', async () => {
-    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => reply(401, { code: 'DEVICE_REVOKED', message: 'gone' })).fn)).toEqual({ status: 'revoked' })
-    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => reply(401, { code: 'UNAUTHENTICATED', message: 'bad token' })).fn)).toEqual({ status: 'revoked' })
-  })
-
-  it('is offline on any other 401, such as a hosting protection page', async () => {
-    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => new Response('<html>Authentication required</html>', { status: 401 })).fn)).toEqual({ status: 'offline' })
-    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => reply(401, { code: 'SOMETHING_ELSE' })).fn)).toEqual({ status: 'offline' })
-  })
-
-  it('is offline when fetch throws, on a 503, or with a body it cannot read', async () => {
-    expect(await fetchDeviceInfo(URL_, TOKEN, down.fn)).toEqual({ status: 'offline' })
-    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => reply(503, {})).fn)).toEqual({ status: 'offline' })
-    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => new Response('<html>', { status: 200 })).fn)).toEqual({ status: 'offline' })
   })
 })
 
@@ -217,22 +194,25 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
   let carl: CachedStaff
   beforeAll(async () => { carl = { id: 'b-2', fullName: 'Carl', role: 'barista', pinHash: await hashStaffPin('333333') } })
 
+  // The wrong-PIN refresh is one sync run (Ruling P4-1); the website answers the pull with `respond`.
+  const pulled = (staff: CachedStaff[]) => reply(200, { menu: null, soldOut: [], staff, shop: { name: 'Kennko', address: 'Butuan', phone: null } })
   function paired(respond: () => Response | Promise<Response>) {
     const t = till([bea, ana])
     const dir = tempDir()
     saveDevice(dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
     let clock = T
     let changes = 0
-    const api = fakeFetch(respond)
-    const refresh = createStaffRefresh({
-      dataDir: dir, apiUrl: URL_, store: t.store, sessions: t.sessions, pins: t.pins,
-      onChange: () => { changes += 1 }, fetchFn: api.fn, now: () => clock,
+    const api = fakeFetch((call) => (call.url.includes('/v1/sync/pull') ? respond() : reply(200, { results: [] })))
+    const sync = createSync({
+      store: t.store, sessions: t.sessions, pins: t.pins, dataDir: dir, apiUrl: URL_, fetchFn: api.fn, now: () => clock,
+      onChange: (what) => { if (what.staff) changes += 1 },
     })
+    const refresh = createPinRefresh({ dataDir: dir, refresh: sync.runOnce, now: () => clock })
     return { ...t, dir, api, refresh, tick: (ms: number) => { clock += ms }, changes: () => changes }
   }
 
   it('fetches the staff list and lets a just-issued PIN in on the same try', async () => {
-    const t = paired(() => reply(200, { staff: [bea, ana, carl] }))
+    const t = paired(() => pulled([bea, ana, carl]))
     const who = await checkPinFresh(() => t.pins.checkGate('333333'), t.refresh.soon)
     expect(who).toEqual({ staffId: 'b-2', role: 'staff', name: 'Carl' })
     expect(t.api.calls).toHaveLength(1)
@@ -240,13 +220,13 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
   })
 
   it('does not ask the API when the PIN is right', async () => {
-    const t = paired(() => reply(200, { staff: [bea, ana] }))
+    const t = paired(() => pulled([bea, ana]))
     expect(await checkPinFresh(() => t.pins.checkGate('111111'), t.refresh.soon)).not.toBeNull()
     expect(t.api.calls).toHaveLength(0)
   })
 
   it('asks at most once every 30 seconds', async () => {
-    const t = paired(() => reply(200, { staff: [bea, ana] }))
+    const t = paired(() => pulled([bea, ana]))
     expect(await checkPinFresh(() => t.pins.checkGate('999999'), t.refresh.soon)).toBeNull()
     expect(await checkPinFresh(() => t.pins.checkGate('999999'), t.refresh.soon)).toBeNull()
     t.tick(29_999)
@@ -258,7 +238,7 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
   })
 
   it('checks the PIN only once more after the refresh', async () => {
-    const t = paired(() => reply(200, { staff: [bea, ana] }))
+    const t = paired(() => pulled([bea, ana]))
     let checks = 0
     expect(await checkPinFresh(async () => { checks += 1; return null }, t.refresh.soon)).toBeNull()
     expect(checks).toBe(2)
@@ -292,7 +272,7 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
       expect(await first).toBeNull() // the website has not answered: the PIN is not on the list yet
       expect(t.api.calls).toHaveLength(1)
 
-      answer(reply(200, { staff: [bea, ana, carl] })) // the refresh carries on in the background
+      answer(pulled([bea, ana, carl])) // the refresh carries on in the background
       await until(() => t.store.staffCache().length === 3)
       expect(await checkPinFresh(() => t.pins.checkGate('333333'), t.refresh.soon)).toEqual({ staffId: 'b-2', role: 'staff', name: 'Carl' })
       expect(t.api.calls).toHaveLength(1) // a right PIN asks nothing
@@ -300,7 +280,7 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
   })
 
   it('does not ask when the till is not paired, or was disconnected in admin', async () => {
-    const t = paired(() => reply(200, { staff: [bea, ana, carl] }))
+    const t = paired(() => pulled([bea, ana, carl]))
     forgetDevice(t.dir)
     expect(await t.refresh.soon()).toBe(false)
     saveDevice(t.dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: T - 500 })
