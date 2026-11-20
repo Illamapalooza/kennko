@@ -164,3 +164,84 @@ wait; cat a.json b.json
 - This branch is merged.
 
 Then dry-run, confirm the list is 0013 only, and push.
+
+## Plan 3: staff PINs and tills
+
+Deploy in this order. Migration 0016 adds the `manager` role, `staff.user_id`, per-person PINs and the `devices` table.
+
+### 1. Migration 0016 (Julius)
+
+0016 is backward compatible for existing staff: the old API and the old website keep signing in. The old website's Staff screen edits are refused until step 3.
+
+First, in the Supabase SQL editor, run these two read-only checks:
+
+```sql
+select conname from pg_constraint where conrelid = 'public.staff'::regclass;
+```
+
+Expect `staff_id_fkey` among the rows.
+
+```sql
+select classid::regclass, objid from pg_depend where refobjid = 'public.staff_role'::regtype;
+```
+
+Expect only rows that come from the `staff` table. If either result differs, stop and ask before applying.
+
+Then, from `apps/api`, dry run first. It must list only 0016:
+
+```sh
+npx supabase db push --dry-run
+```
+
+Apply 0016 as one whole file (do not split it or paste it in pieces):
+
+```sh
+npx supabase db push
+```
+
+### 2. API deploy
+
+No new environment variables. Smoke checks:
+
+- `GET /health` returns 200.
+- `POST /v1/devices/pair` with `{"code":"000000"}` returns 401 `PAIRING_FAILED`.
+- `GET /v1/staff` without a token returns 401.
+- `GET /v1/devices/me` with `Authorization: Bearer kd_x` returns 401.
+
+### 3. Website deploy
+
+Deploy right after the API. Smoke checks:
+
+- The owner signs in.
+- Staff lists everyone.
+- **Set PIN** on the owner shows a PIN once.
+- Add a barista without an email and give them a PIN.
+- A manager login (if any) sees Orders but not Staff or Tills.
+
+### 4. Till (shop computer)
+
+Pull, run `npm run pos:build`, restart. The till still asks for the `config.json` PIN until the owner has a PIN.
+
+- Reload every tablet after updating. Old tabs keep the old PIN flow until reloaded.
+- A tablet types the PIN once and stays signed in across reloads and a till restart.
+- A tablet that used both the https and the http address signs in once on each.
+
+### 5. Pair the till
+
+In admin, open Tills, then Add a till, and note the code. On the till, open Menu, then Connect this till, enter the code and the manager PIN. It should say "Connected as Counter till".
+
+Because the owner now has a PIN, the gate asks for personal PINs. The barista's PIN opens it. A void asks for the owner's PIN.
+
+### 6. Revoke check (optional)
+
+Disconnect the till in admin. Within 5 minutes the till shows "Disconnected in admin" and still sells. Pair it again with a new code.
+
+### 7. Visual checks not yet done
+
+These need the live API, so they were not done during the build. Check them after deploy:
+
+- Website Staff and Tills screens at 375 px and 1024 px wide.
+- Till Gate in per-person mode.
+- Till "This till" card.
+- Till Connect this till flow.
+- The first name showing on the narrow rail.
