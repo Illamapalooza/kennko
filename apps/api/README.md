@@ -455,3 +455,55 @@ The till's held events retry on its next push (within 15 s) and apply once nothi
 ```sql
 select kind, reason, count(*) from sync_events where result = 'held' group by 1, 2;
 ```
+
+## Plan 5: online orders in the till queue
+
+Plans 3 and 4 must be deployed first (tills paired, sync working). Plan 5 puts paid online orders on the till's Orders board and on the wall, and lets the till step them forward. **There is no migration in this plan.** Deploy in this order, and update the till and the wall together: the wall must have this plan's change before online orders reach it, or an online order's number clashes with a counter order's number on the wall (online order 3 against counter order 3).
+
+### 1. Migration
+
+None. Run the dry run from `apps/api` and confirm it lists nothing new after 0017:
+
+```sh
+npx supabase db push --dry-run
+```
+
+If it lists anything, stop and ask.
+
+### 2. API deploy
+
+No new environment variables. An old till ignores the new `onlineOrders` key in the pull reply, and admin is unchanged. Smoke checks:
+
+- `GET /health` returns 200.
+- `GET /v1/sync/pull` without a token returns 401.
+
+### 3. Website
+
+No change.
+
+### 4. Till (shop computer)
+
+- Update as in Plan 3 step 4 (`git pull`, then `deploy\windows\setup.cmd`, which runs `npm run pos:build` and restarts).
+- The startup log's Sync line gains `, N online order(s) in the queue` once an online order is waiting.
+- Reload every tablet after the update. Old tabs keep the old Orders board until reloaded.
+
+### 5. Wall
+
+Do this at the same time as step 4. On the wall computer, `git pull`, then stop and restart `npm run wall:pos` from the repo root (see `wall/README.md`, "Following the till").
+
+### 6. Live checks
+
+- Place a ₱ test online pickup order on the website. In admin, press **Confirm payment**. Within 15 s it appears on the till's Orders board as `W<n>` with an **Online** pill, and on the wall with the customer's first name.
+- Tap **Start** on the till: the phone that placed the order gets "W<n> is being prepared", and admin shows Preparing after a refresh.
+- In admin press **Mark ready**: the till follows within 15 s, and the till's button now reads **Picked up**.
+- Pull the shop computer's network cable and tap **Picked up**: the ticket leaves the board and the badge shows "Offline: changes waiting to send". Reconnect: the badge clears, admin shows Completed, and the customer got exactly one "complete" notification.
+- A delivery test order shows the address, barangay and phone on the ticket, and **Out for delivery** sends "W<n> is on its way".
+- Press **Cancel order** in admin on an online order: it leaves the till and the wall within 15 s (at the till's next sync).
+- In admin › Tills press **Disconnect** on the till: its online tickets disappear.
+
+### 7. Visual checks not yet done
+
+These need a live API and a running wall, so they were not done during the build.
+
+- Till Orders board with online tickets (pickup and delivery) at 768 px and 1024 px wide, including a long delivery address.
+- The wall running against the till (`npm run wall:pos`) with a counter order and an online order at once. W labels must show on the banner ("Order W3 for Ana is ready!"), the board, the queue chips, the rail tickets, the cat tags and the barista bubbles.
