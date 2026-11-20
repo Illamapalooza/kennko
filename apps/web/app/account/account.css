@@ -1,0 +1,58 @@
+/* Account page: sticker panels (order.css supplies .panel, .account-card, .sheet-add). Blue on white; amber only for "Free drink ready". */
+.account.stack { display: grid; gap: var(--space-5); }
+.account-card { background: var(--white); padding: var(--space-5); }
+.account-card h1 { color: var(--blue); font-weight: 900; }
+
+.account-or { display: flex; align-items: center; gap: 12px; margin: 16px 0 4px; color: var(--ink-soft); font-weight: 800; text-transform: uppercase; font-size: var(--text-sm); }
+.account-or::before, .account-or::after { content: ''; flex: 1; border-top: 2px solid var(--line); }
+.account-note { margin: 12px 0 0; padding: 12px 14px; background: var(--blue-soft); border: var(--outline-thin) solid var(--ink); border-radius: var(--radius-md); font-weight: 700; color: var(--ink); }
+
+.email-signin, .join-form, .rename-form { display: grid; gap: 10px; margin-top: 16px; }
+.email-signin label, .rename-form label, .delete-account label { font-weight: 800; font-size: var(--text-sm); }
+.account input[type='email'], .account input:not([type]), .account input[type='text'] {
+  min-height: 48px; padding: 0 14px; font: inherit; color: var(--ink); background: var(--white);
+  border: 2px solid var(--ink-soft); border-radius: var(--radius-sm); width: 100%;
+}
+.account input:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.email-signin .sheet-add, .join-form .sheet-add { width: 100%; min-height: 48px; }
+
+.check-row { display: flex; gap: 12px; align-items: flex-start; min-height: 44px; font-weight: 700; cursor: pointer; }
+.check-row input { width: 24px; height: 24px; flex: none; margin-top: 2px; accent-color: var(--blue); }
+.check-row a, .account-links a { color: var(--blue); font-weight: 800; }
+.account-links { display: grid; gap: 10px; }
+.account-links a { display: inline-flex; align-items: center; min-height: 44px; }
+
+/* QR and code */
+.kcard { text-align: center; }
+.qr { width: min(100%, 260px); min-width: 200px; margin: 16px auto 8px; padding: 0; background: var(--white); border: var(--outline-thin) solid var(--ink); border-radius: var(--radius-md); overflow: hidden; line-height: 0; }
+.qr svg { width: 100%; height: auto; display: block; }
+.kcode { margin: 8px 0 0; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 1.7rem; font-weight: 800; letter-spacing: .06em; color: var(--ink); word-break: break-all; }
+
+/* Stamp card */
+.stamp-panel { background: var(--cream); }
+.free-drink { display: inline-block; margin: 12px 0 0; padding: 6px 16px; background: var(--amber); color: var(--ink); font-weight: 900; text-transform: uppercase; letter-spacing: .04em; border: var(--outline-thin) solid var(--ink); border-radius: var(--radius-pill); box-shadow: 0 3px 0 var(--ink); }
+.stamp-grid { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 8px; }
+.stamp { display: grid; justify-items: center; gap: 4px; }
+.stamp-dot { width: 100%; max-width: 64px; aspect-ratio: 1; display: grid; place-items: center; border-radius: 50%; border: var(--outline-thin) dashed var(--ink-soft); color: var(--ink-soft); font-weight: 800; background: var(--white); }
+.stamp-on .stamp-dot { border: var(--outline-thin) solid var(--ink); background: var(--blue); color: var(--white); font-size: 1.3rem; font-weight: 900; }
+.stamp-date { font-size: var(--text-xs); font-weight: 800; color: var(--ink-soft); min-height: 1.2em; }
+.stamp-help { margin: 14px 0 0; color: var(--ink-soft); font-weight: 700; }
+
+.points-n { font-size: 1.6rem; font-weight: 900; color: var(--blue); margin: 12px 0 0; }
+
+.rename-row { display: flex; gap: 8px; }
+.quiet-btn { min-height: 44px; padding: 0 18px; font: inherit; font-weight: 800; color: var(--blue); background: var(--white); border: var(--outline-thin) solid var(--ink); border-radius: var(--radius-pill); cursor: pointer; box-shadow: 0 3px 0 var(--ink); }
+.quiet-btn:hover { background: var(--blue-soft); }
+.quiet-btn:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+.quiet-btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+/* Delete */
+.delete-account summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ink-soft); font-weight: 800; }
+.delete-account summary:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.delete-account form { display: grid; gap: 10px; padding-top: 8px; }
+.delete-account ul { margin: 0; padding-left: 20px; }
+.danger-btn { min-height: 48px; padding: 0 18px; font: inherit; font-weight: 800; color: var(--white); background: var(--red); border: var(--outline-thin) solid var(--ink); border-radius: var(--radius-pill); cursor: pointer; }
+.danger-btn[disabled] { opacity: .45; cursor: not-allowed; }
+.danger-btn:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+@media (min-width: 640px) { .stamp-grid { gap: 16px 12px; } }

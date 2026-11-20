@@ -45,8 +45,9 @@ export default async function OrdersPage() {
           <div className="panel empty">
             <h2 className="panel-title">Nothing here yet</h2>
             <p>
-              Orders you place will show up here, including ones you placed as a
-              guest with {customer.email}.
+              Orders you place while signed in will show up here. Guest orders with{' '}
+              {customer.email} show up too, but only if you placed them after you
+              first signed in.
             </p>
             <Link className="sheet-add" href="/order">Start an order</Link>
           </div>

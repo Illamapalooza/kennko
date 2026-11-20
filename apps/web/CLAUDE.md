@@ -99,7 +99,7 @@ Bootstrap the first owner with
 
 ## Ordering
 
-Guest checkout at `/order` -- no customer accounts. Customers choose **pickup or
+Guest checkout at `/order` -- an account is optional. Customers choose **pickup or
 delivery**; name, email, and phone are always required, and a street address
 plus barangay are required for delivery only.
 
@@ -170,13 +170,19 @@ Seed delivery zones with `npm run seed-zones`.
 Ordering is guest-first: nobody has to sign up. An **optional** account exists
 only so a returning customer can see their history at `/orders`.
 
-- **Google only.** Customers never get a password; staff keep email + password
-  at `/admin/login`. The two are unrelated: a customer is any authenticated
-  user, and admin rights come solely from a row in `staff`.
-- **Claiming guest orders.** An order placed while signed in stores
-  `customer_user_id`. A guest order also appears in history when its email
-  matches the account's **confirmed** address -- the confirmation check is the
-  security boundary, and Google accounts always arrive confirmed.
+- **Google or an email link.** Customers never get a password: `/account` offers Google and a Supabase
+  magic link (`signInWithOtp`, `/auth/callback` exchanges the code either way). Staff keep email + password
+  at `/admin/login`. The two are unrelated: a customer is any authenticated user, and admin rights come
+  solely from a row in `staff`.
+- **Kennko card.** Signed in is not the same as having a card. "Get my Kennko card" (13+ and the privacy
+  notice, `PRIVACY_VERSION` in `lib/privacy.ts`) posts `/v1/me/join`. `/account` then shows the QR code
+  (`qrSvg`, server-rendered), the typed code, the 8-circle stamp card or the paper notice, and points. It
+  redirects away only when `?next` is present. Deletion needs `DELETE` typed and calls `DELETE /v1/me`
+  (staff logins are refused); on success the user is signed out and sent to `/?account=deleted`.
+- **Claiming guest orders.** An order placed while signed in stores `customer_user_id`. A guest order also
+  appears in history when its email matches the account's **confirmed** address **and it was placed after the
+  account (the `auth.users` row) was created**; earlier guest orders no longer show. The confirmation check is
+  the security boundary, and Google accounts always arrive confirmed.
 - `public.owns_order()` is SECURITY DEFINER for the same reason `is_owner()` is:
   a policy that reads `auth.users` directly errors for `anon`/`authenticated`
   rather than evaluating.

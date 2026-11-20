@@ -2,9 +2,18 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getCurrentCustomer } from '@/lib/auth/customer'
 import { GoogleSignIn } from '@/components/order/GoogleSignIn'
+import { EmailSignIn } from '@/components/account/EmailSignIn'
+import { JoinForm } from '@/components/account/JoinForm'
+import { StampCard } from '@/components/account/StampCard'
+import { DeleteAccount } from '@/components/account/DeleteAccount'
+import { RenameCard } from '@/components/account/RenameCard'
 import { safeNextPath } from '@/lib/auth/redirect'
 import { OrderNav } from '@/components/order/OrderNav'
+import { signOutCustomer } from './actions'
+import { loadMe } from './me'
+import { qrSvg } from './qr'
 import '../order/order.css'
+import './account.css'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,35 +25,99 @@ export default async function AccountPage({
   const { error, next } = await searchParams
   const customer = await getCurrentCustomer()
 
-  if (customer) redirect(safeNextPath(next ?? null))
+  // Only a sign-in that came from somewhere (for example /orders) goes back there; otherwise this is the account page.
+  const target = safeNextPath(next ?? null, '/account')
+  if (customer && next && target !== '/account') redirect(target)
 
-  return (
-    <div className="order-shell">
-      <div className="order-main order-main-nav">
-        <OrderNav place="account" signedIn={false} />
-      </div>
-      <div className="account">
+  if (!customer) {
+    const after = safeNextPath(next ?? null, '/account')
+    return (
+      <Shell signedIn={false}>
         <div className="panel account-card">
-          <h1>Sign in to see your orders</h1>
+          <h1>Sign in to Kennko</h1>
           <p className="checkout-sub">
-            Kennko uses Google so there is no password to remember. Orders you
-            placed as a guest with the same Gmail address show up here too.
+            Get a Kennko card with stamps and points, and see your orders. No password: use Google, or we email you a link.
           </p>
 
-          <GoogleSignIn next={safeNextPath(next ?? null)} />
+          <GoogleSignIn next={after} />
+          <p className="account-or" aria-hidden="true"><span>or</span></p>
+          <EmailSignIn next={after} />
 
           {error ? (
-            <p className="order-error" role="alert">
-              Sign-in did not finish: {error}
-            </p>
+            <p className="order-error" role="alert">Sign-in did not finish: {error}</p>
           ) : null}
 
           <p className="account-guest">
-            You do not need an account to order.{' '}
-            <Link href="/order">Order as a guest</Link>.
+            You do not need an account to order. <Link href="/order">Order as a guest</Link>.
           </p>
         </div>
+      </Shell>
+    )
+  }
+
+  const { customer: card } = await loadMe()
+
+  if (!card) {
+    return (
+      <Shell signedIn name={customer.name}>
+        <div className="panel account-card">
+          <h1>Get my Kennko card</h1>
+          <p className="checkout-sub">
+            Earn a stamp on every drink: 8 stamps is a free drink. Collect points on what you spend, too.
+            Show your code at the counter and we do the rest.
+          </p>
+          <JoinForm />
+        </div>
+        <div className="panel account-card account-links">
+          <Link href="/orders">See my orders</Link>
+          <p className="account-guest">Signed in as {customer.email}</p>
+          <DeleteAccount hasCard={false} />
+        </div>
+      </Shell>
+    )
+  }
+
+  const svg = await qrSvg(card.publicCode)
+  return (
+    <Shell signedIn name={customer.name}>
+      <div className="panel account-card kcard">
+        <h1>Your Kennko card</h1>
+        <div className="qr" role="img" aria-label={`QR code for ${card.publicCode}`} dangerouslySetInnerHTML={{ __html: svg }} />
+        <p className="kcode" aria-label="Your code">{card.publicCode}</p>
+        <p className="account-guest">Show this at the counter, or read the code out.</p>
       </div>
+
+      <StampCard customer={card} />
+
+      <section className="panel account-card" aria-labelledby="points-h">
+        <h2 className="panel-title" id="points-h">Points</h2>
+        <p className="points-n">Points: {card.points}</p>
+        <p className="account-guest">Points will soon dress up your Kennko cat.</p>
+      </section>
+
+      <div className="panel account-card">
+        <RenameCard name={card.displayName} />
+        <p className="account-guest">Signed in as {customer.email}</p>
+        <p className="account-links"><Link href="/orders">See my orders</Link></p>
+        <form action={signOutCustomer}>
+          <button type="submit" className="quiet-btn">Sign out</button>
+        </form>
+      </div>
+
+      <div className="panel account-card">
+        <DeleteAccount hasCard />
+      </div>
+    </Shell>
+  )
+}
+
+function Shell({ children, signedIn, name }: { children: React.ReactNode; signedIn: boolean; name?: string }) {
+  return (
+    <div className="order-shell">
+      <div className="order-main order-main-nav">
+        <OrderNav place="account" signedIn={signedIn} customerName={name} />
+      </div>
+      <div className="account stack">{children}</div>
     </div>
   )
 }
