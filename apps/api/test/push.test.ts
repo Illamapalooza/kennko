@@ -19,7 +19,14 @@ const NOW = new Date('2026-11-21T02:00:00Z')
 type Sent = { endpoint: string; payload: PushPayload }
 type Body = { code?: string; errors?: string[]; publicKey?: string; orderCode?: string }
 
-const sub = (n: string) => ({ endpoint: `https://push.test/${n}`, keys: { p256dh: `p-${n}`, auth: `a-${n}` } })
+/** Base64url of `len` bytes filled with `seed`: a well-formed key that differs per seed. */
+const key = (seed: string, len: number) => Buffer.alloc(len, seed).toString('base64url')
+const p256 = (n: string) => key(`p-${n}`, 65)
+const authKey = (n: string) => key(`a-${n}`, 16)
+const sub = (n: string) => ({
+  endpoint: `https://fcm.googleapis.com/fcm/send/${n}`,
+  keys: { p256dh: p256(n), auth: authKey(n) },
+})
 
 describe('web push', () => {
   let db: TestDb
@@ -157,7 +164,7 @@ describe('web push', () => {
       const r = await subscribe(null, { subscription: s, orderCode: o.code })
       expect(r.status).toBe(201)
       const row = await subRow(s.endpoint)
-      expect(row).toMatchObject({ kind: 'customer', staff_id: null, customer_user_id: null, p256dh: 'p-c1', auth: 'a-c1' })
+      expect(row).toMatchObject({ kind: 'customer', staff_id: null, customer_user_id: null, p256dh: p256('c1'), auth: authKey('c1') })
       const watch = await db.sql`select * from push_order_watch where subscription_id = ${row!.id}`
       expect(watch.map((w) => w.order_id)).toEqual([o.orderId])
     })
@@ -167,10 +174,10 @@ describe('web push', () => {
       const b = await seedOnline()
       const s = sub('c2')
       await subscribe(null, { subscription: s, orderCode: a.code })
-      await subscribe('customer', { subscription: { ...s, keys: { p256dh: 'new', auth: 'newer' } }, orderCode: b.code })
+      await subscribe('customer', { subscription: { ...s, keys: { p256dh: p256('new'), auth: authKey('newer') } }, orderCode: b.code })
       const rows = await db.sql`select * from push_subscriptions where endpoint = ${s.endpoint}`
       expect(rows).toHaveLength(1)
-      expect(rows[0]).toMatchObject({ p256dh: 'new', auth: 'newer', customer_user_id: CUSTOMER })
+      expect(rows[0]).toMatchObject({ p256dh: p256('new'), auth: authKey('newer'), customer_user_id: CUSTOMER })
       const watch = await db.sql`select order_id from push_order_watch where subscription_id = ${rows[0]!.id}`
       expect(watch.map((w) => w.order_id).sort()).toEqual([a.orderId, b.orderId].sort())
     })
@@ -236,10 +243,10 @@ describe('web push', () => {
       const o = await seedOnline()
       const s = sub('sw1')
       await subscribe('barista', { subscription: s })
-      const r = await subscribe(null, { subscription: { ...s, keys: { p256dh: 'hijack', auth: 'hijack' } }, orderCode: o.code })
+      const r = await subscribe(null, { subscription: { ...s, keys: { p256dh: p256('hijack'), auth: authKey('hijack') } }, orderCode: o.code })
       expect(r.status).toBe(201)
       const row = await subRow(s.endpoint)
-      expect(row).toMatchObject({ kind: 'staff', staff_id: BARISTA, p256dh: 'p-sw1', auth: 'a-sw1' })
+      expect(row).toMatchObject({ kind: 'staff', staff_id: BARISTA, p256dh: p256('sw1'), auth: authKey('sw1') })
       const watch = await db.sql`select order_id from push_order_watch where subscription_id = ${row!.id}`
       expect(watch.map((w) => w.order_id)).toEqual([o.orderId])
     })
@@ -263,6 +270,81 @@ describe('web push', () => {
       expect((await call(null, 'DELETE', '/v1/push/subscriptions/watch', { endpoint: 'https://push.test/none', orderCode: o.code })).status).toBe(204)
       expect((await call(null, 'DELETE', '/v1/push/subscriptions/watch', { endpoint: 'https://push.test/none', orderCode: 'KNK-NOPE' })).status).toBe(204)
       expect((await call(null, 'DELETE', '/v1/push/subscriptions/watch', { endpoint: 'x' })).status).toBe(400)
+    })
+
+    it('a guest subscribe on a shared device drops the previous account link', async () => {
+      const a = await seedOnline()
+      const b = await seedOnline()
+      const s = sub('shared1')
+      await subscribe('customer', { subscription: s, orderCode: a.code })
+      expect(await subRow(s.endpoint)).toMatchObject({ customer_user_id: CUSTOMER })
+      expect((await subscribe(null, { subscription: s, orderCode: b.code })).status).toBe(201)
+      expect(await subRow(s.endpoint)).toMatchObject({ customer_user_id: null })
+    })
+
+    it.each([
+      ['http://fcm.googleapis.com/fcm/send/x'],
+      ['https://push.test/x'],
+      ['https://evil.test/fcm.googleapis.com'],
+      ['https://fcm.googleapis.com.evil.test/x'],
+    ])('endpoint %s is refused with 400 INVALID and nothing stored', async (endpoint) => {
+      const o = await seedOnline()
+      const r = await subscribe(null, { subscription: { ...sub('bad'), endpoint }, orderCode: o.code })
+      expect(r.status).toBe(400)
+      expect(r.body.code).toBe('INVALID')
+      expect(r.body.errors).toEqual(["That notification address isn't supported."])
+      expect(await subRow(endpoint)).toBeUndefined()
+    })
+
+    it.each([
+      ['https://updates.push.services.mozilla.com/wpush/v2/x'],
+      ['https://web.push.apple.com/x'],
+      ['https://wns2-par02p.notify.windows.com/w/?token=x'],
+    ])('endpoint %s is accepted', async (endpoint) => {
+      const o = await seedOnline()
+      const r = await subscribe(null, { subscription: { ...sub('ok'), endpoint }, orderCode: o.code })
+      expect(r.status).toBe(201)
+    })
+
+    it.each([
+      ['p256dh not base64url', { p256dh: 'p-c1!', auth: authKey('k') }],
+      ['p256dh wrong length', { p256dh: key('p', 64), auth: authKey('k') }],
+      ['auth wrong length', { p256dh: p256('k'), auth: key('a', 15) }],
+      ['auth not base64url', { p256dh: p256('k'), auth: 'a-c1' + '%%%' }],
+    ])('%s -> 400 INVALID', async (_label, keys) => {
+      const o = await seedOnline()
+      const s = { endpoint: 'https://fcm.googleapis.com/fcm/send/keys', keys }
+      const r = await subscribe(null, { subscription: s, orderCode: o.code })
+      expect(r.status).toBe(400)
+      expect(r.body.code).toBe('INVALID')
+      expect(await subRow(s.endpoint)).toBeUndefined()
+    })
+
+    it('at most 10 devices watch one order; the 11th gets 429 TOO_MANY, a watcher re-subscribing is fine', async () => {
+      const o = await seedOnline()
+      for (let i = 0; i < 10; i++) {
+        expect((await subscribe(null, { subscription: sub(`many${i}`), orderCode: o.code })).status).toBe(201)
+      }
+      const r = await subscribe(null, { subscription: sub('many10'), orderCode: o.code })
+      expect(r.status).toBe(429)
+      expect(r.body.code).toBe('TOO_MANY')
+      expect(r.body.errors).toEqual(['This order already has the most devices it can notify.'])
+      expect(await subRow(sub('many10').endpoint)).toBeUndefined()
+      expect((await subscribe(null, { subscription: sub('many3'), orderCode: o.code })).status).toBe(201)
+      expect(await db.sql`select 1 from push_order_watch where order_id = ${o.orderId}`).toHaveLength(10)
+    })
+
+    it('push off -> subscribe answers 503 PUSH_UNAVAILABLE and stores nothing', async () => {
+      const o = await seedOnline()
+      const s = sub('off1')
+      const r = await call(null, 'POST', '/v1/push/subscriptions', { subscription: s, orderCode: o.code }, appOff)
+      expect(r.status).toBe(503)
+      expect(r.body.code).toBe('PUSH_UNAVAILABLE')
+      expect(r.body.errors).toEqual(["Notifications aren't available right now."])
+      expect(await subRow(s.endpoint)).toBeUndefined()
+      const staff = await call('barista', 'POST', '/v1/push/subscriptions', { subscription: sub('off2') }, appOff)
+      expect(staff.status).toBe(503)
+      expect(await subRow(sub('off2').endpoint)).toBeUndefined()
     })
 
     it('GET /v1/push/public-key -> key when enabled, 404 when push is off', async () => {
@@ -443,8 +525,20 @@ describe('web push', () => {
         title: expect.stringMatching(/^New order W\d+ · ₱245 — check payment$/),
         body: expect.any(String),
         url: '/admin/orders?tab=check',
-        tag: 'new-order',
+        tag: `new-order-${r.body.orderCode}`,
       })
+      expect(r.body.orderCode).toBeTruthy()
+    })
+
+    it('each new order alerts with its own tag', async () => {
+      await db.sql`delete from push_subscriptions`
+      await subscribe('barista', { subscription: sub('b3') })
+      sent = []
+      const a = await place(null)
+      const b = await place(null)
+      const tags = sent.map((s) => s.payload.tag)
+      expect(tags).toEqual([`new-order-${a.body.orderCode}`, `new-order-${b.body.orderCode}`])
+      expect(tags[0]).not.toBe(tags[1])
     })
 
     it('a signed-in customer subscribed on order A has order B watched automatically', async () => {

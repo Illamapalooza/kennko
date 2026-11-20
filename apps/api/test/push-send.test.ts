@@ -4,7 +4,7 @@ const sendNotification = vi.fn()
 const setVapidDetails = vi.fn()
 vi.mock('web-push', () => ({ sendNotification, setVapidDetails }))
 
-const { createPushSender } = await import('../src/push/send.js')
+const { createPushSender, createPushSenderSafely } = await import('../src/push/send.js')
 
 const target = { endpoint: 'https://push.test/e', p256dh: 'p', auth: 'a' }
 const payload = { title: 't', body: 'b', url: '/order/KNK-1', tag: 'order-KNK-1' }
@@ -40,5 +40,23 @@ describe('createPushSender', () => {
     expect(await send(target, payload)).toBe('failed')
     sendNotification.mockRejectedValue(new Error('ECONNRESET'))
     expect(await send(target, payload)).toBe('failed')
+  })
+
+  it('createPushSenderSafely: no settings -> null; rejected settings -> null and logged, never throws', () => {
+    expect(createPushSenderSafely(null)).toBeNull()
+    setVapidDetails.mockImplementation(() => {
+      throw new Error('Vapid subject is not a valid URL')
+    })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(createPushSenderSafely({ publicKey: 'pub', privateKey: 'priv', subject: 'nope' })).toBeNull()
+      expect(error).toHaveBeenCalled()
+    } finally {
+      error.mockRestore()
+    }
+  })
+
+  it('createPushSenderSafely: good settings -> a sender', () => {
+    expect(typeof createPushSenderSafely({ publicKey: 'pub', privateKey: 'priv', subject: 'mailto:a@x.test' })).toBe('function')
   })
 })

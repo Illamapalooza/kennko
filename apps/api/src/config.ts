@@ -4,7 +4,7 @@ export type Config = {
   databaseUrl: string
   supabaseUrl: string
   supabaseServiceRoleKey: string
-  /** All three VAPID variables or none; none means push is off and the API still boots. */
+  /** All three VAPID variables or none; none (or a partial set) means push is off and the API still boots. */
   vapid: { publicKey: string; privateKey: string; subject: string } | null
 }
 
@@ -27,8 +27,9 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   }
   const { VAPID_PUBLIC_KEY: publicKey, VAPID_PRIVATE_KEY: privateKey, VAPID_SUBJECT: subject } = parsed.data
   const given = [publicKey, privateKey, subject].filter(Boolean).length
+  // A half-set push config must never take ordering down: warn and run without push.
   if (given !== 0 && given !== 3) {
-    throw new Error('Missing or invalid environment variable: set all of VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, or none')
+    console.warn('Web Push is off: set all of VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, or none')
   }
   return {
     vapid: publicKey && privateKey && subject ? { publicKey, privateKey, subject } : null,

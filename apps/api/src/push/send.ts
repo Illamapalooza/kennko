@@ -29,3 +29,17 @@ export function createPushSender(vapid: Vapid): PushSender {
     }
   }
 }
+
+/**
+ * The sender, or null when push is not configured or web-push rejects the VAPID settings
+ * (a bad subject or key). Never throws, so a broken push config cannot stop the API booting.
+ */
+export function createPushSenderSafely(vapid: Vapid | null): PushSender | null {
+  if (!vapid) return null
+  try {
+    return createPushSender(vapid)
+  } catch (err) {
+    console.error('Web Push is off: the VAPID settings were rejected', err instanceof Error ? err.message : err)
+    return null
+  }
+}

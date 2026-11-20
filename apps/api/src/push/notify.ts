@@ -73,7 +73,8 @@ export async function notifyStaffNewOrder(deps: PushDeps, orderId: string): Prom
       title: `New order ${w} · ${formatPesos(order.total_centavos)} — check payment`,
       body: 'A GCash payment is waiting to be checked.',
       url: '/admin/orders?tab=check',
-      tag: 'new-order',
+      // One tag per order, so a second new order alerts again instead of silently replacing the first.
+      tag: `new-order-${order.order_code}`,
     })
   } catch (err) {
     console.error('staff push failed', err)

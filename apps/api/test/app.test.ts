@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../src/create-app.js'
 import { loadConfig } from '../src/config.js'
 import { fakeProofs, inlineDefer } from './fakes.js'
@@ -61,10 +61,23 @@ describe('loadConfig', () => {
     })
   })
 
-  it('reads VAPID keys when all three are set, treats blank as unset, refuses a partial set', () => {
+  it('reads VAPID keys when all three are set, treats blank as unset', () => {
     const vapid = { VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv', VAPID_SUBJECT: 'mailto:a@x.test' }
     expect(loadConfig({ ...env, ...vapid }).vapid).toEqual({ publicKey: 'pub', privateKey: 'priv', subject: 'mailto:a@x.test' })
     expect(loadConfig({ ...env, VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '', VAPID_SUBJECT: '' }).vapid).toBeNull()
-    expect(() => loadConfig({ ...env, VAPID_PUBLIC_KEY: 'pub' })).toThrow(/VAPID/)
+  })
+
+  it.each([
+    [{ VAPID_PUBLIC_KEY: 'pub' }],
+    [{ VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv' }],
+    [{ VAPID_SUBJECT: 'mailto:a@x.test', VAPID_PRIVATE_KEY: 'priv' }],
+  ])('a partial VAPID set %o warns and turns push off instead of throwing', (partial) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(loadConfig({ ...env, ...partial }).vapid).toBeNull()
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/VAPID/))
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
