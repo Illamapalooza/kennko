@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 }
 
 async function loadAttentionCount(): Promise<number> {
-  const res = await staffFetch('/v1/attention/count')
+  const res = await staffFetch('/v1/attention/count', { timeoutMs: 3000 })
   if (!res.ok) return 0
   const body = (await res.json()) as { count?: unknown }
   return typeof body.count === 'number' ? body.count : 0

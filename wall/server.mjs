@@ -57,8 +57,9 @@ let menu = loadCachedMenu(MENU_FILE) ?? [];
 // One Set for good: reduceOpts holds it, so it is updated in place.
 const menuNames = namesOf(menu);
 if (menuNames.size === 0) console.warn("No drink names yet: they come from the till.");
+// An empty menu (a till mid-restart, a blank feed) never replaces the names the wall already has.
 function setMenu(next) {
-  if (!next) return;
+  if (!next || next.length === 0) return;
   const changed = JSON.stringify(next) !== JSON.stringify(menu);
   menu = next;
   menuNames.clear();
