@@ -249,6 +249,7 @@ still asks for the `config.json` PIN until the owner has a PIN.
 - Check that `api.url` is set in `apps\pos\config.json` (the API address from step 2). Without it the till cannot pair.
 - Check that `managerPin` is not empty. An empty `managerPin` blocks voids, closing the till and pairing.
 
+- On a till that is not paired, a sold-out size or add-on that came from a manual menu pull (Menu › Update from website, with a manager PIN) stays off until the till is paired: the Menu screen switches whole drinks only.
 - Reload every tablet after updating. Old tabs keep the old PIN flow until reloaded.
 - A tablet types the PIN once and stays signed in across reloads and a till restart.
 - A tablet that used both the https and the http address signs in once on each.
@@ -319,11 +320,11 @@ No new environment variables. Smoke checks:
 
 The test database (PGlite) shares one backend session, so it cannot prove that two pushes from the same till at the same moment are safe. Check it against the real database through the pooler. This also runs the history import as `kennko_api` once before the shop till pairs.
 
-1. In admin › Tills, add a throwaway till (for example "sync test") and pair it with the code. Use a throwaway device, not the shop till.
+1. In admin › Tills, add a throwaway till named exactly `sync test` and pair it with the code. Use a throwaway device, not the shop till. Every test row below is dated 1 January 2000 (a day the shop never traded, and the earliest the API accepts), and step 9 removes them all.
 2. Make a new shift id with `uuidgen | tr A-Z a-z` and another for the event id. Save this as `push.json`, with the two ids in place of `<uuid>` (event id first, then the shift id):
 
 ```json
-{"events":[{"id":"<uuid>","seq":1,"kind":"shift.opened","occurredAt":"2026-11-21T08:00:00+08:00","staffId":null,"payload":{"shiftId":"<uuid>","openingFloatCentavos":100000}}]}
+{"events":[{"id":"<uuid>","seq":1,"kind":"shift.opened","occurredAt":"2000-01-01T08:00:00+08:00","staffId":null,"payload":{"shiftId":"<uuid>","openingFloatCentavos":100000}}]}
 ```
 
 3. With the throwaway device's token in `$TOKEN` (type it with `read -rs TOKEN`, never in a file), send it twice at the same moment:
@@ -341,9 +342,9 @@ wait; cat a.json b.json
 node -e '
 const { randomUUID: u } = require("crypto"); const fs = require("fs");
 const shiftId = JSON.parse(fs.readFileSync("push.json")).events[0].payload.shiftId;
-const events = Array.from({ length: 50 }, (_, i) => ({ id: u(), seq: i + 2, kind: "cash.moved", occurredAt: "2026-11-21T08:05:00+08:00", staffId: null, payload: { shiftId, id: u(), kind: "in", amountCentavos: 100, reason: "Sync test" } }));
+const events = Array.from({ length: 50 }, (_, i) => ({ id: u(), seq: i + 2, kind: "cash.moved", occurredAt: "2000-01-01T08:05:00+08:00", staffId: null, payload: { shiftId, id: u(), kind: "in", amountCentavos: 100, reason: "Sync test" } }));
 fs.writeFileSync("push50.json", JSON.stringify({ events }));
-const shift = () => ({ id: u(), openedAt: "2026-10-01T08:00:00+08:00", openingFloatCentavos: 0, closedAt: "2026-10-01T09:00:00+08:00", countedCentavos: 0, expectedCentavos: 0, note: "sync test", openedByStaff: null, closedByStaff: null });
+const shift = () => ({ id: u(), openedAt: "2000-01-01T08:00:00+08:00", openingFloatCentavos: 0, closedAt: "2000-01-01T09:00:00+08:00", countedCentavos: 0, expectedCentavos: 0, note: "sync test", openedByStaff: null, closedByStaff: null });
 fs.writeFileSync("import1.json", JSON.stringify({ shifts: [shift()], orders: [], cashMoves: [] }));
 fs.writeFileSync("import100.json", JSON.stringify({ shifts: Array.from({ length: 100 }, shift), orders: [], cashMoves: [] }));
 '
@@ -362,7 +363,28 @@ curl -sS -o /dev/null -w '%{http_code} %{time_total}s\n' -X POST <api>/v1/sync/p
 curl -sS -o /dev/null -w '%{http_code} %{time_total}s\n' -X POST <api>/v1/sync/import -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @import100.json
 ```
 
-8. Delete `a.json`, `b.json`, `push.json`, `push50.json`, `import1.json` and `import100.json`. In admin › Tills, revoke the throwaway device. Its open shift, its ₱50 of test cash-ins and its 101 legacy shifts stay in the database; they are harmless once the device is revoked (no till can push to that shift again) and all carry the throwaway device's id.
+8. Delete `a.json`, `b.json`, `push.json`, `push50.json`, `import1.json` and `import100.json`.
+9. Remove the test rows right away, before anything else, so they never reach the day report or the stuck-shift query in the runbook below. Julius runs this in the Supabase SQL editor. Find the device id (expect exactly one row; if there are more, stop and ask):
+
+```sql
+select id from devices where name = 'sync test';
+```
+
+Check that nothing else points at its shifts (the check creates no orders, so expect `0`; anything else means stop and ask):
+
+```sql
+select count(*) from orders where shift_id in (select id from shifts where device_id = '<id>');
+```
+
+Then, in this order, with that id:
+
+```sql
+delete from cash_moves where shift_id in (select id from shifts where device_id = '<id>');
+delete from shifts where device_id = '<id>';
+delete from sync_events where device_id = '<id>';
+```
+
+Expect 50 cash moves, 102 shifts (the open one plus 101 legacy) and the device's receipts. Then, in admin › Tills, revoke the throwaway device.
 
 ### 4. Website
 
@@ -374,6 +396,7 @@ No change in this plan (admin already lists online orders only).
 - Take a manual backup copy of `data/pos.db` (the whole `apps\pos\data` folder is safest).
 - Update as in Plan 3 step 4 (`git pull`, then `deploy\windows\setup.cmd`, which runs `npm run pos:build` and restarts).
 - The till's startup line is `Sync: paired, every 15 s, N old records to copy to Kennko` while the history import has rows left, and `Sync: paired, every 15 s` (no suffix) once it is done. While it runs, the Menu screen shows "Copying sales history to Kennko: N left." Pairing and Check now do not wait for it: pairing answers within about 5 s and Check now within about 10 s, and the import keeps going in the background.
+- On a till that is not paired, a sold-out size or add-on that came from a manual menu pull (Menu › Update from website, with a manager PIN) stays off until the till is paired: the Menu screen switches whole drinks only.
 - Reload every tablet after updating. Old tabs keep the old screens until reloaded.
 - Check in Supabase (read-only): `select count(*) from orders where 'legacy' = any(flags);` equals the till's order count. Restart the till: it imports nothing new.
 - Rows the API could not store (legacy or pushed) are kept as held receipts, not dropped. See them with:
