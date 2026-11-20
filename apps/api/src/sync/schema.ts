@@ -11,13 +11,17 @@ const KINDS = [
   'menu.availability',
 ] as const satisfies readonly SyncEventKind[]
 
-/** The outer shape of every pushed event. A failure here refuses the whole push (400). */
+/**
+ * The outer shape of every pushed event. A failure here refuses the whole push (400), so it checks
+ * only what a receipt cannot be written without: id, seq and kind. A bad `occurredAt` or `staffId`
+ * holds that one event as `invalid: …` instead (see `parseEvent`), so it can never block the till.
+ */
 export const envelopeSchema = z.object({
   id: z.uuid(),
   seq: z.number().int().min(1),
   kind: z.enum(KINDS),
-  occurredAt: z.iso.datetime({ offset: true }),
-  staffId: z.uuid().nullable(),
+  occurredAt: z.string(),
+  staffId: z.string().nullable(),
   payload: z.unknown(),
 })
 export type Envelope = z.infer<typeof envelopeSchema>
@@ -110,11 +114,43 @@ export const payloadSchemas: { [K in SyncEventKind]: z.ZodType<PayloadOf<K>> } =
   'menu.availability': availabilityPayload,
 }
 
-/** A typed event, or the first problem with its payload as `invalid: <path>: <message>`. */
+const isoDateTime = z.iso.datetime({ offset: true })
+const uuid = z.uuid()
+
+/**
+ * `occurredAt` when Postgres can store it as given: an ISO date-time with an offset, a real calendar
+ * day, year 2000 or later. Otherwise null.
+ */
+export function storableTime(value: string): string | null {
+  if (!isoDateTime.safeParse(value).success) return null
+  const [y, m, d] = value.slice(0, 10).split('-').map(Number) as [number, number, number]
+  if (y < 2000 || new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) return null
+  return Number.isNaN(Date.parse(value)) ? null : value
+}
+
+/** The path of the first string or key holding U+0000 (jsonb and text columns reject it), or null. */
+export function findNul(value: unknown, path: string[] = []): string[] | null {
+  if (typeof value === 'string') return value.includes('\u0000') ? path : null
+  if (value === null || typeof value !== 'object') return null
+  for (const [k, v] of Object.entries(value)) {
+    if (k.includes('\u0000')) return [...path, k.replaceAll('\u0000', '\\u0000')]
+    const found = findNul(v, [...path, k])
+    if (found) return found
+  }
+  return null
+}
+
+const invalid = (path: (string | number | symbol)[], message: string) =>
+  ({ ok: false, reason: `invalid: ${path.length > 0 ? `${path.map(String).join('.')}: ` : ''}${message}` }) as const
+
+/** A typed event, or the first problem with it as `invalid: <path>: <message>`. */
 export function parseEvent(env: Envelope): { ok: true; event: SyncEvent } | { ok: false; reason: string } {
+  if (storableTime(env.occurredAt) === null) return invalid(['occurredAt'], 'expected an ISO date-time with an offset, year 2000 or later')
+  if (env.staffId !== null && !uuid.safeParse(env.staffId).success) return invalid(['staffId'], 'expected a uuid or null')
+  const nul = findNul(env.payload)
+  if (nul) return invalid(nul, 'contains a NUL character')
   const parsed = payloadSchemas[env.kind].safeParse(env.payload)
   if (parsed.success) return { ok: true, event: { ...env, payload: parsed.data } as SyncEvent }
   const issue = parsed.error.issues[0]!
-  const path = issue.path.join('.')
-  return { ok: false, reason: `invalid: ${path ? `${path}: ` : ''}${issue.message}` }
+  return invalid(issue.path, issue.message)
 }

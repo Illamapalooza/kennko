@@ -194,11 +194,14 @@ test('a held event is retried at the start of the next push even if that push is
   const { deviceId, token } = await seedDevice(db.sql)
   const shiftId = randomUUID()
   const move = cashMoved({ shiftId })
-  expect((await api.push(token, [move])).held).toBe(1)
+  const toggle = availability({ itemId: menu.latteId, available: true })
+  expect(results(await api.push(token, [toggle, move]))).toEqual(['applied', 'held'])
   // The shift appears by another route (here: inserted directly, like a legacy import).
   await db.sql`insert into shifts (id, device_id, opened_at, opening_float_centavos)
     values (${shiftId}, ${deviceId}, '2026-11-21T00:00:00Z', 0)`
-  const res = await api.push(token, [availability({ itemId: menu.latteId, available: true })])
+  // Only a resend: nothing new applies, so only the start-of-push pass can free the cash move.
+  const res = await api.push(token, [toggle])
+  expect(results(res)).toEqual(['duplicate'])
   expect(res.held).toBe(0)
   expect(await count('cash_moves', deviceId)).toBe(1)
 })
@@ -357,7 +360,6 @@ test('51 events, a bad envelope or an empty list → 400 INVALID; Cache-Control:
   expect((await api.post(token, { events: [{ ...shiftOpened(), kind: 'shift.reopened' }] })).status).toBe(400)
   expect((await api.post(token, { events: [{ ...shiftOpened(), id: 'nope' }] })).status).toBe(400)
   expect((await api.post(token, { events: [{ ...shiftOpened(), seq: 0 }] })).status).toBe(400)
-  expect((await api.post(token, { events: [{ ...shiftOpened(), occurredAt: 'yesterday' }] })).status).toBe(400)
   const notJson = await api.app.request('/v1/sync/push', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
@@ -380,4 +382,112 @@ test('no token → 401; a revoked till → 401 DEVICE_REVOKED', async () => {
   const revoked = await api.post(token, body)
   expect(revoked.status).toBe(401)
   expect(await revoked.json()).toMatchObject({ code: 'DEVICE_REVOKED' })
+})
+
+test('a NUL character in a payload string is held invalid; the push answers 200 and the rest applies', async () => {
+  const { deviceId, token } = await seedDevice(db.sql)
+  const open = shiftOpened()
+  const nul = cashMoved({ shiftId: open.payload.shiftId, reason: 'Ice\u0000' })
+  const nulKey = { ...availability({ itemId: menu.latteId, available: true }), payload: { itemId: menu.latteId, available: true, ['x\u0000']: 1 } }
+  const other = availability({ itemId: menu.latteId, available: true })
+  // Same shift as the held NUL event: waits behind it (per-entity order).
+  const sameShift = cashMoved({ shiftId: open.payload.shiftId, reason: 'Change' })
+  const res = await api.post(token, { events: [open, nul, nulKey, other, sameShift] })
+  expect(res.status).toBe(200)
+  const body = (await res.json()) as { results: { result: string; reason: string | null }[] }
+  expect(body.results.map((r) => r.result)).toEqual(['applied', 'held', 'held', 'applied', 'held'])
+  expect(body.results[4]!.reason).toBe('waits_for_earlier')
+  expect(body.results[1]!.reason).toBe('invalid: reason: contains a NUL character')
+  expect(body.results[2]!.reason).toMatch(/^invalid: .*NUL/)
+  expect(await count('cash_moves', deviceId)).toBe(0)
+  // The receipt keeps the payload as JSON text, the NUL escaped.
+  const [row] = await db.sql`select payload from sync_events where device_id = ${deviceId} and id = ${nul.id}`
+  expect(typeof row!.payload).toBe('string')
+  expect(JSON.parse(row!.payload)).toEqual(nul.payload)
+  // Resent: duplicate. Retried on a later push: still held, never applied.
+  const again = await api.push(token, [nul, availability({ itemId: menu.latteId, available: true })])
+  expect(again.results[0]!.result).toBe('duplicate')
+  expect(again.held).toBe(3)
+})
+
+test('an occurredAt Postgres cannot store, or a non-uuid staffId, is held invalid; the push answers 200', async () => {
+  const { deviceId, token } = await seedDevice(db.sql)
+  const year0 = shiftOpened({}, { occurredAt: '0000-01-01T00:00:00Z' })
+  const feb31 = shiftOpened({}, { occurredAt: '2026-02-31T00:00:00Z' })
+  const nulTime = shiftOpened({}, { occurredAt: '2026-11-21T00:00:00Z\u0000' })
+  const words = shiftOpened({}, { occurredAt: 'yesterday' })
+  const badStaff = { ...shiftOpened(), staffId: 'bea\u0000' }
+  const good = shiftOpened()
+  const res = await api.post(token, { events: [year0, feb31, nulTime, words, badStaff, good] })
+  expect(res.status).toBe(200)
+  const body = (await res.json()) as { results: { result: string; reason: string | null }[] }
+  expect(body.results.map((r) => r.result)).toEqual(['held', 'held', 'held', 'held', 'held', 'applied'])
+  for (const r of body.results.slice(0, 4)) expect(r.reason).toMatch(/^invalid: occurredAt: /)
+  expect(body.results[4]!.reason).toMatch(/^invalid: staffId: /)
+  const rows = await db.sql`select id, occurred_at, staff_id, result from sync_events where device_id = ${deviceId} order by seq`
+  expect(rows).toHaveLength(6)
+  // A time that cannot be stored is recorded as the receive time.
+  expect(rows[0]!.occurred_at.toISOString()).toBe(api.now().toISOString())
+  expect(rows[4]!.staff_id).toBeNull()
+  expect(await count('shifts', deviceId)).toBe(1)
+})
+
+test('a retryable database error (serialization, timeout, connection) fails the push instead of holding', async () => {
+  const { deviceId, token } = await seedDevice(db.sql)
+  await db.sql.unsafe(`
+    create function test_boom() returns trigger language plpgsql as $$
+    begin
+      if new.reason = 'boom' then raise exception 'could not serialize' using errcode = '40001'; end if;
+      return new;
+    end $$;
+    create trigger test_boom before insert on cash_moves for each row execute function test_boom();`)
+  try {
+    const open = shiftOpened()
+    const boom = cashMoved({ shiftId: open.payload.shiftId, reason: 'boom' })
+    const res = await api.post(token, { events: [open, boom] })
+    expect(res.status).toBe(500)
+    // Nothing from that push was kept: the till sends it again.
+    expect(await count('sync_events', deviceId)).toBe(0)
+    expect(await count('shifts', deviceId)).toBe(0)
+  } finally {
+    await db.sql.unsafe('drop trigger test_boom on cash_moves; drop function test_boom();')
+  }
+})
+
+test('isRetryable: SQLSTATE classes 40, 57 and 08 and postgres.js connection errors', async () => {
+  const { isRetryable } = await import('../src/sync/push.js')
+  for (const code of ['40001', '40P01', '57014', '57P01', '08006', 'CONNECTION_CLOSED', 'CONNECT_TIMEOUT']) {
+    expect(isRetryable({ code })).toBe(true)
+  }
+  for (const code of ['23505', '22003', '22P02', undefined]) expect(isRetryable({ code })).toBe(false)
+  expect(isRetryable(new Error('plain'))).toBe(false)
+})
+
+test('if Postgres refuses a receipt, the event rolls back and a fallback receipt is held invalid: receipt', async () => {
+  const { deviceId, token } = await seedDevice(db.sql)
+  await db.sql.unsafe(`
+    create function test_refuse() returns trigger language plpgsql as $$
+    begin
+      if new.seq = 424242 and new.result <> 'held' then raise exception 'refused'; end if;
+      return new;
+    end $$;
+    create trigger test_refuse before insert on sync_events for each row execute function test_refuse();`)
+  try {
+    const off = availability({ itemId: menu.latteId, available: false }, { seq: 424242 })
+    const open = shiftOpened()
+    const res = await api.post(token, { events: [off, open] })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { results: { result: string; reason: string | null }[] }
+    expect(body.results.map((r) => [r.result, r.reason])).toEqual([
+      ['held', 'invalid: receipt'],
+      ['applied', null],
+    ])
+    const [item] = await db.sql`select is_available from menu_items where id = ${menu.latteId}`
+    expect(item!.is_available).toBe(true)
+    const [row] = await db.sql`select result, payload from sync_events where device_id = ${deviceId} and id = ${off.id}`
+    expect(row!.result).toBe('held')
+    expect(JSON.parse(row!.payload)).toEqual(off.payload)
+  } finally {
+    await db.sql.unsafe('drop trigger test_refuse on sync_events; drop function test_refuse();')
+  }
 })

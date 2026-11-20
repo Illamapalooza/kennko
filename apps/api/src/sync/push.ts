@@ -2,12 +2,25 @@ import { MAX_HELD_RETRY, type PushResponse, type SyncEvent } from '@kennko/core'
 import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
 import { applyEvent, entityKeys, type Applied } from './apply.js'
-import { parseEvent, type Envelope } from './schema.js'
+import { findNul, parseEvent, storableTime, type Envelope } from './schema.js'
 
 type Tx = postgres.TransactionSql
 type Result = PushResponse['results'][number]
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const held = (reason: string): Applied => ({ result: 'held', reason, flags: [] })
+const isInvalid = (reason: string | null) => reason !== null && reason.startsWith('invalid:')
+
+/**
+ * Errors the till should simply send again: SQLSTATE class 40 (serialization, deadlock), 57
+ * (timeout, cancel, shutdown), 08 (connection), and postgres.js's own connection errors. These fail
+ * the whole push instead of being held as `invalid: …`.
+ */
+export function isRetryable(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code
+  if (typeof code !== 'string') return false
+  return /^(40|57|08)[0-9A-Z]{3}$/.test(code) || code.startsWith('CONNECT')
+}
 
 /** Carries a held answer out of its savepoint so anything the handler wrote is rolled back. */
 class Hold extends Error {
@@ -26,7 +39,61 @@ async function applyInSavepoint(tx: Tx, deviceId: string, event: SyncEvent, now:
     })) as Applied
   } catch (err) {
     if (err instanceof Hold) return err.out
+    if (isRetryable(err)) throw err
     return held(`invalid: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/** The payload as jsonb text. One holding U+0000 (which jsonb rejects) is kept as a JSON string of its JSON text. */
+function payloadJson(payload: unknown): string {
+  const text = JSON.stringify(payload ?? null)
+  return findNul(payload) ? JSON.stringify(text) : text
+}
+
+async function insertReceipt(
+  tx: Tx,
+  deviceId: string,
+  env: Envelope,
+  keys: string[],
+  payload: string,
+  out: Applied,
+  now: Date,
+): Promise<void> {
+  // A time or staff id Postgres cannot take was already answered invalid; the receipt records the receive time / null.
+  const occurredAt = storableTime(env.occurredAt) ?? now
+  const staffId = env.staffId !== null && UUID.test(env.staffId) ? env.staffId : null
+  await tx`
+    insert into sync_events (device_id, id, seq, kind, payload, staff_id, entity_keys, occurred_at,
+      received_at, result, reason, applied_at)
+    values (${deviceId}, ${env.id}, ${env.seq}, ${env.kind}, ${payload}::text::jsonb, ${staffId}, ${keys}::text[],
+      ${occurredAt}, ${now}, ${out.result}, ${out.reason}, ${out.result === 'held' ? null : now})`
+}
+
+/**
+ * A new event: validate, wait behind an earlier held event on the same entity, or apply; then its
+ * receipt. Apply and receipt share a savepoint, so if Postgres refuses the receipt the event's
+ * effects roll back too, and a fallback receipt (`invalid: receipt`) is kept instead. Nothing a till
+ * sends can make the push fail, except a retryable database error.
+ */
+async function recordEvent(tx: Tx, deviceId: string, env: Envelope, now: Date): Promise<Applied> {
+  try {
+    return (await tx.savepoint(async (sp) => {
+      const keys = entityKeys(env)
+      const parsed = parseEvent(env)
+      let out: Applied
+      if (!parsed.ok) out = held(parsed.reason)
+      else if (keys.length > 0 && (await waitsForEarlier(sp, deviceId, env.seq, keys))) out = held('waits_for_earlier')
+      else out = await applyInSavepoint(sp, deviceId, parsed.event, now)
+      await insertReceipt(sp, deviceId, env, keys, payloadJson(env.payload), out, now)
+      return out
+    })) as Applied
+  } catch (err) {
+    if (isRetryable(err)) throw err
+    const out = held('invalid: receipt')
+    // Keys stay so later events on the same entity still wait; keys and payload are made safe to store.
+    const keys = entityKeys(env).filter((k) => !k.includes('\u0000'))
+    await insertReceipt(tx, deviceId, env, keys, JSON.stringify(JSON.stringify(env.payload ?? null)), out, now)
+    return out
   }
 }
 
@@ -43,17 +110,17 @@ type HeldRow = {
 
 /**
  * Retries this device's held events, oldest seq first. A row sharing an entity with an earlier row
- * that is still held stays held, so per-entity order survives. Returns how many rows came free.
+ * that is still held stays held, so per-entity order survives. A row held `invalid: …` is never
+ * applied again (what was sent cannot change); it only keeps its place in line.
  */
-async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<number> {
+async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<void> {
   const rows = await tx<HeldRow[]>`
     select id, seq, kind, payload, staff_id, occurred_at, entity_keys, reason
     from sync_events where device_id = ${deviceId} and result = 'held'
     order by seq limit ${MAX_HELD_RETRY}`
   const blocked = new Set<string>()
-  let freed = 0
   for (const row of rows) {
-    if (row.entity_keys.some((k) => blocked.has(k))) {
+    if (isInvalid(row.reason) || row.entity_keys.some((k) => blocked.has(k))) {
       for (const k of row.entity_keys) blocked.add(k)
       continue
     }
@@ -75,9 +142,7 @@ async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<number> {
     }
     await tx`update sync_events set result = ${out.result}, reason = ${out.reason}, applied_at = ${now}
       where device_id = ${deviceId} and id = ${row.id}`
-    freed += 1
   }
-  return freed
 }
 
 /**
@@ -99,25 +164,8 @@ export async function pushEvents(deps: AppDeps, deviceId: string, raw: Envelope[
         results.push({ id: env.id, result: 'duplicate', reason: null, flags: [] })
         continue
       }
-
-      const keys = entityKeys(env)
-      const parsed = parseEvent(env)
-      let out: Applied
-      if (!parsed.ok) {
-        out = held(parsed.reason)
-      } else if (keys.length > 0 && (await waitsForEarlier(tx, deviceId, env.seq, keys))) {
-        out = held('waits_for_earlier')
-      } else {
-        out = await applyInSavepoint(tx, deviceId, parsed.event, now)
-      }
+      const out = await recordEvent(tx, deviceId, env, now)
       if (out.result !== 'held') anyApplied = true
-
-      await tx`
-        insert into sync_events (device_id, id, seq, kind, payload, staff_id, entity_keys, occurred_at,
-          received_at, result, reason, applied_at)
-        values (${deviceId}, ${env.id}, ${env.seq}, ${env.kind}, ${JSON.stringify(env.payload ?? null)}::text::jsonb,
-          ${env.staffId}, ${keys}::text[], ${env.occurredAt}, ${now}, ${out.result}, ${out.reason},
-          ${out.result === 'held' ? null : now})`
       results.push({ id: env.id, result: out.result, reason: out.reason, flags: out.flags })
     }
 
