@@ -55,6 +55,7 @@ describe('staff order and payment actions', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
+      push: null,
       now: () => new Date('2026-11-21T02:00:00Z'),
     })
   })

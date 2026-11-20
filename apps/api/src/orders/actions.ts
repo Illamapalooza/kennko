@@ -1,6 +1,7 @@
 import { canMovePrep, type Fulfilment, type PrepStatus } from '@kennko/core'
 import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
+import { notifyOrder, type OrderPushEvent } from '../push/notify.js'
 
 export type ActionResult =
   | { ok: true; prepStatus: PrepStatus; paymentStatus: string }
@@ -54,7 +55,7 @@ const loadOrder = async (tx: Tx, id: string) =>
       select id, channel, fulfilment, prep_status, payment_status from orders where id = ${id}`
   )[0]
 
-export function patchOrder(
+function patchOrderTx(
   deps: AppDeps,
   input: { orderId: string; staffId: string; prepStatus?: PrepStatus; staffNote?: string },
 ): Promise<ActionResult> {
@@ -95,7 +96,7 @@ export function patchOrder(
   })
 }
 
-export function cancelOrder(
+function cancelOrderTx(
   deps: AppDeps,
   input: { orderId: string; staffId: string; reason: string },
 ): Promise<ActionResult> {
@@ -143,7 +144,7 @@ export function cancelOrder(
 }
 
 /** Verify or reject a payment that is pending verification. */
-export function decidePayment(
+function decidePaymentTx(
   deps: AppDeps,
   input: { paymentId: string; staffId: string; decision: 'verify' } | { paymentId: string; staffId: string; decision: 'reject'; reason: string },
 ): Promise<ActionResult> {
@@ -190,4 +191,38 @@ export function decidePayment(
       ? { ok: true, prepStatus: order.prep_status, paymentStatus: 'paid' }
       : { ok: true, prepStatus: 'cancelled', paymentStatus: 'rejected' }
   })
+}
+
+// ---- Push after a successful commit. notifyOrder never throws, so a push problem cannot fail an action. ----
+
+const PREP_EVENTS: Partial<Record<PrepStatus, OrderPushEvent>> = {
+  preparing: 'preparing',
+  ready: 'ready',
+  out_for_delivery: 'out_for_delivery',
+  completed: 'completed',
+}
+
+export async function patchOrder(
+  deps: AppDeps,
+  input: Parameters<typeof patchOrderTx>[1],
+): Promise<ActionResult> {
+  const result = await patchOrderTx(deps, input)
+  const event = input.prepStatus && PREP_EVENTS[input.prepStatus]
+  if (result.ok && event) await notifyOrder(deps, input.orderId, event)
+  return result
+}
+
+export async function cancelOrder(deps: AppDeps, input: Parameters<typeof cancelOrderTx>[1]): Promise<ActionResult> {
+  const result = await cancelOrderTx(deps, input)
+  if (result.ok) await notifyOrder(deps, input.orderId, 'problem')
+  return result
+}
+
+export async function decidePayment(deps: AppDeps, input: Parameters<typeof decidePaymentTx>[1]): Promise<ActionResult> {
+  const result = await decidePaymentTx(deps, input)
+  if (result.ok) {
+    const [row] = await deps.sql<{ order_id: string }[]>`select order_id from payments where id = ${input.paymentId}`
+    if (row) await notifyOrder(deps, row.order_id, input.decision === 'verify' ? 'paid' : 'problem')
+  }
+  return result
 }

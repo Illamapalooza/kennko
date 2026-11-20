@@ -55,7 +55,7 @@ describe('staff auth', () => {
         .setExpirationTime(opts.expiresIn ?? '5m')
         .sign(opts.key ?? privateKey)
 
-    const deps = { sql: db.sql, verifyUser, proofs: fakeProofs(), now: () => new Date() }
+    const deps = { sql: db.sql, verifyUser, proofs: fakeProofs(), push: null, now: () => new Date() }
     app = createApp(deps)
     app.get('/owner-only', requireStaff(deps, 'owner'), (c) => c.json(c.get('staff')))
     app.get('/any-staff', requireStaff(deps), (c) => c.json(c.get('staff')))

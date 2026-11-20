@@ -20,6 +20,7 @@ describe('app skeleton', () => {
         throw new Error('not used')
       },
       proofs: fakeProofs(),
+      push: null,
       now: () => new Date(),
     })
 
@@ -55,6 +56,14 @@ describe('loadConfig', () => {
       databaseUrl: 'postgres://u:p@h:5432/d',
       supabaseUrl: 'https://x.supabase.co',
       supabaseServiceRoleKey: 'service-key',
+      vapid: null,
     })
+  })
+
+  it('reads VAPID keys when all three are set, treats blank as unset, refuses a partial set', () => {
+    const vapid = { VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv', VAPID_SUBJECT: 'mailto:a@x.test' }
+    expect(loadConfig({ ...env, ...vapid }).vapid).toEqual({ publicKey: 'pub', privateKey: 'priv', subject: 'mailto:a@x.test' })
+    expect(loadConfig({ ...env, VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '', VAPID_SUBJECT: '' }).vapid).toBeNull()
+    expect(() => loadConfig({ ...env, VAPID_PUBLIC_KEY: 'pub' })).toThrow(/VAPID/)
   })
 })

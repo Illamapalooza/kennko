@@ -99,6 +99,7 @@ describe('POST /v1/orders', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs,
+      push: null,
       now: () => NOW,
       orderCode: () => codes.shift() ?? generateOrderCode(),
     })

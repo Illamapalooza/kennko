@@ -87,9 +87,10 @@ Build `DATABASE_URL` from the dashboard's **transaction pooler** string (Connect
 
 Then in Vercel:
 
-1. Create the project from the repo with **root directory `apps/api`**, on the Pro team. `npm run build` (set in `apps/api/vercel.json`) bundles `src/main.ts` and `@kennko/core` into `server.js`, which Vercel deploys; hono, postgres, jose and zod stay external. Core ships TypeScript source, which Node will not run from `node_modules`, so the bundle is required.
+1. Create the project from the repo with **root directory `apps/api`**, on the Pro team. `npm run build` (set in `apps/api/vercel.json`) bundles `src/main.ts` and `@kennko/core` into `server.js`, which Vercel deploys; hono, postgres, jose, zod and web-push stay external (installed from `package.json`). Core ships TypeScript source, which Node will not run from `node_modules`, so the bundle is required.
 2. Set the function region to the Supabase project's region (see the project's dashboard).
 3. Set `DATABASE_URL` and `SUPABASE_URL` for Production (and Preview if you use it).
+   For Web Push also set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (`mailto:you@example.com`), all three or none. Generate the pair once with `npx web-push generate-vapid-keys`. Without them push is off: the API still boots and `GET /v1/push/public-key` answers 404.
 4. Deploy, then check:
 
 ```sh

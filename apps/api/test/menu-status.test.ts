@@ -39,6 +39,7 @@ describe('menu status', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
+      push: null,
       now: () => new Date(),
     })
 

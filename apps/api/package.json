@@ -7,13 +7,14 @@
     "dev": "tsx watch src/dev.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=server.js --external:hono --external:hono/* --external:postgres --external:jose --external:zod"
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=server.js --external:hono --external:hono/* --external:postgres --external:jose --external:zod --external:web-push"
   },
   "dependencies": {
     "@kennko/core": "*",
     "hono": "^4.13.0",
     "jose": "^6.2.0",
     "postgres": "^4.1.0",
+    "web-push": "^4.0.0",
     "zod": "^4.6.0"
   },
   "devDependencies": {
@@ -21,9 +22,10 @@
     "@electric-sql/pglite-socket": "^0.2.0",
     "@hono/node-server": "^2.1.0",
     "@types/node": "^24",
+    "@types/web-push": "^3.6.4",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.12",
     "typescript": "^5",
-    "vitest": "^4.1.11",
-    "esbuild": "^0.28.2"
+    "vitest": "^4.1.11"
   }
 }

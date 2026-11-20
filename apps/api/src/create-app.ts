@@ -6,6 +6,8 @@ import { apiError } from './http.js'
 import { menuRoutes } from './routes/menu.js'
 import { ordersRoutes } from './routes/orders.js'
 import { paymentRoutes } from './routes/payments.js'
+import { pushRoutes } from './routes/push.js'
+import type { PushSender } from './push/send.js'
 import type { ProofStore } from './storage.js'
 
 export type AppDeps = {
@@ -16,6 +18,10 @@ export type AppDeps = {
   now: () => Date
   /** Order code generator; defaults to `KNK-` + 6 characters. Tests inject collisions. */
   orderCode?: () => string
+  /** Web Push sender; null when VAPID keys are not configured. */
+  push: PushSender | null
+  /** Shared with browsers by GET /v1/push/public-key. */
+  vapidPublicKey?: string | null
 }
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {
@@ -39,6 +45,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route('/v1/menu', menuRoutes(deps))
   app.route('/v1/orders', ordersRoutes(deps))
   app.route('/v1/payments', paymentRoutes(deps))
+  app.route('/v1/push', pushRoutes(deps))
 
   return app
 }
