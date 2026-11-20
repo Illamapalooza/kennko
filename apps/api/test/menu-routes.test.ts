@@ -20,7 +20,7 @@ describe('menu routes', () => {
     await db.sql
       .unsafe(
         `insert into auth.users (id, email) values ('${OWNER}', 'o@x.test');
-         insert into staff (id, email, full_name, role, is_active) values ('${OWNER}', 'o@x.test', 'Owner', 'owner', true);`,
+         insert into staff (id, user_id, email, full_name, role, is_active) values ('${OWNER}', '${OWNER}', 'o@x.test', 'Owner', 'owner', true);`,
       )
       .simple()
     const { publicKey, privateKey } = await generateKeyPair('ES256')

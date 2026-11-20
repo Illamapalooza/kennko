@@ -33,8 +33,8 @@ describe('staff auth', () => {
           .map(
             ([id, email, role, active]) =>
               `insert into auth.users (id, email) values ('${id}', '${email}');
-               insert into staff (id, email, full_name, role, is_active)
-               values ('${id}', '${email}', '${email}', '${role}', ${active});`,
+               insert into staff (id, user_id, email, full_name, role, is_active)
+               values ('${id}', '${id}', '${email}', '${email}', '${role}', ${active});`,
           )
           .join('\n'),
       )

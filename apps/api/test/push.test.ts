@@ -54,10 +54,10 @@ describe('web push', () => {
       .unsafe(
         `insert into auth.users (id, email) values ('${OWNER}', 'o@x.test'), ('${BARISTA}', 'b@x.test'),
            ('${FORMER}', 'f@x.test'), ('${CUSTOMER}', 'c@x.test');
-         insert into staff (id, email, full_name, role, is_active) values
-           ('${OWNER}', 'o@x.test', 'Owner', 'owner', true),
-           ('${BARISTA}', 'b@x.test', 'Barista', 'barista', true),
-           ('${FORMER}', 'f@x.test', 'Former', 'barista', false);`,
+         insert into staff (id, user_id, email, full_name, role, is_active) values
+           ('${OWNER}', '${OWNER}', 'o@x.test', 'Owner', 'owner', true),
+           ('${BARISTA}', '${BARISTA}', 'b@x.test', 'Barista', 'barista', true),
+           ('${FORMER}', '${FORMER}', 'f@x.test', 'Former', 'barista', false);`,
       )
       .simple()
     const [cat] = await db.sql`insert into menu_categories (name, sort_order) values ('Coffee', 0) returning id`

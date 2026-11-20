@@ -7,7 +7,7 @@ let db: TestDb
 beforeAll(async () => {
   db = await startTestDb()
   await db.sql`insert into auth.users (id, email, email_confirmed_at) values (${OWNER}, 'owner@kennko.test', now())`
-  await db.sql`insert into staff (id, email, full_name, role) values (${OWNER}, 'owner@kennko.test', 'Olive', 'owner')`
+  await db.sql`insert into staff (id, user_id, email, full_name, role) values (${OWNER}, ${OWNER}, 'owner@kennko.test', 'Olive', 'owner')`
 })
 afterAll(async () => {
   await db.stop()

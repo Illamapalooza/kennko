@@ -29,7 +29,7 @@ let db: TestDb
 beforeAll(async () => {
   db = await startTestDb({ seedBefore: { migration: '0012', sql: SEED } })
   await db.sql`insert into auth.users (id, email) values (${BARISTA}, 'b@kennko.test')`
-  await db.sql`insert into staff (id, email, full_name, role) values (${BARISTA}, 'b@kennko.test', 'Bea', 'barista')`
+  await db.sql`insert into staff (id, user_id, email, full_name, role) values (${BARISTA}, ${BARISTA}, 'b@kennko.test', 'Bea', 'barista')`
 })
 afterAll(async () => {
   await db.stop()

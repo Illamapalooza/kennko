@@ -36,9 +36,9 @@ describe('staff order and payment actions', () => {
     await db.sql
       .unsafe(
         `insert into auth.users (id, email) values ('${OWNER}', 'o@x.test'), ('${BARISTA}', 'b@x.test'), ('${NOBODY}', 'n@x.test');
-         insert into staff (id, email, full_name, role, is_active) values
-           ('${OWNER}', 'o@x.test', 'Owner', 'owner', true),
-           ('${BARISTA}', 'b@x.test', 'Barista', 'barista', true);`,
+         insert into staff (id, user_id, email, full_name, role, is_active) values
+           ('${OWNER}', '${OWNER}', 'o@x.test', 'Owner', 'owner', true),
+           ('${BARISTA}', '${BARISTA}', 'b@x.test', 'Barista', 'barista', true);`,
       )
       .simple()
     const [zone] = await db.sql`insert into delivery_zones (barangay, fee_centavos, latitude, longitude)
