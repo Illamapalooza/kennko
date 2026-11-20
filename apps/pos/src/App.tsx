@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CatToon } from '@kennko/cats'
 import type { Discount, LineInput, Menu, OrderType } from '@kennko/core'
-import { api, getPin, setOnLocked, setPin, type Bootstrap, type Live } from './api.ts'
+import { ApiError, api, setOnLocked, type Bootstrap, type Live } from './api.ts'
 import { ClockIcon, CupIcon, DrawerIcon, ListIcon, LockIcon, TicketIcon } from './components/Icons.tsx'
 import { Gate } from './screens/Gate.tsx'
 import { Sell } from './screens/Sell.tsx'
@@ -41,22 +41,26 @@ export function App() {
     return () => clearTimeout(timer)
   }, [toast])
 
-  const lock = useCallback(() => { setPin(''); setUnlocked(false) }, [])
+  // Locks this screen at once; ending the session on the till is best effort (the wifi may be down).
+  const lock = useCallback(() => { setUnlocked(false); api.endSession().catch(() => {}) }, [])
   useEffect(() => { setOnLocked(() => setUnlocked(false)) }, [])
 
-  // Start: learn about the shop, then try the PIN this device remembered.
+  // Start: learn about the shop, then ask the till whether this browser already has a session.
   useEffect(() => {
     let cancelled = false
     const start = async () => {
       try {
         const b = await api.bootstrap()
+        let open = b.pinMode === 'off'
+        if (!open) {
+          try { await api.session(); open = true } catch (err) {
+            if (!(err instanceof ApiError && err.status === 401)) throw err
+          }
+        }
         if (cancelled) return
         setBoot(b)
         setBootError('')
-        if (!b.pinRequired) return setUnlocked(true)
-        if (getPin()) {
-          try { await api.checkPin(getPin()); if (!cancelled) setUnlocked(true) } catch { setPin('') }
-        }
+        setUnlocked(open)
       } catch (err) {
         if (cancelled) return
         setBootError(err instanceof Error ? err.message : 'Could not start.')
@@ -68,12 +72,25 @@ export function App() {
   }, [])
 
   // Live feed: every tablet sees the same queue and the same till within a second.
+  // EventSource retries a dropped connection by itself, but a refused one (a 401) closes it for good: then ask the
+  // till about the session. Gone → the PIN screen (call() does that); otherwise open the feed again shortly.
   useEffect(() => {
     if (!unlocked) return
-    const source = new EventSource(api.eventsUrl())
-    source.onmessage = (event) => { setLive(JSON.parse(event.data)); setOnline(true) }
-    source.onerror = () => setOnline(false)
-    return () => source.close()
+    let source: EventSource | null = null
+    let retry: ReturnType<typeof setTimeout> | undefined
+    let stopped = false
+    const reopen = () => { if (!stopped) retry = setTimeout(open, 2000) }
+    function open() {
+      source = new EventSource(api.eventsUrl())
+      source.onmessage = (event) => { setLive(JSON.parse(event.data)); setOnline(true) }
+      source.onerror = () => {
+        setOnline(false)
+        if (source?.readyState !== EventSource.CLOSED) return
+        api.session().then(reopen, (err) => { if (!(err instanceof ApiError && err.status === 401)) reopen() })
+      }
+    }
+    open()
+    return () => { stopped = true; clearTimeout(retry); source?.close() }
   }, [unlocked])
 
   const menuKey = live?.menuKey
@@ -117,7 +134,7 @@ export function App() {
           </button>
         ))}
         <span className="rail-gap" />
-        {boot.pinRequired ? (
+        {boot.pinMode !== 'off' ? (
           <button type="button" className="rail-btn rail-lock" onClick={lock}>
             <LockIcon />
             <span>Lock</span>

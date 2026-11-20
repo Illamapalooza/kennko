@@ -3,7 +3,8 @@ import type { CashMove, Discount, Menu, Order, Shift, Summary } from '@kennko/co
 export type Bootstrap = {
   shop: { name: string; address: string; phone: string; receiptFooter: string }
   discounts: Discount[]
-  pinRequired: boolean
+  /** off: no PIN to open the till; shared: the PINs in config.json; per-person: each person's own PIN. */
+  pinMode: 'off' | 'shared' | 'per-person'
   websiteConfigured: boolean
   /** The https address of this same till, when it is running; installing as an app needs it. */
   secureUrl: string | null
@@ -22,18 +23,14 @@ export class ApiError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
 }
 
-const PIN_KEY = 'kennko-pos-pin'
-let pin = ''
-try { pin = localStorage.getItem(PIN_KEY) ?? '' } catch { /* private mode: ask every time */ }
+/** Who opened the till in this browser. The session itself is an HttpOnly cookie the page never sees. */
+export type Session = { role: 'staff' | 'manager'; name: string | null }
 
-export const getPin = () => pin
-export function setPin(next: string) {
-  pin = next
-  try { if (next) localStorage.setItem(PIN_KEY, next); else localStorage.removeItem(PIN_KEY) } catch { /* not remembered */ }
-}
+// Older versions kept the PIN itself in the browser. The till now uses a session cookie, so forget it.
+try { localStorage.removeItem('kennko-pos-pin') } catch { /* nothing stored */ }
 
 let onLocked: () => void = () => {}
-/** Called when the server stops accepting this device's PIN, so the app can ask again. */
+/** Called when the till no longer knows this browser's session, so the app can ask for the PIN again. */
 export const setOnLocked = (fn: () => void) => { onLocked = fn }
 
 async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
@@ -41,7 +38,7 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
   try {
     res = await fetch(path, {
       method,
-      headers: { 'x-pin': pin, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      headers: body === undefined ? {} : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
@@ -49,7 +46,8 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
   }
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    if (res.status === 401 || res.status === 429) onLocked()
+    // 401 means the session is gone. A 429 lockout only stops PIN checks; sales go on with the session.
+    if (res.status === 401) onLocked()
     throw new ApiError(data.error || "That didn't work. Try again.", res.status)
   }
   return data as T
@@ -57,7 +55,9 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
 
 export const api = {
   bootstrap: () => call<Bootstrap>('GET', '/api/bootstrap'),
-  checkPin: (candidate: string) => call<{ ok: true; role: 'staff' | 'manager' }>('POST', '/api/pin', { pin: candidate }),
+  startSession: (pin: string) => call<Session>('POST', '/api/session', { pin }),
+  session: () => call<Session>('GET', '/api/session'),
+  endSession: () => call<{ ok: true }>('POST', '/api/session/end', {}),
   menu: () => call<Menu>('GET', '/api/menu'),
   orders: (day: string) => call<Order[]>('GET', `/api/orders?day=${day}`),
   createOrder: (body: unknown) => call<Order>('POST', '/api/orders', body),
@@ -73,6 +73,6 @@ export const api = {
   closeTill: (countedCentavos: number, note: string, managerPin: string) =>
     call<{ shift: Shift; summary: Summary }>('POST', '/api/till/close', { countedCentavos, note, managerPin }),
   report: (day: string) => call<{ day: string; summary: Summary }>('GET', `/api/report?day=${day}`),
-  csvUrl: (day: string) => `/api/report.csv?day=${day}&pin=${encodeURIComponent(pin)}`,
-  eventsUrl: () => `/api/events?pin=${encodeURIComponent(pin)}`,
+  csvUrl: (day: string) => `/api/report.csv?day=${day}`,
+  eventsUrl: () => '/api/events',
 }

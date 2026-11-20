@@ -55,6 +55,13 @@ const SCHEMA = `
     at integer not null
   );
   create table if not exists sold_out (item_id text primary key);
+  create table if not exists sessions (
+    token_hash text primary key,
+    staff_id text,
+    staff_name text,
+    role text not null check (role in ('staff', 'manager')),
+    created_at integer not null
+  );
 `
 
 const clean = (text: unknown, max: number) => String(text ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max)
@@ -121,6 +128,8 @@ export function createStore(file: string) {
   }
 
   return {
+    /** The open database, for the till's sessions (sessions.ts). */
+    db,
     close: () => db.close(),
     /** Writes a complete, consistent copy of the database to a new file. Safe while the till is in use. */
     snapshot(to: string) { db.prepare('vacuum into ?').run(to) },

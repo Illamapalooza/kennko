@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { api, setPin } from '../api.ts'
+import { api } from '../api.ts'
 import { InstallNote } from '../components/InstallNote.tsx'
 import { Keypad } from '../components/Keypad.tsx'
 import { CatToon } from '@kennko/cats'
 
-/** The first thing a device sees: the staff PIN, asked once and remembered. */
+/** The first thing a device sees: the PIN, typed once and swapped for a session the till remembers. */
 export function Gate({ onUnlock, secureUrl }: { onUnlock: () => void; secureUrl: string | null }) {
   const [entry, setEntry] = useState('')
   const [error, setError] = useState('')
@@ -14,8 +14,7 @@ export function Gate({ onUnlock, secureUrl }: { onUnlock: () => void; secureUrl:
     if (!entry || busy) return
     setBusy(true)
     try {
-      await api.checkPin(entry)
-      setPin(entry)
+      await api.startSession(entry)
       onUnlock()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Wrong PIN.')

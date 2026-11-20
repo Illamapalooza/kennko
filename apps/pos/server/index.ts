@@ -4,6 +4,7 @@
 // Usage: tsx server/index.ts [--dev] [--port N]
 import http from 'node:http'
 import https from 'node:https'
+import tls from 'node:tls'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -15,6 +16,8 @@ import { setupPage } from './setup-page.ts'
 import { loadConfig } from './config.ts'
 import { fetchApiMenu, loadMenu, saveMenu } from './menu.ts'
 import { createStore } from './store.ts'
+import { createPinDirectory } from './pins.ts'
+import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
 import { reportCsv } from './report.ts'
 import { WALL_LINGER_MS, wallOrders } from './wall-feed.ts'
 
@@ -31,6 +34,9 @@ const port = portArg >= 0 && Number(args[portArg + 1]) > 0 ? Number(args[portArg
 fs.mkdirSync(DATA, { recursive: true })
 const store = createStore(path.join(DATA, 'pos.db'))
 let baseMenu: Menu = loadMenu(DATA, Date.now())
+// The PIN is typed once per browser and swapped for a session cookie; sessions live in pos.db and survive a restart.
+const sessions = createSessions(store.db, () => Date.now())
+const pins = createPinDirectory({ staffPin: config.staffPin, managerPin: config.managerPin, staff: () => [] })
 
 /** Copies the sales database to data/backups (and to config.backupDir when set). Never throws: a failed backup must not stop a sale. */
 let lastBackup = ''
@@ -120,21 +126,32 @@ const strikes = new Map<string, { count: number; until: number }>()
 const MAX_STRIKES = 8
 const LOCK_MS = 5 * 60000
 
-function checkPin(req: http.IncomingMessage, given: unknown, need: 'staff' | 'manager'): 'staff' | 'manager' {
+/** Checks a typed PIN: the one that opens the till, or the manager PIN. Wrong guesses count against the device. */
+async function checkPin(req: http.IncomingMessage, given: unknown, need: 'staff' | 'manager'): Promise<Who> {
   const ip = req.socket.remoteAddress ?? '?'
   const s = strikes.get(ip)
   if (s && s.until > Date.now()) throw new PinError('Too many wrong PINs. Try again in 5 minutes.', 429)
   const pin = typeof given === 'string' ? given : ''
-  const isManager = pin === config.managerPin
-  const isStaff = isManager || pin === config.staffPin
-  if (need === 'manager' ? isManager : isStaff) {
+  const who = need === 'manager' ? await pins.checkManager(pin) : await pins.checkGate(pin)
+  if (who) {
     strikes.delete(ip)
-    return isManager ? 'manager' : 'staff'
+    return who
   }
-  const count = (s && s.until === 0 ? s.count : 0) + 1
+  const latest = strikes.get(ip)
+  if (latest && latest.until > Date.now()) throw new PinError('Too many wrong PINs. Try again in 5 minutes.', 429)
+  const count = (latest && latest.until === 0 ? latest.count : 0) + 1
   strikes.set(ip, count >= MAX_STRIKES ? { count: 0, until: Date.now() + LOCK_MS } : { count, until: 0 })
   throw new PinError(need === 'manager' ? 'Wrong manager PIN.' : 'Wrong PIN.', need === 'manager' ? 403 : 401)
 }
+
+/** The session this request carries, or a 401 so the device shows the PIN screen. Off mode needs none. */
+function needSession(req: http.IncomingMessage): void {
+  if (pins.mode() === 'off') return
+  if (!sessions.get(readSessionCookie(req.headers.cookie))) throw new PinError('Enter your PIN to open the till.', 401)
+}
+
+/** Secure cookies only on the https port, or plain-http tablets would never send them back. */
+const cameInSecure = (req: http.IncomingMessage) => req.socket instanceof tls.TLSSocket
 
 function inside(base: string, rel: string): string | null {
   let decoded: string
@@ -160,7 +177,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const now = Date.now()
 
   if (req.method === 'GET' && route === '/api/bootstrap') {
-    return json(res, 200, { shop: config.shop, discounts: config.discounts, pinRequired: Boolean(config.staffPin), websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req) })
+    return json(res, 200, { shop: config.shop, discounts: config.discounts, pinMode: pins.mode(), websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req) })
   }
   if (req.method === 'GET' && route === '/api/wall/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
@@ -169,13 +186,31 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     req.on('close', () => wallClients.delete(res))
     return
   }
-  if (req.method === 'POST' && route === '/api/pin') {
-    const body = await readBody(req)
-    return json(res, 200, { ok: true, role: checkPin(req, body.pin, 'staff') })
+  if (route === '/api/session') {
+    if (req.method === 'GET') {
+      const who = sessions.get(readSessionCookie(req.headers.cookie))
+      if (who) return json(res, 200, { role: who.role, name: who.name })
+      if (pins.mode() === 'off') return json(res, 200, { role: 'staff', name: null })
+      throw new PinError('Enter your PIN to open the till.', 401)
+    }
+    if (req.method === 'POST') {
+      const body = await readBody(req)
+      const who = await checkPin(req, body.pin, 'staff')
+      sessions.end(readSessionCookie(req.headers.cookie))
+      const token = sessions.start(who)
+      res.setHeader('set-cookie', sessionCookie(token, cameInSecure(req)))
+      return json(res, 200, { role: who.role, name: who.name })
+    }
+    return json(res, 405, { error: 'Method not allowed.' })
+  }
+  if (req.method === 'POST' && route === '/api/session/end') {
+    sessions.end(readSessionCookie(req.headers.cookie))
+    res.setHeader('set-cookie', sessionCookie(null, cameInSecure(req)))
+    return json(res, 200, { ok: true })
   }
 
-  // Everything below needs the staff PIN. EventSource cannot send headers, so it may ride in the query.
-  checkPin(req, req.headers['x-pin'] ?? url.searchParams.get('pin') ?? '', 'staff')
+  // Everything below needs a session (the cookie rides along on fetch, EventSource and the CSV link alike).
+  needSession(req)
 
   if (req.method === 'GET') {
     if (route === '/api/events') {
@@ -224,7 +259,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const id = Number(orderAction[1])
     if (orderAction[2] === 'advance') return done(store.advance(id, now))
     if (orderAction[2] === 'undo') return done(store.undo(id, now))
-    checkPin(req, body.managerPin, 'manager')
+    await checkPin(req, body.managerPin, 'manager')
     return done(store.voidOrder(id, body.reason, now))
   }
 
@@ -236,7 +271,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return done(menu())
   }
   if (route === '/api/menu/sync') {
-    checkPin(req, body.managerPin, 'manager')
+    await checkPin(req, body.managerPin, 'manager')
     try { baseMenu = await fetchApiMenu(config.api.url, now) } catch (err: any) { throw new OrderError(err.message) }
     saveMenu(DATA, baseMenu)
     return done(menu())
@@ -244,11 +279,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
 
   if (route === '/api/till/open') return done(store.startShift(body.floatCentavos, now))
   if (route === '/api/till/cash') {
-    if (body.kind === 'out') checkPin(req, body.managerPin, 'manager')
+    if (body.kind === 'out') await checkPin(req, body.managerPin, 'manager')
     return done(store.cashMove(body.kind, body.amountCentavos, body.reason, now))
   }
   if (route === '/api/till/close') {
-    checkPin(req, body.managerPin, 'manager')
+    await checkPin(req, body.managerPin, 'manager')
     const closed = store.endShift(body.countedCentavos, body.note, now)
     backup()
     return done(closed)
