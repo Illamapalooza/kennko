@@ -120,7 +120,7 @@ const LINE_TEXT_MAX = 120
  * Text as the till stores and sends it: no control characters (so no NUL), no broken UTF-16 pairs, trimmed,
  * at most `max` UTF-16 units (the unit the API's limits count in) without cutting a character in half.
  */
-const clean = (text: unknown, max: number) => {
+export const clean = (text: unknown, max: number) => {
   const out = String(text ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(LONE_SURROGATE, '\ufffd').trim().slice(0, max)
   return /[\ud800-\udbff]$/.test(out) ? out.slice(0, -1) : out
 }

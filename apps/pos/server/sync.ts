@@ -1,5 +1,6 @@
 import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, type PullState, type SyncEvent } from '@kennko/core'
 import { REVOKED_CODES, applyDeviceInfo, cleanStaff, loadDevice, type DeviceFile } from './device.ts'
+import { ackImportChunk, assignLegacyIds, importRemaining, nextImportChunk } from './legacy-import.ts'
 import { isMenuSnapshot, loadSnapshot, saveSnapshot } from './menu.ts'
 import type { PinDirectory } from './pins.ts'
 import type { Sessions } from './sessions.ts'
@@ -16,6 +17,8 @@ export type SyncStatus = {
   clockSkewMs: number | null
   problem: string | null
   menuVersion: number | null
+  /** Rows from before this version still to be imported (Ruling 9). */
+  importing: number
 }
 
 export type SyncChange = { menu: boolean; staff: boolean; status: boolean }
@@ -50,6 +53,9 @@ type Failure = { problem: string; offline: boolean }
 
 const ACKED = new Set(['applied', 'flagged', 'held', 'duplicate'])
 
+const isImportResponse = (b: any): boolean =>
+  Boolean(b) && ['inserted', 'existing', 'rejected'].every((k) => Number.isInteger(b[k]) && b[k] >= 0)
+
 const isPullState = (b: any): b is PullState =>
   Boolean(b)
   && Array.isArray(b.soldOut) && b.soldOut.every((id: unknown) => typeof id === 'string')
@@ -58,7 +64,8 @@ const isPullState = (b: any): b is PullState =>
   && (b.menu === null || (Boolean(b.menu) && Number.isInteger(b.menu.version) && (b.menu.snapshot === null || isMenuSnapshot(b.menu.snapshot))))
 
 /**
- * The till's sync with the Kennko API, in the background. Each run pushes the outbox (50 events a request, oldest
+ * The till's sync with the Kennko API, in the background. Each run first imports any history from before this version
+ * (once, in chunks of 100), then pushes the outbox (50 events a request, oldest
  * first; every answered id is deleted, whatever the answer), then pulls the menu, sold-out marks, staff and shop
  * details. Nothing here is awaited by a till request: a sale never waits on the network.
  */
@@ -102,7 +109,7 @@ export function createSync(opts: {
     return {
       paired, revoked, offline: paired && !revoked && failures > 0 && offline,
       pendingSales: pending.sales, pendingEvents: pending.events,
-      lastSyncAt, clockSkewMs, problem, menuVersion,
+      lastSyncAt, clockSkewMs, problem, menuVersion, importing: importRemaining(store),
     }
   }
 
@@ -156,8 +163,27 @@ export function createSync(opts: {
       return changed
     }
 
-    // Push. `held` in the answer is for information only: held rows can stay held for good, so they are never waited on.
+    // Import the history from before this version first (Ruling 9). A 200 acks the chunk, rows counted `rejected`
+    // included: the API keeps those as held receipts. A failure stops the run before any push, like a failed push.
+    assignLegacyIds(store, device.deviceId)
     for (;;) {
+      const next = nextImportChunk(store)
+      if (!next) break
+      const { shifts, orders, cashMoves } = next.chunk
+      if (shifts.length + orders.length + cashMoves.length === 0) { ackImportChunk(store, next.rows, next.upTo); continue }
+      const a = await call(device, '/v1/sync/import', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(next.chunk),
+      })
+      if (a.kind === 'stale') return changed
+      if (a.kind === 'revoked') return revoke()
+      if (a.kind === 'failed') { failure = a; break }
+      if (!isImportResponse(a.body)) { failure = { problem: GARBLED, offline: true }; break }
+      ackImportChunk(store, next.rows, next.upTo)
+    }
+    if (!failure && store.kvGet('import_done') !== '1' && importRemaining(store) === 0) store.kvSet('import_done', '1')
+
+    // Push. `held` in the answer is for information only: held rows can stay held for good, so they are never waited on.
+    for (; !failure;) {
       const events: SyncEvent[] = store.outboxEvents()
       if (events.length === 0) break
       const a = await call(device, '/v1/sync/push', {
