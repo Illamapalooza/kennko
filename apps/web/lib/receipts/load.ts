@@ -1,6 +1,7 @@
 import 'server-only'
 import type { PublicReceiptView } from '@kennko/core'
 import { publicFetch } from '@/lib/api/client'
+import { isNoSuchOrder } from '@/lib/api/not-found'
 import type { ReceiptOrder, ShopSettings } from './receipt'
 
 export const FALLBACK_SETTINGS: ShopSettings = {
@@ -13,7 +14,7 @@ export const FALLBACK_SETTINGS: ShopSettings = {
   receiptFooter: 'Ask for your official receipt at the counter.',
 }
 
-/** `GET /v1/orders/by-code/:code/receipt`. 404 is null; any other failure is logged and thrown. */
+/** `GET /v1/orders/by-code/:code/receipt`. A 404 with code NOT_FOUND is null; any other failure is logged and thrown. */
 async function fetchReceipt(code: string): Promise<PublicReceiptView | null> {
   let res: Response
   try {
@@ -22,7 +23,7 @@ async function fetchReceipt(code: string): Promise<PublicReceiptView | null> {
     console.error('[receipt] could not load order', code, cause)
     throw new Error(`Could not load the receipt for ${code}`)
   }
-  if (res.status === 404) return null
+  if (await isNoSuchOrder(res)) return null
   if (!res.ok) {
     console.error('[receipt] could not load order', code, res.status)
     throw new Error(`Could not load the receipt for ${code}`)

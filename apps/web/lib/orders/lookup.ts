@@ -1,6 +1,7 @@
 import 'server-only'
 import { orderStage, type OrderStage, type PublicOrderView } from '@kennko/core'
 import { publicFetch } from '@/lib/api/client'
+import { isNoSuchOrder } from '@/lib/api/not-found'
 import { iceSummary } from '@/lib/cart/ice'
 
 export type PublicOrder = {
@@ -21,11 +22,11 @@ export type PublicOrder = {
  * The order page, from the API's public projection (`GET /v1/orders/by-code/:code`), which never
  * carries the proof path, staff notes, the customer's phone or email, or the verifier: the order
  * code is guessable enough that this must be safe to hand to anyone holding one.
- * 404 is null; any other failure throws, so the page shows its error boundary rather than a 404.
+ * A 404 with code NOT_FOUND is null; any other failure (a bare 404 included) throws, so the page shows its error boundary rather than a 404.
  */
 export async function lookupOrder(code: string): Promise<PublicOrder | null> {
   const res = await publicFetch(`/v1/orders/by-code/${encodeURIComponent(code)}`)
-  if (res.status === 404) return null
+  if (await isNoSuchOrder(res)) return null
   if (!res.ok) throw new Error(`Could not load order ${code} (${res.status})`)
   const v = (await res.json()) as PublicOrderView
 

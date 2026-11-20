@@ -106,4 +106,12 @@ describe('exports', () => {
   it('only loadReceipt reads the receipt: the old loadReceiptOrder and loadShopSettings are gone', () => {
     expect(Object.keys(load).sort()).toEqual(['FALLBACK_SETTINGS', 'loadReceipt'])
   })
+
+  it('a 404 without the NOT_FOUND code (an old API, a wrong host) throws instead of reading as no such order', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    publicFetch.mockResolvedValue(new Response('Not Found', { status: 404 }))
+    await expect(loadReceipt('KNK-7F3Q')).rejects.toThrow()
+    publicFetch.mockResolvedValue(json(404, { code: 'ROUTE_MISSING' }))
+    await expect(loadReceipt('KNK-7F3Q')).rejects.toThrow()
+  })
 })

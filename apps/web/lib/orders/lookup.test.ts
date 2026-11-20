@@ -85,4 +85,12 @@ describe('lookupOrder', () => {
     publicFetch.mockRejectedValue(new Error('network'))
     await expect(lookupOrder('KNK-ABC123')).rejects.toThrow()
   })
+
+  it('a 404 without the NOT_FOUND code (an old API, a wrong host) throws instead of reading as no such order', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    publicFetch.mockResolvedValue(new Response('Not Found', { status: 404 }))
+    await expect(lookupOrder('KNK-ABC123')).rejects.toThrow()
+    publicFetch.mockResolvedValue(json(404, { code: 'ROUTE_MISSING' }))
+    await expect(lookupOrder('KNK-ABC123')).rejects.toThrow()
+  })
 })
