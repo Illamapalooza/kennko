@@ -9,6 +9,7 @@ import { ordersRoutes } from './routes/orders.js'
 import { paymentRoutes } from './routes/payments.js'
 import { pushRoutes } from './routes/push.js'
 import { staffRoutes } from './routes/staff.js'
+import { syncRoutes } from './routes/sync.js'
 import type { PushSender } from './push/send.js'
 import type { ProofStore } from './storage.js'
 
@@ -55,6 +56,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route('/v1/payments', paymentRoutes(deps))
   app.route('/v1/push', pushRoutes(deps))
   app.route('/v1/staff', staffRoutes(deps))
+  app.route('/v1/sync', syncRoutes(deps))
 
   return app
 }
