@@ -230,9 +230,9 @@ test('anon and authenticated keep only select on orders, order_lines and order_l
     select r.role, t.tbl, p.priv, has_table_privilege(r.role, t.tbl, p.priv) as has
     from (values ('anon'), ('authenticated')) r(role),
          (values ('orders'), ('order_lines'), ('order_line_options')) t(tbl),
-         (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) p(priv)`
+         (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES'), ('TRIGGER')) p(priv)`
   for (const x of privs) expect(`${x.role}:${x.tbl}:${x.priv}:${x.has}`).toBe(`${x.role}:${x.tbl}:${x.priv}:${x.priv === 'SELECT'}`)
-  expect(privs).toHaveLength(30)
+  expect(privs).toHaveLength(42)
 })
 
 test('the old gcash reference index is gone', async () => {

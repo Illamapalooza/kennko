@@ -256,7 +256,8 @@ alter table order_events    enable row level security;
 revoke all on payments, order_events, ticket_counters from anon, authenticated;
 grant select on payments, order_events to authenticated;
 -- Orders and lines are written only by the API now. Keep select: the RLS read policies need it.
-revoke insert, update, delete, truncate on orders, order_lines, order_line_options from anon, authenticated;
+revoke all on orders, order_lines, order_line_options from anon, authenticated;
+grant select on orders, order_lines, order_line_options to anon, authenticated;
 
 -- Customers get no policy on payments or events: proof paths and references stay staff-only.
 create policy "staff read payments" on payments for select using (public.is_active_staff());
