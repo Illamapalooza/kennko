@@ -62,7 +62,9 @@ export function PushToggle({ subscribe, labelOff, labelOn, className, hintClassN
       const registration = await getRegistration()
       if (!registration) { setState('hidden'); return }
       const permission = await Notification.requestPermission()
-      if (permission !== 'granted') { setState('blocked'); return }
+      // Only an explicit "Block" is blocked; a dismissed prompt ('default') can be asked again.
+      if (permission === 'denied') { setState('blocked'); return }
+      if (permission !== 'granted') { setState('off'); return }
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(PUBLIC_KEY),
@@ -104,8 +106,8 @@ export function PushToggle({ subscribe, labelOff, labelOn, className, hintClassN
   }
 
   if (state === 'hidden') return null
-  if (state === 'ios') return <p className={hintClassName}>{IOS_COPY}</p>
-  if (state === 'blocked') return <p className={hintClassName}>{BLOCKED_COPY}</p>
+  if (state === 'ios') return <p className={hintClassName} role="status">{IOS_COPY}</p>
+  if (state === 'blocked') return <p className={hintClassName} role="status">{BLOCKED_COPY}</p>
 
   const on = state === 'on'
   return (

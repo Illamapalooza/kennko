@@ -43,7 +43,7 @@ function livePayment(payments: PaymentRow[]): PaymentRow | null {
 /** Service-role read of everything a receipt shows. Callers decide what is safe to display. */
 export async function loadReceiptOrder(code: string): Promise<ReceiptOrder | null> {
   const db = getAdminClient()
-  const { data } = await db
+  const { data, error } = await db
     .from('orders')
     .select(
       `order_code, ticket_series, ticket_number, customer_name, fulfilment, delivery_address,
@@ -54,8 +54,17 @@ export async function loadReceiptOrder(code: string): Promise<ReceiptOrder | nul
                      order_line_options ( option_name, price_centavos ) )`,
     )
     .eq('order_code', code.toUpperCase())
+    // Stable order: lines as they were rung up, options as they were added.
+    .order('created_at', { ascending: true, referencedTable: 'order_lines' })
+    .order('id', { ascending: true, referencedTable: 'order_lines' })
+    .order('id', { ascending: true, referencedTable: 'order_lines.order_line_options' })
     .maybeSingle()
 
+  // A failed read is not "no such order": the page shows its error boundary instead of a 404.
+  if (error) {
+    console.error('[receipt] could not load order', code, error)
+    throw new Error(`Could not load the receipt for ${code}`)
+  }
   if (!data) return null
   const r = data as unknown as Row
   const payment = livePayment(r.payments ?? [])

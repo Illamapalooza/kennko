@@ -9,6 +9,16 @@ type Result = { ok: boolean; message?: string }
 const PATH = '/v1/push/subscriptions'
 const TURN_OFF_FAILED = "Couldn't turn off notifications. Try again."
 const FAILED = "Couldn't turn on notifications. Try again."
+const UNAVAILABLE = "Notifications aren't available right now."
+
+/** The API's own words for a refusal the customer can act on (push off, order full); else the fallback. */
+async function refusal(res: Response, fallback: string): Promise<string> {
+  if (res.status !== 503 && res.status !== 429) return fallback
+  const body = (await res.json().catch(() => null)) as { errors?: unknown } | null
+  const first = Array.isArray(body?.errors) ? body.errors[0] : undefined
+  if (typeof first === 'string' && first) return first
+  return res.status === 503 ? UNAVAILABLE : fallback
+}
 
 /** Only what the API needs: the endpoint and its two keys. */
 function wire(subscription: PushSubscriptionJSON): { endpoint: string; keys: { p256dh: string; auth: string } } | null {
@@ -40,7 +50,7 @@ export async function subscribeToOrder(orderCode: string, subscription: PushSubs
     })
     if (res.ok) return { ok: true }
     if (res.status === 404) return { ok: false, message: "We couldn't find that order." }
-    return { ok: false, message: FAILED }
+    return { ok: false, message: await refusal(res, FAILED) }
   } catch (cause) {
     console.error('[push] subscribe to order failed', cause)
     return { ok: false, message: FAILED }
@@ -57,7 +67,7 @@ export async function subscribeStaffAlerts(subscription: PushSubscriptionJSON): 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ subscription: body }),
     })
-    return res.ok ? { ok: true } : { ok: false, message: FAILED }
+    return res.ok ? { ok: true } : { ok: false, message: await refusal(res, FAILED) }
   } catch (cause) {
     console.error('[push] staff subscribe failed', cause)
     return { ok: false, message: FAILED }

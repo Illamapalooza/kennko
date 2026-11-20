@@ -62,8 +62,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ code: 
                       <span>{formatPesos(line.lineTotalCentavos)}</span>
                     </div>
                     <div className="receipt-sub">@ {formatPesos(line.unitPriceCentavos)}</div>
-                    {line.options.map((o) => (
-                      <div className="receipt-sub receipt-row" key={o.name}>
+                    {line.options.map((o, j) => (
+                      <div className="receipt-sub receipt-row" key={`${j}-${o.name}`}>
                         <span>+ {o.name}</span>
                         <span>{o.priceCentavos > 0 ? formatPesos(o.priceCentavos) : ''}</span>
                       </div>

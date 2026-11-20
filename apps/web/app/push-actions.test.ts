@@ -55,6 +55,21 @@ describe('subscribeToOrder', () => {
     expect(r.ok).toBe(false)
     expect(fetchMock).not.toHaveBeenCalled()
   })
+  it('shows the API reason when push is unavailable or the order is full', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      code: 'PUSH_UNAVAILABLE', message: "Notifications aren't available right now.",
+      errors: ["Notifications aren't available right now."],
+    }), { status: 503 }))
+    expect(await subscribeToOrder('KNK-7F3Q', sub)).toEqual({ ok: false, message: "Notifications aren't available right now." })
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      code: 'TOO_MANY', errors: ['This order already has the most devices it can notify.'],
+    }), { status: 429 }))
+    expect(await subscribeToOrder('KNK-7F3Q', sub)).toEqual({ ok: false, message: 'This order already has the most devices it can notify.' })
+  })
+  it('a 503 without a readable body still says notifications are unavailable', async () => {
+    fetchMock.mockResolvedValue(new Response('gateway', { status: 503 }))
+    expect(await subscribeToOrder('KNK-7F3Q', sub)).toEqual({ ok: false, message: "Notifications aren't available right now." })
+  })
   it('fails softly when the API is down', async () => {
     fetchMock.mockRejectedValue(new Error('down'))
     expect((await subscribeToOrder('KNK-7F3Q', sub)).ok).toBe(false)
@@ -73,6 +88,12 @@ describe('subscribeStaffAlerts', () => {
   it('reports a refusal', async () => {
     staffFetch.mockResolvedValue(new Response('{}', { status: 403 }))
     expect((await subscribeStaffAlerts(sub)).ok).toBe(false)
+  })
+  it('shows the API reason when push is unavailable', async () => {
+    staffFetch.mockResolvedValue(new Response(JSON.stringify({
+      code: 'PUSH_UNAVAILABLE', errors: ["Notifications aren't available right now."],
+    }), { status: 503 }))
+    expect(await subscribeStaffAlerts(sub)).toEqual({ ok: false, message: "Notifications aren't available right now." })
   })
 })
 

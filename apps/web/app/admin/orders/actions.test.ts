@@ -26,7 +26,7 @@ vi.mock('@/lib/receipts/load', () => ({
     }
   },
   loadShopSettings: async () => ({
-    displayName: 'Kennko Coffee', registeredName: null, tin: null, address: 'Butuan',
+    displayName: 'Kennko Coffee', registeredName: null, tin: null, address: '7 Settings Rd, Butuan',
     phone: null, facebookUrl: null, receiptFooter: 'Ask for your official receipt.',
   }),
 }))
@@ -178,7 +178,7 @@ describe('confirmation email receipt', () => {
     await confirmPayment('p1')
     const mail = sendEmail.mock.calls[0][0] as Mail
     expect(mail.html).toContain('Pickup on Nov 20, 2026')
-    expect(mail.html).toContain('4:00 PM at CT. Montalban St., Villa Kananga')
+    expect(mail.html).toContain('4:00 PM at 7 Settings Rd, Butuan')
   })
   it('html has an escaped delivery line', async () => {
     staffFetch.mockResolvedValue(reply(200, { ok: true }))

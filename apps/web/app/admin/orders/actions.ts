@@ -100,10 +100,10 @@ async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: 
 
 type EmailContent = { subject: string; text: string; html?: string }
 
-function whenWhere(d: OrderEmailData): string {
+function whenWhere(d: OrderEmailData, shopAddress: string): string {
   return d.fulfilment === 'delivery'
     ? `Delivery on ${d.fulfilAt} to ${d.deliveryAddress}`
-    : `Pickup on ${d.fulfilAt} at CT. Montalban St., Villa Kananga`
+    : `Pickup on ${d.fulfilAt} at ${shopAddress}`
 }
 
 /**
@@ -115,7 +115,8 @@ async function confirmationWithReceipt(d: OrderEmailData): Promise<EmailContent>
   try {
     const order = await loadReceiptOrder(d.orderCode)
     if (!order) return plain
-    const receipt = buildReceipt(order, await loadShopSettings(), 'email')
+    const settings = await loadShopSettings()
+    const receipt = buildReceipt(order, settings, 'email')
     if (!receipt) return plain
     const base = (process.env.NEXT_PUBLIC_SITE_URL || 'https://kennko.vercel.app').replace(/\/+$/, '')
     const link = `${base}/order/${encodeURIComponent(d.orderCode)}/receipt`
@@ -125,7 +126,7 @@ async function confirmationWithReceipt(d: OrderEmailData): Promise<EmailContent>
       html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#111111;">
 <p>Hi ${escapeHtml(d.customerName)},</p>
 <p>We checked your GCash payment and your order ${escapeHtml(d.orderCode)} is confirmed. Thanks for ordering from Kennko Coffee.</p>
-<p>${escapeHtml(whenWhere(d))}</p>
+<p>${escapeHtml(whenWhere(d, settings.address))}</p>
 ${receiptHtml(receipt)}
 <p>View or print your receipt: <a href="${escapeHtml(link)}" style="color:#0055FF;">${escapeHtml(link)}</a></p>
 </div>`,

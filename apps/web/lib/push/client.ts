@@ -33,12 +33,17 @@ export function browserPushEnv(): PushEnv {
   }
 }
 
-/** The worker's registration, or null when there is none (development, or not yet installed). Never hangs. */
+/**
+ * The worker's registration, or null when there is none within the timeout (development, or no worker).
+ * On a first visit the worker may still be registering, so this also waits for `ready`. Never hangs.
+ */
 export async function getRegistration(timeoutMs = 1500): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null
+  const sw = navigator.serviceWorker
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs))
   try {
-    return (await Promise.race([navigator.serviceWorker.getRegistration(), timeout])) ?? null
+    const found = sw.getRegistration().then((r) => r ?? sw.ready)
+    return (await Promise.race([found, timeout])) ?? null
   } catch {
     return null
   }

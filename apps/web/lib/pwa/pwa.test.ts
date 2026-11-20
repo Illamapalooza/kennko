@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import manifest from '../../app/manifest'
 import { adminManifest } from './manifests'
 import { serviceWorkerSource } from './sw-source'
@@ -111,6 +111,93 @@ describe('push handlers', () => {
     expect(source).toContain("addEventListener('notificationclick'")
     expect(source).toContain('/icons/icon-192.png')
     expect(source).toContain('self.safeNotificationUrl(')
+  })
+})
+
+/** Runs the worker source against a fake `self` and returns its event handlers. */
+function loadWorker(opts: { tabs?: FakeTab[]; openWindow?: ReturnType<typeof vi.fn> } = {}) {
+  const handlers: Record<string, (event: unknown) => void> = {}
+  const showNotification = vi.fn(async () => undefined)
+  const openWindow = opts.openWindow ?? vi.fn(async () => null)
+  const self = {
+    location: { origin: 'https://kennko.test' },
+    addEventListener: (name: string, fn: (event: unknown) => void) => { handlers[name] = fn },
+    registration: { showNotification },
+    clients: { matchAll: vi.fn(async () => opts.tabs ?? []), openWindow, claim: vi.fn() },
+    safeNotificationUrl,
+    cacheStrategyFor,
+    mayStorePage,
+  }
+  new Function('self', 'importScripts', 'caches', serviceWorkerSource('t1'))(self, () => {}, {})
+  return { handlers, showNotification, openWindow }
+}
+
+type FakeTab = { url: string; focus: ReturnType<typeof vi.fn>; navigate?: ReturnType<typeof vi.fn> }
+const tab = (url: string, navigate: 'ok' | 'reject' | 'none' = 'ok'): FakeTab => {
+  const t: FakeTab = { url, focus: vi.fn(async () => t) }
+  if (navigate === 'ok') t.navigate = vi.fn(async () => t)
+  if (navigate === 'reject') t.navigate = vi.fn(async () => { throw new TypeError('not controlled') })
+  return t
+}
+
+async function click(w: ReturnType<typeof loadWorker>, url: string) {
+  let done: Promise<unknown> = Promise.resolve()
+  w.handlers.notificationclick({ notification: { close: vi.fn(), data: { url } }, waitUntil: (p: Promise<unknown>) => { done = p } })
+  await done
+}
+
+async function push(w: ReturnType<typeof loadWorker>, data: unknown) {
+  let done: Promise<unknown> = Promise.resolve()
+  w.handlers.push({ data: { json: () => data }, waitUntil: (p: Promise<unknown>) => { done = p } })
+  await done
+  return w.showNotification.mock.calls[0] as unknown as [string, { tag?: string; renotify?: boolean }]
+}
+
+describe('push event', () => {
+  it('re-alerts for a tagged notification', async () => {
+    const [title, options] = await push(loadWorker(), { title: 'W3 is ready', body: 'b', tag: 'order-KNK-1', url: '/order/KNK-1' })
+    expect(title).toBe('W3 is ready')
+    expect(options).toMatchObject({ tag: 'order-KNK-1', renotify: true })
+  })
+  it('an untagged notification sets no renotify (browsers reject renotify without a tag)', async () => {
+    const [, options] = await push(loadWorker(), { title: 't', body: 'b' })
+    expect(options.tag).toBeUndefined()
+    expect(options.renotify).toBeUndefined()
+  })
+})
+
+describe('notification click', () => {
+  const target = 'https://kennko.test/order/KNK-1'
+  it('navigates the matching tab to a fresh copy, then focuses it', async () => {
+    const same = tab(target)
+    const w = loadWorker({ tabs: [same] })
+    await click(w, '/order/KNK-1')
+    expect(same.navigate).toHaveBeenCalledWith(target)
+    expect(same.focus).toHaveBeenCalled()
+    expect(w.openWindow).not.toHaveBeenCalled()
+  })
+  it('opens a window when the matching tab cannot be navigated', async () => {
+    const same = tab(target, 'reject')
+    const w = loadWorker({ tabs: [same] })
+    await click(w, '/order/KNK-1')
+    expect(w.openWindow).toHaveBeenCalledWith(target)
+  })
+  it('navigates another same-origin tab, or opens a window when that rejects', async () => {
+    const other = tab('https://kennko.test/menu')
+    const w = loadWorker({ tabs: [other] })
+    await click(w, '/order/KNK-1')
+    expect(other.navigate).toHaveBeenCalledWith(target)
+    expect(other.focus).toHaveBeenCalled()
+
+    const stuck = tab('https://kennko.test/menu', 'reject')
+    const w2 = loadWorker({ tabs: [stuck] })
+    await click(w2, '/order/KNK-1')
+    expect(w2.openWindow).toHaveBeenCalledWith(target)
+  })
+  it('opens a window when no tab is open', async () => {
+    const w = loadWorker()
+    await click(w, '/order/KNK-1')
+    expect(w.openWindow).toHaveBeenCalledWith(target)
   })
 })
 

@@ -65,12 +65,15 @@ self.addEventListener('push', (event) => {
   let data = {}
   try { data = event.data ? event.data.json() : {} } catch (err) { data = {} }
   const title = typeof data.title === 'string' && data.title ? data.title : 'Kennko Coffee'
-  event.waitUntil(self.registration.showNotification(title, {
+  const tag = typeof data.tag === 'string' && data.tag ? data.tag : undefined
+  const options = {
     body: typeof data.body === 'string' ? data.body : '',
-    tag: typeof data.tag === 'string' ? data.tag : undefined,
     icon: '/icons/icon-192.png',
     data: { url: self.safeNotificationUrl(data.url, self.location.origin) },
-  }))
+  }
+  // A tag replaces the older notification for the same order; renotify makes the replacement alert too.
+  if (tag) { options.tag = tag; options.renotify = true }
+  event.waitUntil(self.registration.showNotification(title, options))
 })
 
 self.addEventListener('notificationclick', (event) => {
@@ -79,11 +82,14 @@ self.addEventListener('notificationclick', (event) => {
   const target = new URL(path, self.location.origin).href
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((tabs) => {
+      // navigate() reloads the page so it is never a stale copy; it rejects for a tab this worker does not control.
+      const open = () => self.clients.openWindow(target)
       const same = tabs.find((t) => t.url === target)
+      if (same && 'navigate' in same) return same.navigate(target).then((c) => (c || same).focus()).catch(open)
       if (same) return same.focus()
       const any = tabs.find((t) => new URL(t.url).origin === self.location.origin)
-      if (any && 'navigate' in any) return any.navigate(target).then((t) => (t || any).focus())
-      return self.clients.openWindow(target)
+      if (any && 'navigate' in any) return any.navigate(target).then((c) => (c || any).focus()).catch(open)
+      return open()
     }),
   )
 })
