@@ -203,12 +203,18 @@ export async function cancelOrder(orderId: string, reason: string): Promise<Resu
 /** A 300-second signed link to the payment's receipt image, from the API. The bucket is private; staff never get a raw path. */
 export async function proofUrl(paymentId: string): Promise<string | null> {
   await requireStaff()
-  try {
-    const res = await staffFetch(`/v1/payments/${encodeURIComponent(paymentId)}/proof`)
-    if (!res.ok) return null
-    const { url } = (await res.json()) as { url?: unknown }
-    return typeof url === 'string' ? url : null
-  } catch {
+  // Logged by payment id and reason only: never the signed link or the session token.
+  const fail = (why: string) => {
+    console.error(`[proof] could not get a link for payment ${paymentId} (${why})`)
     return null
   }
+  let res: Response
+  try {
+    res = await staffFetch(`/v1/payments/${encodeURIComponent(paymentId)}/proof`)
+  } catch {
+    return fail('network')
+  }
+  if (!res.ok) return fail(String(res.status))
+  const body = (await res.json().catch(() => null)) as { url?: unknown } | null
+  return typeof body?.url === 'string' ? body.url : fail('no url')
 }

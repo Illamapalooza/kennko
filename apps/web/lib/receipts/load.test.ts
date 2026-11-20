@@ -6,7 +6,8 @@ vi.mock('server-only', () => ({}))
 const publicFetch = vi.fn()
 vi.mock('@/lib/api/client', () => ({ publicFetch: (...a: unknown[]) => publicFetch(...a) }))
 
-const { loadReceipt, loadReceiptOrder, loadShopSettings, FALLBACK_SETTINGS } = await import('./load')
+const load = await import('./load')
+const { loadReceipt, FALLBACK_SETTINGS } = load
 const { buildReceipt } = await import('./receipt')
 
 const shop = {
@@ -101,24 +102,8 @@ describe('loadReceipt', () => {
   })
 })
 
-describe('loadReceiptOrder and loadShopSettings', () => {
-  it('read the same response', async () => {
-    expect(await loadReceiptOrder('KNK-7F3Q')).toEqual(expectedOrder)
-    expect(await loadShopSettings('KNK-7F3Q')).toEqual(shop)
-  })
-
-  it('loadReceiptOrder: 404 is null', async () => {
-    publicFetch.mockResolvedValue(json(404, { code: 'NOT_FOUND' }))
-    expect(await loadReceiptOrder('KNK-NOPE')).toBeNull()
-  })
-
-  it('loadShopSettings falls back on any failure or a missing shop', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    publicFetch.mockResolvedValue(json(200, { ...view, shop: null }))
-    expect(await loadShopSettings('KNK-7F3Q')).toEqual(FALLBACK_SETTINGS)
-    publicFetch.mockResolvedValue(json(500, {}))
-    expect(await loadShopSettings('KNK-7F3Q')).toEqual(FALLBACK_SETTINGS)
-    publicFetch.mockResolvedValue(json(404, {}))
-    expect(await loadShopSettings('KNK-7F3Q')).toEqual(FALLBACK_SETTINGS)
+describe('exports', () => {
+  it('only loadReceipt reads the receipt: the old loadReceiptOrder and loadShopSettings are gone', () => {
+    expect(Object.keys(load).sort()).toEqual(['FALLBACK_SETTINGS', 'loadReceipt'])
   })
 })

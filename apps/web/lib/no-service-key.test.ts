@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest'
  */
 const WEB = path.resolve(__dirname, '..')
 const ROOTS = ['app', 'components', 'lib']
-const FILES = ['proxy.ts']
-const FORBIDDEN = ['SUPABASE_SERVICE_ROLE_KEY', 'supabase/admin', 'getAdminClient']
+const FILES = ['proxy.ts', 'next.config.ts']
+const FORBIDDEN = ['SUPABASE_SERVICE_ROLE_KEY', 'supabase/admin', 'getAdminClient', 'auth.admin']
 
 function walk(dir: string, out: string[]): string[] {
   for (const name of readdirSync(dir)) {
@@ -30,9 +30,10 @@ describe('the website holds no service key', () => {
     expect(files.some((f) => f.endsWith(path.join('app', 'admin', 'orders', 'actions.ts')))).toBe(true)
     expect(files.some((f) => f.endsWith(path.join('lib', 'api', 'client.ts')))).toBe(true)
     expect(files.some((f) => f.endsWith('proxy.ts'))).toBe(true)
+    expect(files.some((f) => f.endsWith('next.config.ts'))).toBe(true)
   })
 
-  it('no file in app/, components/, lib/ or proxy.ts names the key or a service-role client', () => {
+  it('no file in app/, components/, lib/, proxy.ts or next.config.ts names the key or a service-role client', () => {
     const offenders = files.flatMap((f) => {
       const src = readFileSync(f, 'utf8')
       return FORBIDDEN.filter((needle) => src.includes(needle)).map((needle) => `${path.relative(WEB, f)}: ${needle}`)

@@ -70,19 +70,3 @@ export async function loadReceipt(code: string): Promise<{ order: ReceiptOrder; 
   if (!view) return null
   return { order: toReceiptOrder(view.order), settings: view.shop ?? FALLBACK_SETTINGS }
 }
-
-export async function loadReceiptOrder(code: string): Promise<ReceiptOrder | null> {
-  return (await loadReceipt(code))?.order ?? null
-}
-
-/** The shop's receipt settings (from the same receipt read), or FALLBACK_SETTINGS on any failure. */
-export async function loadShopSettings(code: string): Promise<ShopSettings> {
-  try {
-    const receipt = await loadReceipt(code)
-    if (!receipt) throw new Error('no such order')
-    return receipt.settings
-  } catch (err) {
-    console.error('[receipt] could not read the shop settings, using fallback', err)
-    return FALLBACK_SETTINGS
-  }
-}

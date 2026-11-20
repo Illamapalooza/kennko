@@ -357,10 +357,23 @@ describe('proofUrl', () => {
     expect(staffFetch.mock.calls[0]![0]).toBe('/v1/payments/p1/proof')
   })
 
-  it('is null on a 404 or a failure', async () => {
+  it('is null on a 404, a failure or a body without a url, and each is logged without the link or token', async () => {
+    const error = vi.mocked(console.error)
     answer(404, { code: 'NOT_FOUND' })
     expect(await proofUrl('p1')).toBeNull()
+    expect(error).toHaveBeenLastCalledWith('[proof] could not get a link for payment p1 (404)')
     staffFetch.mockRejectedValue(new Error('network'))
     expect(await proofUrl('p1')).toBeNull()
+    expect(error).toHaveBeenLastCalledWith('[proof] could not get a link for payment p1 (network)')
+    answer(200, { nope: true })
+    expect(await proofUrl('p1')).toBeNull()
+    expect(error).toHaveBeenLastCalledWith('[proof] could not get a link for payment p1 (no url)')
+    expect(error).toHaveBeenCalledTimes(3)
+  })
+
+  it('a good link logs nothing', async () => {
+    answer(200, { url: 'https://signed.test/x' })
+    await proofUrl('p1')
+    expect(console.error).not.toHaveBeenCalled()
   })
 })
