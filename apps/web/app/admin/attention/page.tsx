@@ -5,6 +5,7 @@ import { staffFetch } from '@/lib/api/client'
 import { AttentionRow, FlaggedOrderRow, RetryTillButton } from '@/components/admin/AttentionRow'
 import { CloseShiftForm } from '@/components/admin/CloseShiftForm'
 import { manilaStamp } from '../reports/dates'
+import { canCloseShift } from './text'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,7 +77,7 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
                       {s.openedByName ? ` by ${s.openedByName}` : ''}, float {formatPesos(s.openingFloatCentavos)}
                       {s.blocking > 0 ? `. ${s.blocking} ${s.blocking === 1 ? 'record is' : 'records are'} waiting on it.` : ''}
                     </p>
-                    <CloseShiftForm shiftId={s.id} tillName={s.deviceName} />
+                    {canCloseShift(s) ? <CloseShiftForm shiftId={s.id} tillName={s.deviceName} /> : null}
                   </article>
                 ))}
               </div>

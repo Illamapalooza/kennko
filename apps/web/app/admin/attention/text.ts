@@ -37,3 +37,11 @@ export function reasonText(result: string, reason: string | null): string {
 export function flagText(flag: string): string {
   return ORDER_FLAGS[flag] ?? flag
 }
+
+/**
+ * "Close this shift" is offered only where it is the fix: a shift that is blocking sync, or one on a
+ * till that has been disconnected. Any other open shift is the till's to close, so it is just listed.
+ */
+export function canCloseShift(s: { blocking: number; deviceRevoked: boolean }): boolean {
+  return s.blocking > 0 || s.deviceRevoked
+}

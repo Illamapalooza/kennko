@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { flagText, reasonText } from './text'
+import { canCloseShift, flagText, reasonText } from './text'
 
 describe('reasonText', () => {
   it('maps the held reasons', () => {
@@ -36,4 +36,12 @@ describe('flagText', () => {
     }
   })
   it('passes an unknown flag through', () => expect(flagText('odd')).toBe('odd'))
+})
+
+describe('canCloseShift', () => {
+  it('offers the close for a shift blocking sync or on a disconnected till', () => {
+    expect(canCloseShift({ blocking: 2, deviceRevoked: false })).toBe(true)
+    expect(canCloseShift({ blocking: 0, deviceRevoked: true })).toBe(true)
+  })
+  it('only lists any other open shift', () => expect(canCloseShift({ blocking: 0, deviceRevoked: false })).toBe(false))
 })
