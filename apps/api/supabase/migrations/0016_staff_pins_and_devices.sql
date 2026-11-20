@@ -72,7 +72,10 @@ drop policy "owner inserts staff" on staff;
 drop policy "owner updates staff" on staff;
 
 -- 8. The website reads staff without pin_hash and cannot write it.
+-- Supabase grants anon and authenticated everything on public tables by default; take back what neither should hold.
+revoke all on staff from anon;
 revoke select, insert, update on staff from authenticated;
+revoke delete, truncate, references, trigger on staff from authenticated;
 grant select (id, user_id, email, full_name, role, is_active, created_at, pin_updated_at) on staff to authenticated;
 
 grant select, insert, update on staff to kennko_api;

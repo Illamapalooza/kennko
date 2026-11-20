@@ -75,6 +75,10 @@ signs every tablet out once; each person then types their own PIN, and their fir
 - **The list refreshes** when the till starts, every 5 minutes while it has internet, and right after connecting.
   Someone switched off in admin, or whose PIN was taken away, drops off the list at the next refresh and their
   tablet goes back to the PIN screen.
+- **A new PIN works on the next try.** When a typed PIN matches no one, the till asks the website for the list
+  straight away (at most once every 30 seconds) and checks the PIN again; that counts as one wrong try, not two. So a
+  PIN issued a moment ago in admin usually works at the first try; if the till asked in the last 30 seconds, it
+  works on a try after that, or at the latest at the 5-minute refresh. With the internet down the till checks only the list it already has.
 - **Disconnected in admin.** If the owner disconnects the till in admin › Tills, the till keeps selling with the PINs
   it already has and the Menu screen says "Disconnected in admin". Connect it again with a new code.
 - **Forget the connection** with `POST /api/device/forget` (a manager PIN). The PIN list stays, so the same PINs keep
@@ -104,6 +108,10 @@ Copy `config.example.json` to `config.json` and edit it. **Change both PINs befo
 - `data/cert/` is the till's own certificate and the authority that signs it (see Install it as an app). Not in git.
 - `data/menu.json` is the menu last pulled from the website. Without it the built-in menu (`packages/core/src/seed-menu.ts`, the same list the website seeds) is used.
 - Prices, discounts and order rules come from `packages/core`, shared with the rest of the repo.
+
+**`data/` holds secrets.** `device.json` has the till's token for the API, and `pos.db` (and so every backup copy,
+including the one in `backupDir`) has the cached staff list with each person's scrambled PIN. Keep backups private:
+a USB stick in the drawer or a cloud folder only the owner can open, never a shared folder.
 
 ## Backups
 

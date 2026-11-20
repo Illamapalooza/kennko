@@ -105,6 +105,28 @@ test('the website role cannot read pin_hash or write staff', async () => {
   })
 })
 
+test('anon has nothing on staff, and the website role cannot delete, empty or reference it', async () => {
+  const [r] = await db.sql`select
+    has_table_privilege('anon', 'staff', 'SELECT') as anon_sel,
+    has_table_privilege('anon', 'staff', 'INSERT') as anon_ins,
+    has_table_privilege('anon', 'staff', 'UPDATE') as anon_upd,
+    has_table_privilege('anon', 'staff', 'DELETE') as anon_del,
+    has_table_privilege('authenticated', 'staff', 'DELETE') as auth_del,
+    has_table_privilege('authenticated', 'staff', 'TRUNCATE') as auth_empty,
+    has_table_privilege('authenticated', 'staff', 'REFERENCES') as auth_ref,
+    has_table_privilege('authenticated', 'staff', 'TRIGGER') as auth_trig`
+  expect(r).toEqual({
+    anon_sel: false,
+    anon_ins: false,
+    anon_upd: false,
+    anon_del: false,
+    auth_del: false,
+    auth_empty: false,
+    auth_ref: false,
+    auth_trig: false,
+  })
+})
+
 test('the website role cannot insert staff even as the owner', async () => {
   await expect(
     asUser(db.sql, OWNER, (tx) => tx`insert into staff (full_name, role) values ('Sneak', 'barista')`),

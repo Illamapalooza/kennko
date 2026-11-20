@@ -182,10 +182,14 @@ select conname from pg_constraint where conrelid = 'public.staff'::regclass;
 Expect `staff_id_fkey` among the rows.
 
 ```sql
-select classid::regclass, objid from pg_depend where refobjid = 'public.staff_role'::regtype;
+select pg_describe_object(classid, objid, objsubid) from pg_depend where refobjid = 'public.staff_role'::regtype;
 ```
 
-Expect only rows that come from the `staff` table. If either result differs, stop and ask before applying.
+Expect only the `staff` table's `role` column and its default, and the `_staff_role` array type. Any function, view
+or policy in the list means stop. If either result differs, stop and ask before applying.
+
+**Don't use the Staff screen between steps 1 and 3.** The old website's invite form would create staff rows whose
+login can't sign in.
 
 Then, from `apps/api`, dry run first. It must list only 0016:
 
@@ -208,6 +212,9 @@ No new environment variables. Smoke checks:
 - `GET /v1/staff` without a token returns 401.
 - `GET /v1/devices/me` with `Authorization: Bearer kd_x` returns 401.
 
+Optional hardening: add a Vercel Firewall rate limit on `POST /v1/devices/pair`. The endpoint is public, and five
+wrong codes in a row burn the live codes, so someone guessing can make a real pairing fail.
+
 ### 3. Website deploy
 
 Deploy right after the API. Smoke checks:
@@ -220,7 +227,12 @@ Deploy right after the API. Smoke checks:
 
 ### 4. Till (shop computer)
 
-Pull, run `npm run pos:build`, restart. The till still asks for the `config.json` PIN until the owner has a PIN.
+The shop till is the Windows computer at the counter. Update it by double-clicking `deploy\windows\setup.cmd` (see
+[deploy/windows/README.md](../../deploy/windows/README.md)); it pulls, rebuilds and restarts, keeping the PINs and the
+sales. The till still asks for the `config.json` PIN until the owner has a PIN.
+
+- Check that `api.url` is set in `apps\pos\config.json` (the API address from step 2). Without it the till cannot pair.
+- Check that `managerPin` is not empty. An empty `managerPin` blocks voids, closing the till and pairing.
 
 - Reload every tablet after updating. Old tabs keep the old PIN flow until reloaded.
 - A tablet types the PIN once and stays signed in across reloads and a till restart.
@@ -228,7 +240,14 @@ Pull, run `npm run pos:build`, restart. The till still asks for the `config.json
 
 ### 5. Pair the till
 
-In admin, open Tills, then Add a till, and note the code. On the till, open Menu, then Connect this till, enter the code and the manager PIN. It should say "Connected as Counter till".
+Before pairing:
+
+- In admin › Staff, issue a PIN to everyone who works the till.
+- Make whoever closes the till a manager (or owner) with a PIN. Only they can void, cash out and close once pairing is done.
+- Pair outside service hours. Pairing switches the till to personal PINs and signs every tablet out, and the
+  `config.json` PINs stop working.
+
+In admin, open Tills, then Add a till, and note the code. On the till, open Menu, then Connect this till, enter the code and the manager PIN. The This till card should say "Connected as <the name you gave it>".
 
 Because the owner now has a PIN, the gate asks for personal PINs. The barista's PIN opens it. A void asks for the owner's PIN.
 
