@@ -79,6 +79,10 @@ function renderTabs() {
     return b;
   }));
   const items = cats.find((c) => c.category === tab)?.items ?? [];
+  if (cats.length === 0) {
+    $("drinks").replaceChildren(el("p", { textContent: "No drinks yet: start the till once with the wall running" }));
+    return;
+  }
   $("drinks").replaceChildren(...items.map((item) => {
     const b = el("button", { type: "button", textContent: item.name, className: item.star && tab !== STARS ? "star" : "" });
     b.addEventListener("click", () => { cart.set(item.name, Math.min(20, (cart.get(item.name) ?? 0) + 1)); renderCart(); });

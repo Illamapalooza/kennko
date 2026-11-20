@@ -22,7 +22,7 @@ import { createSync, syncReady } from './sync.ts'
 import { bounded } from './wait.ts'
 import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
 import { reportCsv } from './report.ts'
-import { WALL_LINGER_MS, wallOnlineOrders, wallOrders } from './wall-feed.ts'
+import { WALL_LINGER_MS, wallMenu, wallOnlineOrders, wallOrders } from './wall-feed.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
@@ -114,6 +114,7 @@ const wallSnapshot = () => {
   const since = now - WALL_LINGER_MS
   return JSON.stringify({
     now, day: manilaDay(now),
+    menu: wallMenu(menu()),
     orders: [
       ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)]),
       ...wallOnlineOrders([...store.activeOnlineOrders(), ...store.recentlyFinishedOnline(since)]),
@@ -261,6 +262,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     req.on('close', () => wallClients.delete(res))
     return
   }
+  if (req.method === 'GET' && route === '/api/wall/menu') return json(res, 200, { menu: wallMenu(menu()) })
   if (route === '/api/session') {
     if (req.method === 'GET') {
       const who = sessions.get(readSessionCookie(req.headers.cookie, cameInSecure(req)))

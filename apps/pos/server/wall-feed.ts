@@ -1,4 +1,4 @@
-import type { OnlineQueueOrder, Order, OrderStatus, PrepStatus } from '@kennko/core'
+import type { Menu, OnlineQueueOrder, Order, OrderStatus, PrepStatus } from '@kennko/core'
 
 /**
  * What the projector wall may know about an order: no prices, no payment, nothing but what is being made. `series`
@@ -63,4 +63,14 @@ export function wallOnlineOrders(orders: OnlineQueueOrder[]): WallOrder[] {
     createdAt: Date.parse(order.createdAt),
     updatedAt: Date.parse(order.updatedAt),
   }))
+}
+
+/** The drink names the barista cats show: category, name and bestseller star. Never a price, id or stock. */
+export type WallMenu = { category: string; items: { name: string; star: boolean }[] }[]
+
+/** Every item stays, sold out or not (the cats show names, not stock). Empty categories are skipped. */
+export function wallMenu(menu: Menu): WallMenu {
+  return menu.categories
+    .map((c) => ({ category: c.name, items: c.items.map((i) => ({ name: i.name, star: i.isBestseller })) }))
+    .filter((c) => c.items.length > 0)
 }

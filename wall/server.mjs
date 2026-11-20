@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { reduce, emptyState, manilaDay, normalize, OrderError } from "./store.mjs";
 import { trackTitle } from "./public/scene/logic.mjs";
 import { followPos, fromPosFeed } from "./pos-link.mjs";
+import { FALLBACK_DRINKS, readMenu, loadCachedMenu, saveCachedMenu, namesOf, fetchTillMenu } from "./menu-source.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, "public");
@@ -50,9 +51,20 @@ const config = {
   baristas: Math.round(num(rawConfig.baristas, 2, 1, 3)),
 };
 const POS_URL = POS ? posUrlArg || (typeof rawConfig.posUrl === "string" && rawConfig.posUrl) || "http://localhost:4466" : "";
-const menu = readJson(path.join(ROOT, "menu.json"), []);
-const menuNames = new Set(menu.flatMap((c) => (c.items ?? []).map((i) => i.name)));
-if (menuNames.size === 0) console.warn("menu.json is empty or missing: the pad will have no drinks.");
+// Drink names come from the till and are remembered here; the wall has no menu of its own.
+const MENU_FILE = path.join(DATA, "menu.json");
+let menu = loadCachedMenu(MENU_FILE) ?? [];
+// One Set for good: reduceOpts holds it, so it is updated in place.
+const menuNames = namesOf(menu);
+if (menuNames.size === 0) console.warn("No drink names yet: they come from the till.");
+function setMenu(next) {
+  if (!next) return;
+  const changed = JSON.stringify(next) !== JSON.stringify(menu);
+  menu = next;
+  menuNames.clear();
+  for (const name of namesOf(next)) menuNames.add(name);
+  if (changed) saveCachedMenu(MENU_FILE, next);
+}
 const reduceOpts = { autoclearMs: config.autoclearMs, menuNames };
 
 // ---------- state ----------
@@ -117,7 +129,6 @@ setInterval(() => { for (const res of clients) res.write(": keepalive\n\n"); }, 
 
 // ---------- ambient: the cafe runs itself ----------
 if (AMBIENT) {
-  const drinks = [...menuNames];
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   const between = (a, b) => a + Math.random() * (b - a);
   const pace = new Map(); // order id -> how long this cat lingers in each state (ms)
@@ -140,7 +151,8 @@ if (AMBIENT) {
       const busy = live.filter((o) => o.status === "preparing").length;
       const move = due.find((o) => o.status !== "queued" || busy < state.baristas);
       if (move) return dispatch({ type: "advance", id: move.id });
-      if (drinks.length && live.length < 10 && now > nextArrival) {
+      const drinks = menuNames.size ? [...menuNames] : FALLBACK_DRINKS;
+      if (live.length < 10 && now > nextArrival) {
         const items = [{ name: pick(drinks), qty: 1 }];
         if (Math.random() < 0.3) items.push({ name: pick(drinks), qty: 1 });
         dispatch({ type: "create", items });
@@ -161,6 +173,7 @@ if (POS) {
       downSince = 0;
     },
     onFeed: (feed) => {
+      setMenu(readMenu(feed?.menu));
       const next = fromPosFeed(feed, config.baristas);
       if (!next) return;
       posLive = true;
@@ -181,6 +194,14 @@ if (POS) {
       standIn.unref();
     },
   });
+}
+
+// ---------- asking the till for the menu (when not following its feed) ----------
+if (!POS) {
+  const tillUrl = posUrlArg || (typeof rawConfig.posUrl === "string" && rawConfig.posUrl) || "http://localhost:4466";
+  const refresh = () => fetchTillMenu(tillUrl).then(setMenu, () => {});
+  refresh();
+  setInterval(refresh, 10 * 60000).unref();
 }
 
 // ---------- http ----------

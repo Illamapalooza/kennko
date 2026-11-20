@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { OnlineQueueOrder, PrepStatus } from '@kennko/core'
-import { ONLINE_TO_WALL, wallOnlineOrders } from '../server/wall-feed.ts'
+import type { Menu, OnlineQueueOrder, PrepStatus } from '@kennko/core'
+import { ONLINE_TO_WALL, wallMenu, wallOnlineOrders } from '../server/wall-feed.ts'
 
 const order: OnlineQueueOrder = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -57,5 +57,36 @@ describe('online orders on the wall', () => {
 
   it('copes with a name of spaces only', () => {
     expect(wallOnlineOrders([{ ...order, customerName: '   ' }])[0]!.name).toBe('')
+  })
+})
+
+describe('the wall menu', () => {
+  const price = [{ size: 'M' as const, priceCentavos: 12000 }]
+  const menu: Menu = {
+    source: 'website', updatedAt: 1, version: 3,
+    modifierGroups: [],
+    categories: [
+      { id: 'c1', name: 'Classics', items: [
+        { id: 'i1', name: 'Latte', isBestseller: false, isAvailable: true, prices: price },
+        { id: 'i2', name: 'Spanish Latte', isBestseller: true, isAvailable: false, prices: price },
+      ] },
+      { id: 'c2', name: 'Empty', items: [] },
+    ],
+  }
+
+  it('keeps a sold-out bestseller with star true and drops empty categories', () => {
+    expect(wallMenu(menu)).toEqual([
+      { category: 'Classics', items: [{ name: 'Latte', star: false }, { name: 'Spanish Latte', star: true }] },
+    ])
+  })
+
+  it('carries only category, items, name and star: no price, id or availability', () => {
+    const keys = new Set<string>()
+    const walk = (v: unknown) => {
+      if (Array.isArray(v)) v.forEach(walk)
+      else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { keys.add(k); walk(x) }
+    }
+    walk(wallMenu(menu))
+    expect([...keys].sort()).toEqual(['category', 'items', 'name', 'star'])
   })
 })

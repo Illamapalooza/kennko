@@ -41,7 +41,7 @@ up on the till walks in as a customer cat, and the wall shows the queue and call
 
 - The number on the wall is the order number the till shows after payment and prints on the receipt. Online orders
   carry a `W` in front (W3) and are separate from counter number 3; the banner reads "Order W3 for Ana is ready!".
-- The wall only receives drink names, first names and steps. It never sees prices or payments.
+- The wall only receives drink names (including the menu's), first names and steps. It never sees prices or payments.
 - The till is looked for at `http://localhost:4466`. If it runs on another computer, pass its address
   (`--pos http://192.168.1.20:4466`) or set `"posUrl"` in `config.json`.
 - If the till cannot be reached, the wall keeps the last orders it saw and reconnects by itself. With `--no-board` it
@@ -75,7 +75,9 @@ and the wall gains an order board with numbers. Open the pad address the termina
 
 - **Music:** drop audio files (mp3, m4a, ogg, wav, flac) into `music/`. They play shuffled and loop. New files are
   picked up when the current round finishes.
-- **Menu:** edit `menu.json`. These are the drink names the barista cats show while they work.
+- **Menu:** drink names come from the till (its published menu) and are remembered in `data/menu.json`; there is nothing to edit.
+  A wall that has never reached a till uses four generic names in the self-running cafe, and the order pad says "No drinks yet".
+  Without `--pos` it asks the till (`posUrl` or `http://localhost:4466`) for the menu at start and every 10 minutes.
 
 ## If something is off
 

@@ -31,7 +31,8 @@ Needs Node.js 24 or newer (it uses Node's built-in SQLite).
 
 Start the wall with `npm run wall:pos` and it follows this till: paid orders walk in as cats, and the wall shows the
 queue and calls each order when it is marked Ready. The wall reads `/api/wall/events`, which needs no PIN and carries
-only order numbers, first names, drink names and steps. See `wall/README.md`.
+only order numbers, first names, drink names and steps, plus the menu's drink names and bestseller stars (never a
+price) so the wall needs no menu of its own; `/api/wall/menu` serves the same list. See `wall/README.md`.
 
 ## Install it as an app
 
