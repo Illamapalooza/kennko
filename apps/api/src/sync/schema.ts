@@ -45,18 +45,18 @@ export const orderCentavos = centavos.max(PG_INT_MAX)
 export const NAME_MAX = 120
 
 export const pricedLineShape = z.object({
-    menuItemId: z.string().min(1).max(NAME_MAX),
-    name: z.string().min(1).max(NAME_MAX),
-    size: z.enum(['M', 'L', 'XL', 'HOT']),
-    basePriceCentavos: orderCentavos,
-    modifiers: z
-      .array(z.object({ id: z.string().min(1).max(NAME_MAX), name: z.string().max(NAME_MAX), priceCentavos: orderCentavos }))
-      .max(20),
-    quantity: z.number().int().min(1).max(MAX_QUANTITY),
-    iceLevel: z.enum(['regular', 'less', 'none']).nullable(),
-    iceServe: z.enum(['mixed', 'side']).nullable(),
-    note: z.string().max(NOTE_MAX),
-    lineTotalCentavos: orderCentavos,
+  menuItemId: z.string().min(1).max(NAME_MAX),
+  name: z.string().min(1).max(NAME_MAX),
+  size: z.enum(['M', 'L', 'XL', 'HOT']),
+  basePriceCentavos: orderCentavos,
+  modifiers: z
+    .array(z.object({ id: z.string().min(1).max(NAME_MAX), name: z.string().max(NAME_MAX), priceCentavos: orderCentavos }))
+    .max(20),
+  quantity: z.number().int().min(1).max(MAX_QUANTITY),
+  iceLevel: z.enum(['regular', 'less', 'none']).nullable(),
+  iceServe: z.enum(['mixed', 'side']).nullable(),
+  note: z.string().max(NOTE_MAX),
+  lineTotalCentavos: orderCentavos,
 })
 
 const pricedLine = pricedLineShape

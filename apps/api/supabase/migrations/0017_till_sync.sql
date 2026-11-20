@@ -58,7 +58,8 @@ create index orders_flagged_idx on orders (business_day) where flags <> '{}';
 
 alter table payments add column device_id uuid references devices(id);
 
--- 4. The receipt for every pushed event, keyed (device_id, id). Shift, cash and
+-- 4. The receipt for every pushed event, keyed (device_id, id). Legacy import rows the API
+-- cannot store are kept here too, as held `invalid: legacy: …` (kinds `import.*`). Shift, cash and
 -- sold-out events have no order, and a held event may name an order that does
 -- not exist yet, so order_events cannot be the only record.
 create table sync_events (
@@ -67,7 +68,8 @@ create table sync_events (
   seq         bigint not null,
   kind        text not null check (kind in (
                 'order.created', 'order.prep_status', 'order.cancelled',
-                'shift.opened', 'shift.closed', 'cash.moved', 'menu.availability'
+                'shift.opened', 'shift.closed', 'cash.moved', 'menu.availability',
+                'import.shift', 'import.order', 'import.cash_move'
               )),
   payload     jsonb not null,
   staff_id    uuid,

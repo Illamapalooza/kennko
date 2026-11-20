@@ -51,7 +51,7 @@ async function applyInSavepoint(tx: Tx, deviceId: string, event: SyncEvent, now:
 }
 
 /** The payload as jsonb text. One holding U+0000 (which jsonb rejects) is kept as a JSON string of its JSON text. */
-function payloadJson(payload: unknown): string {
+export function payloadJson(payload: unknown): string {
   const text = JSON.stringify(payload ?? null)
   return findNul(payload) ? JSON.stringify(text) : text
 }

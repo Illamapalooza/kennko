@@ -117,7 +117,7 @@ export type ImportCashMove = {
   staffId: string | null
 }
 export type ImportChunk = { shifts: ImportShift[]; orders: ImportOrder[]; cashMoves: ImportCashMove[] }
-export type ImportResponse = { inserted: number; existing: number; skipped: number }
+export type ImportResponse = { inserted: number; existing: number; rejected: number }
 
 type RepriceInput = Pick<CounterOrderPayload, 'lines' | 'discount' | 'subtotalCentavos' | 'discountCentavos' | 'totalCentavos'>
 

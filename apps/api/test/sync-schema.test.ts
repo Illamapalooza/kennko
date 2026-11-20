@@ -199,7 +199,7 @@ test('sync_events: the same (device_id, id) twice fails; the same id on another 
   expect(rows).toHaveLength(2)
 })
 
-test('sync_events: every SyncEventKind is accepted; order.deleted and an unknown result fail', async () => {
+test('sync_events: every SyncEventKind and import kind is accepted; order.deleted and an unknown result fail', async () => {
   const kinds = [
     'order.created',
     'order.prep_status',
@@ -208,6 +208,9 @@ test('sync_events: every SyncEventKind is accepted; order.deleted and an unknown
     'shift.closed',
     'cash.moved',
     'menu.availability',
+    'import.shift',
+    'import.order',
+    'import.cash_move',
   ]
   for (const [i, kind] of kinds.entries()) {
     await insertEvent({ id: crypto.randomUUID(), seq: 100 + i, kind, result: 'held', reason: 'missing shift' })

@@ -113,7 +113,7 @@ test('imports a shift, three orders and a cash move as legacy rows; a second run
   const { token, deviceId } = await seedDevice(db.sql)
   const { chunk, s, done, voided, serving } = fullChunk()
   const before = await counts()
-  expect(await importOk(token, chunk)).toEqual({ inserted: 5, existing: 0, skipped: 0 })
+  expect(await importOk(token, chunk)).toEqual({ inserted: 5, existing: 0, rejected: 0 })
 
   const [sh] = await db.sql`select * from shifts where id = ${s.id}`
   expect(sh).toMatchObject({ is_legacy: true, device_id: deviceId, opened_by_staff: bea, counted_centavos: 150000, expected_centavos: 149000 })
@@ -156,19 +156,8 @@ test('imports a shift, three orders and a cash move as legacy rows; a second run
   expect(after.events).toBe(before!.events) // no order_events rows
 
   // Run twice: nothing changes.
-  expect(await importOk(token, chunk)).toEqual({ inserted: 0, existing: 5, skipped: 0 })
+  expect(await importOk(token, chunk)).toEqual({ inserted: 0, existing: 5, rejected: 0 })
   expect(await counts()).toEqual(after)
-})
-
-test('an open legacy shift while the device has another open shift is existing; its orders import without a shift', async () => {
-  const { token } = await seedDevice(db.sql)
-  await api.push(token, [shiftOpened()])
-  const open = shift({ closedAt: null, countedCentavos: null, expectedCentavos: null })
-  const o = order(open.id)
-  const res = await importOk(token, { shifts: [open], orders: [o], cashMoves: [] })
-  expect(res).toEqual({ inserted: 1, existing: 1, skipped: 0 })
-  const [row] = await db.sql`select shift_id from orders where id = ${o.id}`
-  expect(row!.shift_id).toBeNull()
 })
 
 test('a cash move for an unknown shift is skipped; the rest is inserted', async () => {
@@ -182,40 +171,127 @@ test('a cash move for an unknown shift is skipped; the rest is inserted', async 
       { id: randomUUID(), shiftId: s.id, kind: 'out', amountCentavos: 100, reason: 'Ice', at: '2026-11-01T03:00:00.000Z', staffId: randomUUID() },
     ],
   })
-  expect(res).toEqual({ inserted: 2, existing: 0, skipped: 1 })
+  expect(res).toEqual({ inserted: 2, existing: 0, rejected: 1 })
   const [m] = await db.sql`select staff_id from cash_moves where shift_id = ${s.id}`
   expect(m!.staff_id).toBeNull() // unknown staff → null
 })
 
-test('an order that breaks the orders table checks is skipped, not a failed chunk', async () => {
-  const { token } = await seedDevice(db.sql)
+const receipts = (deviceId: string) =>
+  db.sql<{ id: string; kind: string; result: string; reason: string; seq: string; entity_keys: string[] }[]>`
+    select id, kind, result, reason, seq, entity_keys from sync_events where device_id = ${deviceId} order by kind, id`
+
+test('an order that breaks the orders table checks is rejected with a receipt, not a failed chunk', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
   const s = shift()
   const bad = order(s.id, { totalCentavos: 99999 })
   const good = order(s.id, { ticketNumber: 2 })
-  const res = await importOk(token, { shifts: [s], orders: [bad, good], cashMoves: [] })
-  expect(res).toEqual({ inserted: 2, existing: 0, skipped: 1 })
-  const rows = await db.sql`select 1 from orders where id = ${bad.id}`
-  expect(rows).toHaveLength(0)
-  const lines = await db.sql`select 1 from order_lines where order_id = ${bad.id}`
-  expect(lines).toHaveLength(0)
+  const chunk = { shifts: [s], orders: [bad, good], cashMoves: [] }
+  expect(await importOk(token, chunk)).toEqual({ inserted: 2, existing: 0, rejected: 1 })
+  expect(await db.sql`select 1 from orders where id = ${bad.id}`).toHaveLength(0)
+  expect(await db.sql`select 1 from order_lines where order_id = ${bad.id}`).toHaveLength(0)
+  const r = await receipts(deviceId)
+  expect(r).toHaveLength(1)
+  expect(r[0]).toMatchObject({ id: bad.id, kind: 'import.order', result: 'held', entity_keys: [] })
+  expect(r[0]!.reason).toMatch(/^invalid: legacy: orders_total_math/)
+  const [p] = await db.sql`select payload from sync_events where id = ${bad.id}`
+  expect(p!.payload).toMatchObject({ id: bad.id, totalCentavos: 99999 })
+
+  // Run twice: same counts as existing/rejected, no new rows, no second receipt.
+  const before = await counts()
+  expect(await importOk(token, chunk)).toEqual({ inserted: 0, existing: 2, rejected: 1 })
+  expect(await counts()).toEqual(before)
+  expect(await receipts(deviceId)).toHaveLength(1)
+})
+
+test('a payment id used by another order → that order is rejected whole, with a receipt', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  const s = shift()
+  const first = order(s.id)
+  const clash = order(s.id, { ticketNumber: 2, payment: { ...first.payment } })
+  expect(await importOk(token, { shifts: [s], orders: [first, clash], cashMoves: [] })).toEqual({ inserted: 2, existing: 0, rejected: 1 })
+  expect(await db.sql`select 1 from orders where id = ${clash.id}`).toHaveLength(0)
+  expect(await db.sql`select 1 from order_lines where order_id = ${clash.id}`).toHaveLength(0)
+  const r = await receipts(deviceId)
+  expect(r).toMatchObject([{ id: clash.id, kind: 'import.order' }])
+  expect(r[0]!.reason).toContain('payment id')
+})
+
+test('a shift failing shifts_closed_has_count is rejected; its orders import without a shift and its cash moves are rejected', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  const s = shift({ countedCentavos: null }) // closed, no count
+  const o = order(s.id)
+  const m = { id: randomUUID(), shiftId: s.id, kind: 'in' as const, amountCentavos: 100, reason: 'Change', at: '2026-11-01T03:00:00.000Z', staffId: null }
+  const chunk = { shifts: [s], orders: [o], cashMoves: [m] }
+  expect(await importOk(token, chunk)).toEqual({ inserted: 1, existing: 0, rejected: 2 })
+  const [row] = await db.sql`select shift_id from orders where id = ${o.id}`
+  expect(row!.shift_id).toBeNull()
+  const r = await receipts(deviceId)
+  expect(r.map((x) => x.kind)).toEqual(['import.cash_move', 'import.shift'])
+  expect(r.find((x) => x.kind === 'import.shift')!.reason).toContain('shifts_closed_has_count')
+  expect(await importOk(token, chunk)).toEqual({ inserted: 0, existing: 1, rejected: 2 })
+  expect(await receipts(deviceId)).toHaveLength(2)
+})
+
+test('an open legacy shift beside the device’s open shift is rejected with a receipt; its orders import with no shift', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  await api.push(token, [shiftOpened()])
+  const open = shift({ closedAt: null, countedCentavos: null, expectedCentavos: null })
+  const o = order(open.id)
+  const chunk = { shifts: [open], orders: [o], cashMoves: [] }
+  expect(await importOk(token, chunk)).toEqual({ inserted: 1, existing: 0, rejected: 1 })
+  const [row] = await db.sql`select shift_id from orders where id = ${o.id}`
+  expect(row!.shift_id).toBeNull()
+  expect((await receipts(deviceId)).filter((r) => r.kind === 'import.shift')).toHaveLength(1)
+})
+
+test('an empty-reason cash move is rejected', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  const s = shift()
+  const m = { id: randomUUID(), shiftId: s.id, kind: 'out' as const, amountCentavos: 100, reason: '', at: '2026-11-01T03:00:00.000Z', staffId: null }
+  expect(await importOk(token, { shifts: [s], orders: [], cashMoves: [m] })).toEqual({ inserted: 1, existing: 0, rejected: 1 })
+  expect(await receipts(deviceId)).toMatchObject([{ id: m.id, kind: 'import.cash_move' }])
+})
+
+test('a row-level zod failure rejects only that row (200); a row with a bad id still gets one receipt', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  const s = shift()
+  const good = order(s.id)
+  const broken = { ...order(s.id, { ticketNumber: 2 }), fulfilment: 'delivery' }
+  const noId = { ...order(s.id, { ticketNumber: 3 }), id: 'not-a-uuid', customerName: 'x'.repeat(500) }
+  const chunk = { shifts: [s], orders: [good, broken, noId], cashMoves: [] }
+  expect(await importOk(token, chunk)).toEqual({ inserted: 2, existing: 0, rejected: 2 })
+  const r = await receipts(deviceId)
+  expect(r).toHaveLength(2)
+  expect(r.every((x) => x.reason.startsWith('invalid: legacy: '))).toBe(true)
+  expect(await importOk(token, chunk)).toEqual({ inserted: 0, existing: 2, rejected: 2 })
+  expect(await receipts(deviceId)).toHaveLength(2)
+})
+
+test('legacy receipts are never retried or blocking by a later push', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  const bad = order(randomUUID(), { totalCentavos: 1 })
+  await importOk(token, { shifts: [], orders: [bad], cashMoves: [] })
+  await api.push(token, [shiftOpened()])
+  const [r] = await receipts(deviceId)
+  expect(r).toMatchObject({ result: 'held', entity_keys: [] })
+  expect(r!.reason).toMatch(/^invalid: legacy:/)
 })
 
 test('an order whose shift is unknown imports with a null shift', async () => {
   const { token } = await seedDevice(db.sql)
   const o = order(randomUUID())
-  expect(await importOk(token, { shifts: [], orders: [o], cashMoves: [] })).toEqual({ inserted: 1, existing: 0, skipped: 0 })
+  expect(await importOk(token, { shifts: [], orders: [o], cashMoves: [] })).toEqual({ inserted: 1, existing: 0, rejected: 0 })
   const [row] = await db.sql`select shift_id from orders where id = ${o.id}`
   expect(row!.shift_id).toBeNull()
 })
 
-test('101 rows → 400; malformed, NUL text → 400 INVALID; revoked and anonymous → 401', async () => {
+test('101 rows or a missing array → 400 INVALID; revoked and anonymous → 401', async () => {
   const { token, deviceId } = await seedDevice(db.sql)
   const many = Array.from({ length: 101 }, () => shift())
   const tooMany = await post(token, { shifts: many, orders: [], cashMoves: [] })
   expect(tooMany.status).toBe(400)
   expect(await tooMany.json()).toMatchObject({ code: 'INVALID' })
   expect((await post(token, { shifts: [] })).status).toBe(400)
-  expect((await post(token, { shifts: [shift({ note: 'a\u0000b' })], orders: [], cashMoves: [] })).status).toBe(400)
   expect((await post(null, { shifts: [], orders: [], cashMoves: [] })).status).toBe(401)
   await db.sql`update devices set revoked_at = now(), token_hash = null where id = ${deviceId}`
   const revoked = await post(token, { shifts: [], orders: [], cashMoves: [] })
