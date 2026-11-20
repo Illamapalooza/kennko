@@ -376,7 +376,7 @@ test('prep placed → preparing → ready → completed in one push; a change af
   expect(await count('order_events', other.payload.orderId)).toBe(2)
 })
 
-test('prep or cancel from the till on an online order is flagged online_order and changes nothing', async () => {
+test('a till cancel on an online order is flagged online_order; a prep step that skips ahead is a prep_conflict', async () => {
   const { token } = await seedDevice(db.sql)
   const [o] = await db.sql`
     insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
@@ -388,7 +388,7 @@ test('prep or cancel from the till on an online order is flagged online_order an
   const orderId = o!.id as string
   const res = await api.push(token, [prepStatus({ orderId, to: 'ready' }), orderCancelled({ orderId })])
   expect(res.results.map((r) => [r.result, r.reason])).toEqual([
-    ['flagged', 'online_order'],
+    ['applied', 'prep_conflict'],
     ['flagged', 'online_order'],
   ])
   expect(await orderRow(orderId)).toMatchObject({ prep_status: 'placed', payment_status: 'paid' })

@@ -1,11 +1,15 @@
 import { MAX_HELD_RETRY, type PushResponse, type SyncEvent } from '@kennko/core'
 import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
+import { afterCommit } from '../push/defer.js'
+import { notifyOrder } from '../push/notify.js'
 import { applyEvent, entityKeys, waitKeys, type Applied } from './apply.js'
 import { clip, findNul, parseEvent, scrubSurrogates, storableTime, type Envelope } from './schema.js'
 
 type Tx = postgres.TransactionSql
 type Result = PushResponse['results'][number]
+/** Customer pushes owed by events whose effects and receipt were written; sent once the push commits. */
+type Notes = NonNullable<Applied['notify']>[]
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const held = (reason: string): Applied => ({ result: 'held', reason, flags: [] })
@@ -122,7 +126,7 @@ type HeldRow = {
  * applied again (what was sent cannot change); it only keeps its place in line. Rows held
  * `error: …` are retried like any other.
  */
-async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<void> {
+async function retryHeld(tx: Tx, deviceId: string, now: Date, notes: Notes): Promise<void> {
   // Permanent rows (`invalid: …`, including legacy import receipts) are never retried, so they stay out of
   // the window; the entities they hold (pushed invalid rows) still block later events.
   const permanent = await tx<{ k: string }[]>`
@@ -145,14 +149,21 @@ async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<void> {
     after = BigInt(page[page.length - 1]!.seq)
     for (const row of page) {
       if (tried >= MAX_HELD_RETRY) return
-      if (await retryOne(tx, deviceId, row, blocked, now)) tried += 1
+      if (await retryOne(tx, deviceId, row, blocked, now, notes)) tried += 1
     }
     if (page.length < MAX_HELD_RETRY) return
   }
 }
 
 /** Retries one held row unless an earlier held row blocks it. True when it was actually retried. */
-async function retryOne(tx: Tx, deviceId: string, row: HeldRow, blocked: Set<string>, now: Date): Promise<boolean> {
+async function retryOne(
+  tx: Tx,
+  deviceId: string,
+  row: HeldRow,
+  blocked: Set<string>,
+  now: Date,
+  notes: Notes,
+): Promise<boolean> {
   if (isPermanent(row.reason) || waitKeys(row).some((k) => blocked.has(k))) {
     for (const k of row.entity_keys) blocked.add(k)
     return false
@@ -175,19 +186,23 @@ async function retryOne(tx: Tx, deviceId: string, row: HeldRow, blocked: Set<str
   }
   await tx`update sync_events set result = ${out.result}, reason = ${out.reason}, applied_at = ${now}
     where device_id = ${deviceId} and id = ${row.id}`
+  if (out.notify) notes.push(out.notify)
   return true
 }
 
 /**
  * Applies a push from one till. One transaction holds the device's advisory lock for the whole
  * request (Ruling 2); every event runs in its own savepoint and gets a `sync_events` receipt, so a
- * retried or concurrent push answers `duplicate` instead of applying anything twice.
+ * retried or concurrent push answers `duplicate` instead of applying anything twice. Customer pushes
+ * for online prep moves are collected as events apply and sent only after the transaction commits;
+ * a push that fails (a retryable error) sends none.
  */
 export async function pushEvents(deps: AppDeps, deviceId: string, raw: Envelope[]): Promise<PushResponse> {
   const now = deps.now()
-  return (await deps.sql.begin(async (tx) => {
+  const notes: Notes = []
+  const response = (await deps.sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${`sync:${deviceId}`}, 0))`
-    await retryHeld(tx, deviceId, now)
+    await retryHeld(tx, deviceId, now, notes)
 
     const results: Result[] = []
     let anyApplied = false
@@ -199,17 +214,20 @@ export async function pushEvents(deps: AppDeps, deviceId: string, raw: Envelope[
       }
       const out = await recordEvent(tx, deviceId, env, now)
       if (out.result !== 'held') anyApplied = true
+      if (out.notify) notes.push(out.notify)
       results.push({ id: env.id, result: out.result, reason: out.reason, flags: out.flags })
     }
 
     // What this push brought (a shift, an order) may free events held earlier.
-    if (anyApplied) await retryHeld(tx, deviceId, now)
+    if (anyApplied) await retryHeld(tx, deviceId, now, notes)
 
     const [{ n }] = await tx<{ n: number }[]>`
       select count(*)::int as n from sync_events
       where device_id = ${deviceId} and result = 'held' and kind not like 'import.%'`
     return { results, held: n }
   })) as PushResponse
+  for (const n of notes) await afterCommit(deps, () => notifyOrder(deps, n.orderId, n.event))
+  return response
 }
 
 /** Whether an earlier held event of this device blocks one of `keys` (the new event's wait keys). */

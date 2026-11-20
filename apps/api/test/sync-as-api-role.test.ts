@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { verifierFromJwks, type AppEnv } from '../src/auth.js'
 import { createApp } from '../src/create-app.js'
 import { publishMenu } from '../src/menu/snapshot.js'
+import type { PushSender } from '../src/push/send.js'
 import { fakeProofs, inlineDefer } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 import {
@@ -39,6 +40,11 @@ describe('every route as kennko_api', () => {
   let version: number
   let deviceToken: string
   let deviceId: string
+  const pushed: string[] = []
+  const sender: PushSender = async (_sub, payload) => {
+    pushed.push(payload.title)
+    return 'sent'
+  }
 
   /** Runs `fn` as the superuser (seeding and checks), then returns the session to kennko_api. */
   async function asSuper<T>(fn: () => Promise<T>): Promise<T> {
@@ -88,7 +94,7 @@ describe('every route as kennko_api', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
-      push: null,
+      push: sender,
       defer: inlineDefer,
       now: () => NOW,
     })
@@ -223,6 +229,32 @@ describe('every route as kennko_api', () => {
     const online = pulled.onlineOrders as { id: string; lines: { name: string; options: string[] }[] }[]
     const mine = online.find((o) => o.id === orderId)
     expect(mine?.lines).toMatchObject([{ name: 'Latte', options: ['Oat milk'] }])
+  })
+
+  it('sync push: an online prep step moves the order and notifies the customer as kennko_api', async () => {
+    const orderId = await asSuper(async () => {
+      const [o] = await db.sql`
+        insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
+          ticket_series, ticket_number, customer_name, customer_phone, customer_email, fulfil_at,
+          subtotal_centavos, total_centavos, created_at, updated_at)
+        values ('online', 'KNK-ROLE2', 'pickup', 'placed', 'paid', '2026-11-21', 'W', 902, 'Ana', '09170000000',
+          'a@x.test', ${NOW.toISOString()}, 14000, 14000, ${NOW.toISOString()}, ${NOW.toISOString()})
+        returning id`
+      const [sub] = await db.sql`insert into push_subscriptions (endpoint, p256dh, auth, kind)
+        values ('https://push.test/role', 'p', 'a', 'customer') returning id`
+      await db.sql`insert into push_order_watch (order_id, subscription_id) values (${o!.id}, ${sub!.id})`
+      return o!.id as string
+    })
+    pushed.length = 0
+    const res = await push([prepStatus({ orderId, to: 'preparing' }, { staffId: BARISTA })])
+    expect(res.results.map((r) => [r.result, r.reason])).toEqual([['applied', null]])
+    expect(pushed).toEqual(['W902 is being prepared'])
+    const [row] = await asSuper(
+      () => db.sql`select o.prep_status, s.last_used_at from orders o, push_subscriptions s
+        where o.id = ${orderId} and s.endpoint = 'https://push.test/role'`,
+    )
+    expect(row!.prep_status).toBe('preparing')
+    expect(row!.last_used_at).not.toBeNull()
   })
 
   it('sync import: a stored row, a rejected row, and a rerun that clears the receipt', async () => {

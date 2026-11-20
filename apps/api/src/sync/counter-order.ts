@@ -1,6 +1,18 @@
-import { manilaDay, repriceCounterOrder, SIZE_LABELS, type CounterOrderPayload, type MenuSnapshot, type SyncEvent } from '@kennko/core'
+import {
+  manilaDay,
+  onlinePrepDecision,
+  repriceCounterOrder,
+  SIZE_LABELS,
+  type CounterOrderPayload,
+  type Fulfilment,
+  type MenuSnapshot,
+  type PaymentStatus,
+  type PrepStatus,
+  type SyncEvent,
+} from '@kennko/core'
 import type postgres from 'postgres'
 import { readMenuVersion } from '../menu/read.js'
+import { PREP_PUSH_EVENTS } from '../push/notify.js'
 import type { Applied } from './apply.js'
 
 type Tx = postgres.TransactionSql
@@ -153,7 +165,7 @@ export async function applyOrderCreated(
   return reason ? flagged(reason, flags) : applied()
 }
 
-type OrderState = { channel: string; prep_status: string }
+type OrderState = { channel: string; prep_status: PrepStatus; fulfilment: Fulfilment; payment_status: PaymentStatus }
 
 /**
  * An order event already stored under this id. The receipt is keyed (device_id, id), but a re-paired
@@ -167,11 +179,16 @@ async function eventRecorded(tx: Tx, eventId: string): Promise<boolean> {
 
 async function loadOrder(tx: Tx, orderId: string): Promise<OrderState | undefined> {
   // Locked so a prep change and a cancel for the same order (or an admin action) cannot interleave.
-  const [row] = await tx<OrderState[]>`select channel, prep_status from orders where id = ${orderId} for update`
+  const [row] = await tx<OrderState[]>`select channel, prep_status, fulfilment, payment_status from orders where id = ${orderId} for update`
   return row
 }
 
-/** Counter prep changes apply in the order received (Ruling 7); a cancelled order stays cancelled. */
+/**
+ * Counter prep changes apply in the order received (Plan 4 Ruling 7); a cancelled order stays cancelled.
+ * Online prep (Plan 5 Rulings 3, 5, 6) moves forward only, checked against the order as the server
+ * finds it, so whichever of admin and the till the server hears first wins. Only a real move owes
+ * the customer a push, which the caller sends after commit.
+ */
 export async function applyPrepStatus(
   tx: Tx,
   deviceId: string,
@@ -183,8 +200,7 @@ export async function applyPrepStatus(
   if (await eventRecorded(tx, event.id)) return applied('already_recorded')
   const order = await loadOrder(tx, orderId)
   if (!order) return held('order_unknown')
-  // Online prep belongs to admin until Plan 5.
-  if (order.channel !== 'counter') return flagged('online_order')
+  if (order.channel !== 'counter') return applyOnlinePrep(tx, deviceId, event, staffId, now, order)
   if (order.prep_status === 'cancelled') return applied('already_cancelled')
   // Voids come through order.cancelled; a counter order is never out for delivery.
   if (to === 'cancelled' || to === 'out_for_delivery') return flagged('not_for_counter')
@@ -194,6 +210,43 @@ export async function applyPrepStatus(
     values (${event.id}, ${deviceId}, ${orderId}, 'prep_status', ${order.prep_status}, ${to}, ${staffId},
       ${event.occurredAt}, ${now})`
   return applied()
+}
+
+async function applyOnlinePrep(
+  tx: Tx,
+  deviceId: string,
+  event: EventOf<'order.prep_status'>,
+  staffId: string | null,
+  now: Date,
+  order: OrderState,
+): Promise<Applied> {
+  const { orderId, to } = event.payload
+  switch (onlinePrepDecision(order.prep_status, to, order.fulfilment, order.payment_status)) {
+    case 'cancelled':
+      return applied('already_cancelled')
+    case 'not_paid':
+      return flagged('not_paid')
+    case 'refused':
+      return flagged('not_from_till')
+    case 'same':
+      return applied('already_there')
+    case 'conflict':
+      return applied('prep_conflict')
+    case 'move':
+      break
+  }
+  // The row is locked, so this always matches; the condition keeps it a forward step even so.
+  const [row] = await tx`
+    update orders set prep_status = ${to}, updated_at = ${now}
+    where id = ${orderId} and prep_status = ${order.prep_status}
+    returning id`
+  if (!row) return applied('prep_conflict')
+  await tx`
+    insert into order_events (id, device_id, order_id, kind, from_value, to_value, staff_id, occurred_at, received_at)
+    values (${event.id}, ${deviceId}, ${orderId}, 'prep_status', ${order.prep_status}, ${to}, ${staffId},
+      ${event.occurredAt}, ${now})`
+  const push = PREP_PUSH_EVENTS[to]
+  return push ? { ...applied(), notify: { orderId, event: push } } : applied()
 }
 
 /** A void at the till: the order is cancelled and its live payment refunded. */

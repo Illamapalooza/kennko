@@ -1,8 +1,16 @@
-import { formatPesos, ticketLabel } from '@kennko/core'
+import { formatPesos, ticketLabel, type PrepStatus } from '@kennko/core'
 import type { AppDeps } from '../create-app.js'
 import type { PushPayload, PushTarget } from './send.js'
 
 export type OrderPushEvent = 'paid' | 'preparing' | 'ready' | 'out_for_delivery' | 'completed' | 'problem'
+
+/** The customer push for each prep status, shared by admin's PATCH and the till's prep steps (Ruling 6). */
+export const PREP_PUSH_EVENTS: Partial<Record<PrepStatus, OrderPushEvent>> = {
+  preparing: 'preparing',
+  ready: 'ready',
+  out_for_delivery: 'out_for_delivery',
+  completed: 'completed',
+}
 
 type PushDeps = Pick<AppDeps, 'sql' | 'push'>
 type SubRow = PushTarget & { id: string }

@@ -2,7 +2,7 @@ import { canMovePrep, type Fulfilment, type PrepStatus } from '@kennko/core'
 import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
 import { afterCommit } from '../push/defer.js'
-import { notifyOrder, type OrderPushEvent } from '../push/notify.js'
+import { notifyOrder, PREP_PUSH_EVENTS } from '../push/notify.js'
 
 export type ActionResult =
   | { ok: true; prepStatus: PrepStatus; paymentStatus: string }
@@ -70,7 +70,7 @@ function patchOrderTx(
     let current = { prep: order.prep_status, payment: order.payment_status }
 
     if (prepStatus !== undefined) {
-      // The till owns counter prep until Plan 5 (Ruling 7); staff notes are still fine.
+      // The till owns counter prep for good (Plan 4 Ruling 7, Plan 5 Ruling 13); staff notes are still fine.
       if (order.channel === 'counter') return fail(409, 'COUNTER_ORDER', 'Counter orders are updated at the till.')
       if (order.payment_status !== 'paid') {
         return badTransition('Verify the payment before preparing this order.')
@@ -200,19 +200,12 @@ function decidePaymentTx(
 
 // ---- Push after a successful commit. notifyOrder never throws, so a push problem cannot fail an action. ----
 
-const PREP_EVENTS: Partial<Record<PrepStatus, OrderPushEvent>> = {
-  preparing: 'preparing',
-  ready: 'ready',
-  out_for_delivery: 'out_for_delivery',
-  completed: 'completed',
-}
-
 export async function patchOrder(
   deps: AppDeps,
   input: Parameters<typeof patchOrderTx>[1],
 ): Promise<ActionResult> {
   const result = await patchOrderTx(deps, input)
-  const event = input.prepStatus && PREP_EVENTS[input.prepStatus]
+  const event = input.prepStatus && PREP_PUSH_EVENTS[input.prepStatus]
   if (result.ok && event) await afterCommit(deps, () => notifyOrder(deps, input.orderId, event))
   return result
 }

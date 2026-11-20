@@ -4,6 +4,7 @@ import type postgres from 'postgres'
 import { createApp } from '../src/create-app.js'
 import { newDeviceToken, sha256Hex } from '../src/devices/tokens.js'
 import { publishMenu } from '../src/menu/snapshot.js'
+import type { PushSender } from '../src/push/send.js'
 import { fakeProofs, inlineDefer } from './fakes.js'
 
 /** A paired till: its id and the bearer token it sends. */
@@ -52,8 +53,8 @@ export async function publishTwoVersions(sql: postgres.Sql): Promise<TwoVersions
   return { latteId: latte!.id, latteMId: m!.id, oatId: oat!.id, groupId: group!.id, v1, v2 }
 }
 
-/** The till's view of time for a test file; `setNow` moves it. */
-export function syncApp(sql: postgres.Sql, start = new Date('2026-11-21T02:00:00Z')) {
+/** The till's view of time for a test file; `setNow` moves it. `push` records customer notifications. */
+export function syncApp(sql: postgres.Sql, start = new Date('2026-11-21T02:00:00Z'), opts: { push?: PushSender } = {}) {
   let now = start
   const app = createApp({
     sql,
@@ -61,7 +62,7 @@ export function syncApp(sql: postgres.Sql, start = new Date('2026-11-21T02:00:00
       throw new Error('no staff tokens in sync tests')
     },
     proofs: fakeProofs(),
-    push: null,
+    push: opts.push ?? null,
     defer: inlineDefer,
     now: () => now,
   })

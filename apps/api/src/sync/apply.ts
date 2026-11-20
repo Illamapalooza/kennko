@@ -1,8 +1,15 @@
 import type { SyncEvent, SyncEventKind } from '@kennko/core'
 import type postgres from 'postgres'
+import type { OrderPushEvent } from '../push/notify.js'
 import { applyCancelled, applyOrderCreated, applyPrepStatus } from './counter-order.js'
 
-export type Applied = { result: 'applied' | 'flagged' | 'held'; reason: string | null; flags: string[] }
+/** `notify`: the customer push a real online prep move owes, sent only after the push transaction commits. */
+export type Applied = {
+  result: 'applied' | 'flagged' | 'held'
+  reason: string | null
+  flags: string[]
+  notify?: { orderId: string; event: OrderPushEvent }
+}
 
 type Tx = postgres.TransactionSql
 type EventOf<K extends SyncEventKind> = Extract<SyncEvent, { kind: K }>
