@@ -2,9 +2,10 @@ import type { PullState } from '@kennko/core'
 import type postgres from 'postgres'
 import { readMenuVersion } from '../menu/read.js'
 import { readPinRoster } from '../staff/pin-roster.js'
+import { readOnlineQueue } from './online-orders.js'
 
 /** What a till needs to catch up: the menu if newer than `tillVersion`, sold-out ids, PIN roster, shop details. */
-export async function readPullState(sql: postgres.Sql, tillVersion: number | null): Promise<PullState> {
+export async function readPullState(sql: postgres.Sql, tillVersion: number | null, now: Date): Promise<PullState> {
   const [latest] = await sql<{ version: string | number }[]>`select version from menu_snapshots order by version desc limit 1`
   let menu: PullState['menu'] = null
   if (latest) {
@@ -27,6 +28,7 @@ export async function readPullState(sql: postgres.Sql, tillVersion: number | nul
     menu,
     soldOut,
     staff,
+    onlineOrders: await readOnlineQueue(sql, now),
     shop: { name: shop?.display_name ?? 'Kennko Coffee', address: shop?.address ?? '', phone: shop?.phone ?? null },
   }
 }

@@ -203,6 +203,28 @@ describe('every route as kennko_api', () => {
     expect(pulled).toBeTruthy()
   })
 
+  it('sync pull: paid online orders with lines and options are readable as kennko_api', async () => {
+    const orderId = await asSuper(async () => {
+      const [o] = await db.sql`
+        insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
+          ticket_series, ticket_number, customer_name, customer_phone, customer_email, fulfil_at,
+          subtotal_centavos, total_centavos, created_at, updated_at)
+        values ('online', 'KNK-ROLE', 'pickup', 'placed', 'paid', '2026-11-21', 'W', 901, 'Ana', '09170000000',
+          'a@x.test', ${NOW.toISOString()}, 14000, 14000, ${NOW.toISOString()}, ${NOW.toISOString()})
+        returning id`
+      const [l] = await db.sql`
+        insert into order_lines (order_id, item_id, item_name, variant_code, variant_label, unit_price_centavos,
+          quantity, line_total_centavos, ice_level, ice_serve)
+        values (${o!.id}, ${latteId}, 'Latte', 'M', 'Medium', 12000, 1, 14000, 'regular', 'mixed') returning id`
+      await db.sql`insert into order_line_options (line_id, group_name, option_name, price_centavos) values (${l!.id}, 'Milk of Choice', 'Oat milk', 2000)`
+      return o!.id as string
+    })
+    const pulled = await ok('GET', '/v1/sync/pull?version=0', deviceToken)
+    const online = pulled.onlineOrders as { id: string; lines: { name: string; options: string[] }[] }[]
+    const mine = online.find((o) => o.id === orderId)
+    expect(mine?.lines).toMatchObject([{ name: 'Latte', options: ['Oat milk'] }])
+  })
+
   it('sync import: a stored row, a rejected row, and a rerun that clears the receipt', async () => {
     const shift: ImportShift = {
       id: randomUUID(),

@@ -38,7 +38,7 @@ export function syncRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get('/pull', requireDevice(deps), async (c) => {
     const raw = Number(c.req.query('version'))
     const version = Number.isInteger(raw) && raw > 0 ? raw : null
-    const state = await readPullState(deps.sql, version)
+    const state = await readPullState(deps.sql, version, deps.now())
     c.header('Cache-Control', 'no-store')
     return c.json(state)
   })
