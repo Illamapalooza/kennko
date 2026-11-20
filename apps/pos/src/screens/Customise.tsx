@@ -4,6 +4,7 @@ import {
   type IceLevel, type IceServe, type LineInput, type Menu, type MenuItem,
 } from '@kennko/core'
 import { Modal } from '../components/Modal.tsx'
+import { toggleAddon } from '../addons.ts'
 
 type Props = {
   menu: Menu
@@ -22,6 +23,7 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
   const [picked, setPicked] = useState<Set<string>>(new Set(initial?.modifierIds ?? []))
   const [note, setNote] = useState(initial?.note ?? '')
   const [quantity, setQuantity] = useState(initial?.quantity ?? 1)
+  const [addonLimit, setAddonLimit] = useState<string | null>(null)
 
   const ice = normaliseIce(size, iceLevel, iceServe)
   const unit = useMemo(() => {
@@ -31,16 +33,9 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
   }, [item, menu, size, picked])
 
   const toggle = (groupId: string, id: string) => {
-    const group = menu.modifierGroups.find((g) => g.id === groupId)!
-    setPicked((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else {
-        if (!group.isMultiSelect) for (const m of group.modifiers) next.delete(m.id)
-        next.add(id)
-      }
-      return next
-    })
+    const { next, refused } = toggleAddon(menu.modifierGroups, picked, groupId, id)
+    setPicked(next)
+    setAddonLimit(refused)
   }
 
   const save = () => onSave({ menuItemId: item.id, size, modifierIds: [...picked], quantity, iceLevel: ice.level, iceServe: ice.serve, note: note.trim() })
@@ -98,6 +93,7 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
         </section>
       ) : null}
 
+      {addonLimit ? <p className="error" role="alert">{addonLimit}</p> : null}
       {menu.modifierGroups.map((group) => (
         <section className="field" key={group.id}>
           <h3>{group.name} <small>{group.isMultiSelect ? 'any' : 'pick one'}</small></h3>

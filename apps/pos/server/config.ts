@@ -48,7 +48,13 @@ export function loadConfig(root: string): Config {
   }
   const port = Number.isInteger(raw.port) && raw.port > 0 && raw.port < 65536 ? raw.port : DEFAULTS.port
   const discounts = Array.isArray(raw.discounts)
-    ? raw.discounts.filter((d: any) => d && typeof d.label === 'string' && (d.kind === 'percent' || d.kind === 'amount') && Number.isFinite(d.value) && d.value > 0)
+    ? raw.discounts.filter((d: any) => {
+      if (!(d && typeof d.label === 'string' && (d.kind === 'percent' || d.kind === 'amount') && Number.isFinite(d.value) && d.value > 0)) return false
+      // Sales are recorded in whole percents and whole centavos, so a fractional preset never shows on the till.
+      if (Number.isInteger(d.value)) return true
+      console.warn(`config.json: the discount "${d.label}" (${d.value}) is not a whole number, so it is left out.`)
+      return false
+    })
     : DEFAULTS.discounts
   const securePort = raw.securePort === 0 ? 0 : Number.isInteger(raw.securePort) && raw.securePort > 0 && raw.securePort < 65536 && raw.securePort !== port ? raw.securePort : DEFAULTS.securePort
   return {

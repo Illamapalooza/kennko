@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import {
-  MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, cleanDiscount, manilaDay, nextStatus, prevStatus, priceLines, summarise, totals,
+  ADDON_LIMIT_MESSAGE, MAX_MODIFIERS, MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, cleanDiscount, manilaDay, nextStatus, prevStatus, priceLines, summarise, totals,
   type CashMove, type CounterOrderPayload, type Discount, type LineInput, type Menu, type Order, type OrderStatus, type OrderType,
   type PaymentMethod, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
 } from '@kennko/core'
@@ -115,7 +115,6 @@ const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[
 const MONEY_MAX = 100_000_000
 /** The API's limit for names and ids inside an order's lines. */
 const LINE_TEXT_MAX = 120
-const LINE_MODIFIERS_MAX = 20
 
 /**
  * Text as the till stores and sends it: no control characters (so no NUL), no broken UTF-16 pairs, trimmed,
@@ -126,21 +125,39 @@ const clean = (text: unknown, max: number) => {
   return /[\ud800-\udbff]$/.test(out) ? out.slice(0, -1) : out
 }
 
-const checkBy = (by: By): By => {
-  if (by !== null && (typeof by !== 'string' || !UUID.test(by))) throw new Error('A staff id must be a uuid or null.')
-  return by
+/**
+ * The staff id to record. Attribution never stops a sale (Ruling P4-4): anything that is not a uuid is recorded as
+ * nobody, with a warning, because the API would hold the whole event as invalid.
+ */
+const checkBy = (by: unknown): By => {
+  if (by === null || (typeof by === 'string' && UUID.test(by))) return by
+  console.warn(`Not a staff id, so this change is credited to nobody: ${JSON.stringify(String(by)).slice(0, 60)}`)
+  return null
 }
 
-const sendableText = (text: unknown, min: number) =>
-  typeof text === 'string' && text.length >= min && text.length <= LINE_TEXT_MAX && !/[\u0000]/.test(text)
+const sendableId = (id: unknown) => typeof id === 'string' && id.length >= 1 && id.length <= LINE_TEXT_MAX && !/[\u0000]/.test(id)
 
-/** A priced line the API will accept as sent: menu text within its limits, at most 20 add-ons, a clean note. */
+/**
+ * A priced line as the till keeps and sends it (Ruling P4-4): display names cut to the API's limit, a clean note.
+ * Only ids are checked, never cut (website ids are uuids, built-in ids short slugs), and the add-on cap the till
+ * screen already enforces is kept as a guard.
+ */
 function sendableLine(line: PricedLine): PricedLine {
-  const ok = sendableText(line.menuItemId, 1) && sendableText(line.name, 1) && line.modifiers.length <= LINE_MODIFIERS_MAX
-    && line.modifiers.every((m) => sendableText(m.id, 1) && sendableText(m.name, 0))
-  if (!ok) throw new OrderError(`${clean(line.name, 40) || 'A drink'} has a menu entry the till cannot record. Update the menu.`)
-  return { ...line, note: clean(line.note, NOTE_MAX) }
+  if (line.modifiers.length > MAX_MODIFIERS) throw new OrderError(ADDON_LIMIT_MESSAGE)
+  if (!sendableId(line.menuItemId) || !line.modifiers.every((m) => sendableId(m.id))) {
+    throw new OrderError(`${clean(line.name, 40) || 'A drink'} has a menu entry the till cannot record. Update the menu.`)
+  }
+  return {
+    ...line,
+    name: clean(line.name, LINE_TEXT_MAX) || 'Drink',
+    modifiers: line.modifiers.map((m) => ({ ...m, name: clean(m.name, LINE_TEXT_MAX) })),
+    note: clean(line.note, NOTE_MAX),
+  }
 }
+
+/** Whole-number discount values (the API stores ints); a fractional one from a hand-made request is rounded. */
+const wholeDiscount = (d: Discount | null | undefined): Discount | null | undefined =>
+  d && typeof d.value === 'number' && Number.isFinite(d.value) && !Number.isInteger(d.value) ? { ...d, value: Math.round(d.value) } : d
 
 function toOrder(row: any): Order {
   return {
@@ -348,7 +365,7 @@ export function createStore(file: string) {
 
     /** Marks a drink sold out or back. Sent to Kennko only when `opts.outbox` (while paired, Ruling 14). */
     setAvailable(itemId: string, available: boolean, now: number, by: By, opts: { outbox: boolean }) {
-      checkBy(by)
+      by = checkBy(by)
       if (typeof itemId !== 'string' || itemId.length === 0 || /[\u0000]/.test(itemId)) throw new OrderError('That drink is not on the menu.')
       tx(() => {
         if (available) db.prepare('delete from sold_out where item_id = ?').run(itemId)
@@ -359,14 +376,16 @@ export function createStore(file: string) {
 
     /** Prices the order from the menu, checks the payment, and saves it. Nothing is saved unless all of it holds. */
     createOrder(menu: Menu, input: NewOrder, now: number, by: By): Order {
-      checkBy(by)
+      by = checkBy(by)
       const lines = priceLines(menu, input.lines).map(sendableLine)
-      const cleaned = cleanDiscount(input.discount)
-      if (cleaned && !Number.isInteger(cleaned.value)) throw new OrderError('A discount must be a whole number.')
-      if (cleaned && cleaned.value > MONEY_MAX) throw new OrderError('That discount is too large.')
-      const discount: Discount | null = cleaned ? { ...cleaned, label: clean(cleaned.label, 40) || 'Discount' } : null
+      const cleaned = cleanDiscount(wholeDiscount(input.discount))
+      const subtotal = totals(lines, null).subtotalCentavos
+      if (subtotal > MONEY_MAX) throw new OrderError('That order is too large. Split it into two.')
+      // An amount bigger than the order takes off the subtotal anyway (discountAmount), so that is what is kept and sent.
+      const discount: Discount | null = cleaned
+        ? { ...cleaned, label: clean(cleaned.label, 40) || 'Discount', value: cleaned.kind === 'amount' ? Math.min(cleaned.value, subtotal) : cleaned.value }
+        : null
       const sums = totals(lines, discount)
-      if (sums.subtotalCentavos > MONEY_MAX) throw new OrderError('That order is too large. Split it into two.')
       const type: OrderType = input.type === 'takeout' ? 'takeout' : 'dine_in'
       const method = input.payment?.method
       if (method !== 'cash' && method !== 'gcash') throw new OrderError('Choose cash or GCash.')
@@ -405,7 +424,7 @@ export function createStore(file: string) {
     },
 
     advance(id: number, now: number, by: By): Order {
-      checkBy(by)
+      by = checkBy(by)
       return tx(() => {
         const next = nextStatus(getOrder(id).status)
         if (!next) throw new OrderError('That order is already finished.')
@@ -414,7 +433,7 @@ export function createStore(file: string) {
     },
 
     undo(id: number, now: number, by: By): Order {
-      checkBy(by)
+      by = checkBy(by)
       return tx(() => {
         const prev = prevStatus(getOrder(id).status)
         if (!prev) throw new OrderError('That order has nothing to undo.')
@@ -424,7 +443,7 @@ export function createStore(file: string) {
 
     /** A void keeps the order on record but takes it out of sales and out of the expected cash. */
     voidOrder(id: number, reason: string, now: number, by: By): Order {
-      checkBy(by)
+      by = checkBy(by)
       return tx(() => {
         const order = getOrder(id)
         if (order.status === 'voided') throw new OrderError('That order is already voided.')
@@ -459,7 +478,7 @@ export function createStore(file: string) {
     },
 
     startShift(floatCentavos: number, now: number, by: By): Shift {
-      checkBy(by)
+      by = checkBy(by)
       return tx(() => {
         if (openShift()) throw new OrderError('The till is already open.')
         const float = money(floatCentavos, 'Starting cash')
@@ -472,7 +491,7 @@ export function createStore(file: string) {
     },
 
     cashMove(kind: 'in' | 'out', amountCentavos: number, reason: string, now: number, by: By): CashMove {
-      checkBy(by)
+      by = checkBy(by)
       return tx(() => {
         const shift = openShift()
         if (!shift) throw new OrderError('Open the till first.')
@@ -493,7 +512,7 @@ export function createStore(file: string) {
     },
 
     endShift(countedCentavos: number, note: string, now: number, by: By): { shift: Shift; summary: Summary } {
-      checkBy(by)
+      by = checkBy(by)
       return tx(() => {
         const shift = openShift()
         if (!shift) throw new OrderError('The till is not open.')

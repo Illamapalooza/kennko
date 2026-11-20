@@ -7,6 +7,9 @@ export class OrderError extends Error {}
 export const MAX_QUANTITY = 20
 export const MAX_LINES = 40
 export const NOTE_MAX = 200
+/** Add-ons on one drink; the API keeps at most this many per line. */
+export const MAX_MODIFIERS = 20
+export const ADDON_LIMIT_MESSAGE = `At most ${MAX_MODIFIERS} add-ons on one drink.`
 
 /** What the till sends: ids and choices only. Prices are never trusted from the screen. */
 export type LineInput = {

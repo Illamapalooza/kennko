@@ -2,8 +2,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, describe, expect, it } from 'vitest'
-import { liveDrinkMenu, type MenuSnapshot } from '@kennko/core'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ADDON_LIMIT_MESSAGE, liveDrinkMenu, type Menu, type MenuSnapshot } from '@kennko/core'
 import { createStore, type NewOrder } from '../server/store.ts'
 import { builtInMenu } from '../server/menu.ts'
 
@@ -235,19 +235,69 @@ describe('outbox', () => {
   })
 })
 
-describe('what the till refuses so the API never holds its events as invalid', () => {
-  it('refuses a staff id that is not a uuid', () => {
-    const store = createStore(':memory:')
-    expect(() => store.startShift(0, T, 'ana')).toThrow()
-    expect(rows(store)).toHaveLength(0)
+describe('what the till normalises so the API never holds its events as invalid (P4-4)', () => {
+  it('records a staff id that is not a uuid as nobody, with a warning, and never refuses', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const store = createStore(':memory:')
+      const shift = store.startShift(0, T, 'ana')
+      const order = store.createOrder(menu, sale(), T, 'not-a-uuid')
+      store.voidOrder(order.id, 'oops', T, 'x')
+      expect(rows(store).map((r) => r.staff_id)).toEqual([null, null, null])
+      expect(store.db.prepare('select opened_by_staff from shifts where id = ?').get(shift.id)).toEqual({ opened_by_staff: null })
+      expect(store.db.prepare('select cancelled_by_staff from orders where id = ?').get(order.id)).toEqual({ cancelled_by_staff: null })
+      expect(warn).toHaveBeenCalledTimes(3)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
-  it('refuses a fractional percent and an absurd amount discount', () => {
+  it('a fractional percent is rounded to a whole one rather than refused', () => {
     const store = createStore(':memory:')
     store.startShift(0, T, null)
-    expect(() => store.createOrder(menu, sale({ discount: { label: 'x', kind: 'percent', value: 12.5 } }), T, null)).toThrow(/whole number/)
-    expect(() => store.createOrder(menu, sale({ discount: { label: 'x', kind: 'amount', value: 3_000_000_000 } }), T, null)).toThrow(/discount/i)
-    expect(store.pending().sales).toBe(0)
+    const order = store.createOrder(menu, sale({ discount: { label: 'x', kind: 'percent', value: 12.5 } }), T, null)
+    expect(order.discountCentavos).toBe(1300) // 13% of 100.00
+    expect((store.outboxEvents()[1].payload as any).discount).toEqual({ label: 'x', kind: 'percent', value: 13 })
+  })
+
+  it('an amount discount bigger than the order is sent as the subtotal and still sells', () => {
+    const store = createStore(':memory:')
+    store.startShift(0, T, null)
+    const order = store.createOrder(menu, sale({ discount: { label: 'Free', kind: 'amount', value: 3_000_000_000 } }), T, null)
+    expect(order.totalCentavos).toBe(0)
+    expect(order.discountCentavos).toBe(10000)
+    expect((store.outboxEvents()[1].payload as any).discount).toEqual({ label: 'Free', kind: 'amount', value: 10000 })
+  })
+
+  it('sells drinks and add-ons with very long names, cut to what the API keeps', () => {
+    const long: Menu = structuredClone(menu)
+    const item = long.categories[0].items.find((i) => i.id === latte.id)!
+    item.name = 'L'.repeat(200)
+    const group = long.modifierGroups[0]
+    group.modifiers[0].name = 'O'.repeat(200)
+    const store = createStore(':memory:')
+    store.startShift(0, T, null)
+    const order = store.createOrder(long, sale({
+      lines: [{ menuItemId: latte.id, size: 'M', modifierIds: [group.modifiers[0].id], quantity: 1, iceLevel: null, iceServe: null, note: '' }],
+    }), T, null)
+    expect(order.lines[0].name).toBe('L'.repeat(120))
+    expect(order.lines[0].modifiers[0].name).toBe('O'.repeat(120))
+    const line = (store.outboxEvents()[1].payload as any).lines[0]
+    expect(line.name).toBe('L'.repeat(120))
+    expect(line.modifiers[0].name).toBe('O'.repeat(120))
+  })
+
+  it('keeps a guard of 20 add-ons on one drink, in the same words as the till screen', () => {
+    const many: Menu = structuredClone(menu)
+    many.modifierGroups.push({
+      id: 'extras', name: 'Extras', isMultiSelect: true,
+      modifiers: Array.from({ length: 21 }, (_, i) => ({ id: `extra-${i}`, name: `Extra ${i}`, priceCentavos: 0, isAvailable: true })),
+    })
+    const store = createStore(':memory:')
+    store.startShift(0, T, null)
+    const line = (n: number) => ({ menuItemId: latte.id, size: 'M' as const, modifierIds: Array.from({ length: n }, (_, i) => `extra-${i}`), quantity: 1, iceLevel: null, iceServe: null, note: '' })
+    expect(() => store.createOrder(many, sale({ lines: [line(21)] }), T, null)).toThrow(ADDON_LIMIT_MESSAGE)
+    expect(store.createOrder(many, sale({ lines: [line(20)] }), T, null).lines[0].modifiers).toHaveLength(20)
   })
 
   it('cleans text so nothing sent holds a NUL or a broken character', () => {
@@ -382,6 +432,24 @@ describe('upgrade from the till before Plan 4', () => {
     expect(again.db.prepare('select needs_import from orders where id = ?').get(order.id)).toEqual({ needs_import: 0 })
     expect(again.db.prepare('select count(*) as n from orders where needs_import = 1').get()).toEqual({ n: 2 })
     expect(again.outboxEvents()).toHaveLength(2)
+    again.close()
+  })
+
+  it('finishes a half-done upgrade: some columns already there, no marker yet', () => {
+    const file = oldFile()
+    const db = new DatabaseSync(file)
+    db.exec('alter table shifts add column uid text; alter table orders add column uid text; alter table orders add column needs_import integer not null default 0')
+    db.close()
+    const store = createStore(file)
+    expect(store.kvGet('schema')).toBe('4')
+    expect(store.db.prepare('select uid, needs_import, opened_by_staff from shifts').all()).toEqual([{ uid: null, needs_import: 1, opened_by_staff: null }])
+    expect(store.db.prepare('select needs_import, payment_uid from orders').all())
+      .toEqual([{ needs_import: 1, payment_uid: null }, { needs_import: 1, payment_uid: null }])
+    expect(store.db.prepare('select needs_import, staff_id from cash_moves').all()).toEqual([{ needs_import: 1, staff_id: null }])
+    store.startShift(0, T + 2000, null)
+    store.close()
+    const again = createStore(file)
+    expect(again.db.prepare('select needs_import from shifts order by id').all()).toEqual([{ needs_import: 1 }, { needs_import: 0 }])
     again.close()
   })
 
