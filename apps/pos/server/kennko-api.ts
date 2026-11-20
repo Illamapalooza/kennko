@@ -15,6 +15,12 @@ export type DeviceAnswer =
 
 export const FREE_DRINK_OFFLINE = 'The free drink needs the internet. Charge it normally, or try again when online.'
 export const CLAIM_WAIT_MS = 5_000
+/**
+ * How long after a claim attempt a `released: false` still might mean "the claim has not committed yet". Far longer
+ * than any claim could take; after it, `released: false` means the claim never happened (or a sale used it) and the
+ * pending release is dropped (Ruling P7-3).
+ */
+export const RELEASE_WINDOW_MS = 10 * 60_000
 const LOOKUP_WAIT_MS = 5_000
 const OFFLINE_NOTE = 'Will confirm when back online'
 const RATE_LIMITED_NOTE = 'Too many card lookups this minute. Will confirm when back online'
@@ -110,6 +116,9 @@ export async function chargeWithFreeDrink(o: {
   now: number
   by: By
   managerStaffId: string | null
+  /** Asks the sync loop to run soon, so a queued release goes out. */
+  kick?: () => void
+  claimWaitMs?: number
 }): Promise<Order> {
   const { store, menu, dataDir, apiUrl, input, reward, now } = o
   const fetchFn = o.fetchFn ?? fetch
@@ -125,17 +134,17 @@ export async function chargeWithFreeDrink(o: {
   store.prepareOrder(menu, sale)
 
   const claimId = randomUUID()
-  const post = (path: string, body: unknown) => deviceCall(dataDir, apiUrl, path, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-  }, CLAIM_WAIT_MS, fetchFn)
-  const release = async () => { await post('/v1/stamp-cards/release', { claimId }) }
-
-  const claimed = await post('/v1/stamp-cards/claim', { claimId, code: bare, staffId: o.managerStaffId })
+  const claimed = await deviceCall(dataDir, apiUrl, '/v1/stamp-cards/claim', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ claimId, code: bare, staffId: o.managerStaffId }),
+  }, o.claimWaitMs ?? CLAIM_WAIT_MS, fetchFn)
   if (claimed.kind === 'refused') throw new OrderError(claimRefusal(claimed))
-  if (claimed.kind !== 'ok') {
-    // A timeout may have claimed on the server all the same: let it go again, without making staff wait for it.
-    if (claimed.kind === 'offline') void release().catch(() => {})
-    throw new OrderError(claimed.kind === 'revoked' ? 'This till is disconnected from Kennko. Charge the drink normally.' : FREE_DRINK_OFFLINE)
+  if (claimed.kind === 'revoked') throw new OrderError('This till is disconnected from Kennko. Charge the drink normally.')
+  if (claimed.kind === 'offline') {
+    // A timeout or a lost answer may have claimed on the server all the same, and a release sent now could reach it
+    // before the claim commits. So the release is queued and retried by the sync loop until it is definitive (P7-3).
+    store.queueRelease(claimId, now)
+    o.kick?.()
+    throw new OrderError(FREE_DRINK_OFFLINE)
   }
   const after = tillCustomer(claimed.body?.customer)
   if (after) store.cacheCustomer(after.customer)
@@ -143,7 +152,30 @@ export async function chargeWithFreeDrink(o: {
   try {
     return store.createOrder(menu, sale, now, o.by, { rewardClaimId: claimId })
   } catch (err) {
-    await release().catch(() => {})
+    // Queued first, so the release is never lost; one try now usually settles it before staff charge again.
+    store.queueRelease(claimId, now)
+    await releasePending(store, dataDir, apiUrl, now, fetchFn, claimId)
+    o.kick?.()
     throw err
+  }
+}
+
+/**
+ * Tries each queued release once (or only `only`), oldest first. `released: true` drops it; `released: false` drops it
+ * once the claim attempt is older than `RELEASE_WINDOW_MS`, else keeps it (the claim may not have committed yet). No
+ * answer keeps it and stops this round. A claim a sale was written under is dropped without a call. Never throws.
+ */
+export async function releasePending(store: Store, dataDir: string, apiUrl: string, now: number, fetchFn: typeof fetch = fetch, only?: string): Promise<void> {
+  for (const { claimId, claimedAt } of store.pendingReleases()) {
+    if (only !== undefined && claimId !== only) continue
+    if (store.db.prepare('select 1 from orders where reward_claim_id = ?').get(claimId)) { store.dropRelease(claimId); continue }
+    const a = await deviceCall(dataDir, apiUrl, '/v1/stamp-cards/release', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ claimId }),
+    }, CLAIM_WAIT_MS, fetchFn)
+    if (a.kind === 'ok' && a.body?.released === true) store.dropRelease(claimId)
+    else if (a.kind === 'ok' && a.body?.released === false && now - claimedAt > RELEASE_WINDOW_MS) store.dropRelease(claimId)
+    // A 400 means the API cannot read this claim id at all: retrying never helps.
+    else if (a.kind === 'refused' && a.status === 400) store.dropRelease(claimId)
+    else if (a.kind !== 'ok') return
   }
 }

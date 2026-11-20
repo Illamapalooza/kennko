@@ -2,6 +2,7 @@ import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, isOnlineQueueOrder, type P
 import { REVOKED_CODES, applyDeviceInfo, cleanStaff, loadDevice, type DeviceFile } from './device.ts'
 import { ackImportChunk, assignLegacyIds, importRemaining, nextImportChunk, noteImportSend } from './legacy-import.ts'
 import { isMenuSnapshot, loadSnapshot, saveSnapshot } from './menu.ts'
+import { releasePending } from './kennko-api.ts'
 import type { PinDirectory } from './pins.ts'
 import type { Sessions } from './sessions.ts'
 import type { Store } from './store.ts'
@@ -228,6 +229,9 @@ export function createSync(opts: {
       store.ackOutbox(answered)
       if (answered.length === 0) { failure = { problem: 'The website did not take the waiting changes.', offline: false }; break } // never loop on one batch
     }
+
+    // Free-drink claims that made no sale are let go (Ruling P7-3); best effort, never a sync problem.
+    if (!failure && store.pendingReleases().length > 0) await releasePending(store, dataDir, opts.apiUrl, now(), fetchFn)
 
     // Pull, even after a failed push: the sold-out replay keeps the till's own unsent marks on top (Ruling 14).
     const loaded = loadSnapshot(dataDir)

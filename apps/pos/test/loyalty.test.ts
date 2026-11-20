@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterAll, describe, expect, it } from 'vitest'
 import { makePublicCode, type OnlineQueueOrder, type PullState, type SyncEvent, type TillCustomer } from '@kennko/core'
 import { saveDevice } from '../server/device.ts'
-import { chargeWithFreeDrink, deviceCall, lookupCustomer, FREE_DRINK_OFFLINE } from '../server/kennko-api.ts'
+import { chargeWithFreeDrink, deviceCall, lookupCustomer, FREE_DRINK_OFFLINE, RELEASE_WINDOW_MS } from '../server/kennko-api.ts'
 import { builtInMenu } from '../server/menu.ts'
 import { createPinDirectory } from '../server/pins.ts'
 import { createSessions } from '../server/sessions.ts'
@@ -389,6 +389,132 @@ describe('stamping an online order at pickup', () => {
     expect(() => store.stampOnline('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', T, ANA)).toThrow(/no Kennko card/i)
     expect(() => store.stampOnline('cccccccc-cccc-4ccc-8ccc-cccccccccccc', T, ANA)).toThrow(/no longer on the till/)
     expect(outbox(store)).toHaveLength(before)
+  })
+})
+
+describe('releasing a claim that did not make a sale (Ruling P7-3)', () => {
+  const pending = (store: ReturnType<typeof createStore>) => store.pendingReleases().map((r) => r.claimId)
+  function syncFor(t: ReturnType<typeof till>, release: (body: any) => Response, clock: { now: number }) {
+    const sessions = createSessions(t.store.db, () => T)
+    const pins = createPinDirectory({ staffPin: '1234', managerPin: '0000', staff: () => t.store.staffCache() })
+    const api = fakeApi((p, body) => {
+      if (p === '/v1/stamp-cards/release') return release(body)
+      if (p === '/v1/sync/push') return json(200, { results: body.events.map((e: any) => ({ id: e.id, result: 'applied', reason: null, flags: [] })), held: 0 })
+      return json(200, { menu: null, soldOut: [], staff: [], shop: { name: 'K', address: 'B', phone: null } } satisfies PullState)
+    })
+    const sync = createSync({ store: t.store, sessions, pins, dataDir: t.dataDir, apiUrl: API, fetchFn: api.fn, now: () => clock.now, onChange: () => {} })
+    return { sync, api }
+  }
+
+  it('a claim that times out queues a release with the same claimId; released:false is retried until released:true', async () => {
+    const t = till()
+    const slow = fakeApi((p) => p === '/v1/stamp-cards/claim' ? new Promise<Response>(() => {}) : json(200, { released: true }))
+    const timedOut = (async (u: any, init?: RequestInit) => new Promise((resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))
+      void slow.fn(u, init).then(resolve)
+    })) as unknown as typeof fetch
+    let kicked = 0
+    await expect(chargeWithFreeDrink({
+      store: t.store, menu, dataDir: t.dataDir, apiUrl: API, fetchFn: timedOut, input: sale(), reward: { lineIndex: 0, code: newCode() },
+      now: T, by: ANA, managerStaffId: null, claimWaitMs: 20, kick: () => { kicked++ },
+    })).rejects.toThrow(FREE_DRINK_OFFLINE)
+    const claimId = slow.calls[0]!.body.claimId
+    expect(pending(t.store)).toEqual([claimId])
+    expect(kicked).toBe(1)
+    // No release raced the claim from the request itself.
+    expect(slow.calls.filter((c) => c.path === '/v1/stamp-cards/release')).toEqual([])
+
+    const clock = { now: T + 1000 }
+    let answer = false
+    const { sync, api } = syncFor(t, () => json(200, { released: answer }), clock)
+    await sync.runOnce() // the claim has not committed yet: released:false, kept
+    expect(pending(t.store)).toEqual([claimId])
+    answer = true
+    clock.now = T + 60_000
+    await sync.runOnce()
+    expect(pending(t.store)).toEqual([])
+    expect(api.calls.filter((c) => c.path === '/v1/stamp-cards/release').map((c) => c.body)).toEqual([{ claimId }, { claimId }])
+  })
+
+  it('released:false is dropped once the claim attempt is older than the window; offline keeps it', async () => {
+    const t = till()
+    t.store.queueRelease('44444444-4444-4444-8444-444444444444', T)
+    const clock = { now: T + 1000 }
+    let release: () => Response = () => new Response('down', { status: 503 })
+    const { sync } = syncFor(t, () => release(), clock)
+    await sync.runOnce()
+    expect(pending(t.store)).toHaveLength(1)
+    release = () => json(200, { released: false })
+    clock.now = T + RELEASE_WINDOW_MS - 1
+    await sync.runOnce()
+    expect(pending(t.store)).toHaveLength(1)
+    clock.now = T + RELEASE_WINDOW_MS + 1
+    await sync.runOnce()
+    expect(pending(t.store)).toEqual([])
+  })
+
+  it('a sale that fails after a confirmed claim queues its release; a sale written under a claim never does', async () => {
+    const t = till()
+    const code = newCode()
+    const api = fakeApi((p) => {
+      if (p === '/v1/stamp-cards/claim') { t.store.endShift(0, '', T, ANA); return json(200, { customer: customer(code) }) }
+      return json(200, { released: false }) // the immediate try is not definitive: it stays queued
+    })
+    await expect(chargeWithFreeDrink({
+      store: t.store, menu, dataDir: t.dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null,
+    })).rejects.toThrow('Open the till before taking orders.')
+    expect(pending(t.store)).toEqual([api.calls[0]!.body.claimId])
+
+    const u = till()
+    const ok = fakeApi(() => json(200, { customer: customer(code) }))
+    const order = await chargeWithFreeDrink({
+      store: u.store, menu, dataDir: u.dataDir, apiUrl: API, fetchFn: ok.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null,
+    })
+    expect(order.freeDrink).toBe(true)
+    expect(pending(u.store)).toEqual([])
+    // Even asked to, the store never queues a claim a sale was written under.
+    u.store.queueRelease(ok.calls[0]!.body.claimId, T)
+    expect(pending(u.store)).toEqual([])
+  })
+
+  it('a refused claim queues nothing', async () => {
+    const t = till()
+    const api = fakeApi(() => json(409, { code: 'NO_FREE_DRINK', message: 'none' }))
+    await expect(chargeWithFreeDrink({
+      store: t.store, menu, dataDir: t.dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code: newCode() }, now: T, by: ANA, managerStaffId: null,
+    })).rejects.toThrow('No free drink waiting on this card.')
+    expect(pending(t.store)).toEqual([])
+  })
+})
+
+describe('stamp and unlink rules (Rulings P7-4, P7-5)', () => {
+  it('stamping needs the order\'s till to be open', () => {
+    const { store } = till()
+    const order = store.createOrder(menu, { ...sale(), customerCode: newCode() }, T, ANA)
+    for (let i = 0; i < 3; i++) store.advance(order.id, T, ANA)
+    store.endShift(0, '', T, ANA)
+    const before = outbox(store).length
+    expect(() => store.stampOrder(order.id, T, ANA)).toThrow('That order belongs to a till that is already closed.')
+    expect(outbox(store)).toHaveLength(before)
+  })
+
+  it('a voided order cannot be unlinked', () => {
+    const { store } = till()
+    const order = store.createOrder(menu, { ...sale(), customerCode: newCode() }, T, ANA)
+    store.voidOrder(order.id, 'oops', T, ANA)
+    const before = outbox(store).length
+    expect(() => store.unlinkCustomer(order.id, T, ANA)).toThrow(/voided/)
+    expect(outbox(store)).toHaveLength(before)
+  })
+
+  it('a sale whose only drink is the free one earns no stamp; with a paid drink too it does', async () => {
+    const { store, dataDir } = till()
+    const code = newCode()
+    const ok = fakeApi(() => json(200, { customer: customer(code) }))
+    const free = await chargeWithFreeDrink({ store, menu, dataDir, apiUrl: API, fetchFn: ok.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null })
+    expect(() => store.stampOrder(free.id, T, ANA)).toThrow('A free drink earns no stamp.')
+    const mixed = await chargeWithFreeDrink({ store, menu, dataDir, apiUrl: API, fetchFn: ok.fn, input: twoLines(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null })
+    expect(store.stampOrder(mixed.id, T, ANA).stamped).toBe(true)
   })
 })
 

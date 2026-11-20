@@ -337,6 +337,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       const manager = await checkPin(req, body.managerPin, 'manager')
       return done(await chargeWithFreeDrink({
         store, menu: menu(), dataDir: DATA, apiUrl: config.api.url, input: body, reward: body.reward, now, by, managerStaffId: manager.staffId,
+        kick: () => sync.kick(),
       }))
     }
     return done(store.createOrder(menu(), body, now, by))

@@ -94,6 +94,7 @@ const SCHEMA = `
   create table if not exists online_orders (id text primary key, prep_status text not null, updated_at integer not null, data text not null);
   create table if not exists customer_cache (code text primary key, data text not null, updated_at integer not null);
   create table if not exists online_stamps (order_id text primary key, stamp_uid text not null, at integer not null);
+  create table if not exists pending_releases (claim_id text primary key, claimed_at integer not null);
 `
 
 /** Columns added to tables that already exist on tills from before Plan 4 (SQLite cannot add a unique column). */
@@ -244,8 +245,11 @@ export function tillCustomer(x: any): { bare: string; customer: TillCustomer } |
   }
 }
 
-/** The till sells drinks only (its menu is the snapshot's drink categories), so each counter line counts as a drink. */
-const counterKinds = (lines: PricedLine[]) => lines.map(() => ({ kind: null }))
+/**
+ * The till sells drinks only (its menu is the snapshot's drink categories), so each counter line counts as a drink,
+ * except the free drink: it earns no stamp (Ruling P7-5).
+ */
+const counterKinds = (lines: PricedLine[]) => lines.filter((l) => !l.reward).map(() => ({ kind: null }))
 const byCreated = (a: OnlineQueueOrder, b: OnlineQueueOrder) =>
   a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 
@@ -616,9 +620,7 @@ export function createStore(file: string) {
     unlinkCustomer(id: number, now: number, by: By): Order {
       by = checkBy(by)
       return tx(() => {
-        const order = getOrder(id)
-        const shift = db.prepare('select closed_at from shifts where id = ?').get(order.shiftId) as any
-        if (shift?.closed_at) throw new OrderError(CLOSED_TILL)
+        const order = changeableOrder(id)
         if (order.customerCode === null) throw new OrderError('That order has no customer.')
         if (order.freeDrink) throw new OrderError('This sale used their free drink. Void it instead.')
         db.prepare('update orders set customer_code = null, stamp_uid = null, updated_at = ? where id = ?').run(now, id)
@@ -633,9 +635,9 @@ export function createStore(file: string) {
       return tx(() => {
         const order = getOrder(id)
         if (order.customerCode === null) throw new OrderError('Add the customer first.')
-        if (order.status === 'voided') throw new OrderError('That order is voided.')
+        changeableOrder(id)
         if (order.stamped) throw new OrderError('That order is already stamped.')
-        if (!hasDrink(counterKinds(order.lines))) throw new OrderError('A stamp needs a drink.')
+        if (!hasDrink(counterKinds(order.lines))) throw new OrderError(order.freeDrink ? 'A free drink earns no stamp.' : 'A stamp needs a drink.')
         if (cachedCustomer(order.customerCode)?.stampMode === 'paper') throw new OrderError(PAPER_STAMP_MESSAGE)
         const stampId = randomUUID()
         db.prepare('update orders set stamp_uid = ?, updated_at = ? where id = ?').run(stampId, now, id)
@@ -801,6 +803,27 @@ export function createStore(file: string) {
     cacheCustomer(x: TillCustomer, now = Date.now()): void {
       const c = tillCustomer(x)
       if (c) db.prepare('insert or replace into customer_cache (code, data, updated_at) values (?, ?, ?)').run(c.bare, JSON.stringify(c.customer), now)
+    },
+
+    /**
+     * Remembers a free-drink claim to let go (Ruling P7-3): one not confirmed in time, or confirmed but its sale not
+     * saved. The sync loop retries the release until it is definitive. A claim a sale was written under is never queued.
+     */
+    queueRelease(claimId: string, claimedAt: number): void {
+      tx(() => {
+        if (db.prepare('select 1 from orders where reward_claim_id = ?').get(claimId)) return
+        db.prepare('insert or ignore into pending_releases (claim_id, claimed_at) values (?, ?)').run(claimId, claimedAt)
+      })
+    },
+
+    /** Claims waiting to be released, oldest first. */
+    pendingReleases(): { claimId: string; claimedAt: number }[] {
+      return (db.prepare('select claim_id, claimed_at from pending_releases order by claimed_at, claim_id').all() as any[])
+        .map((r) => ({ claimId: r.claim_id, claimedAt: r.claimed_at }))
+    },
+
+    dropRelease(claimId: string): void {
+      db.prepare('delete from pending_releases where claim_id = ?').run(claimId)
     },
 
     /** Forgets every cached customer (the till was revoked or forgotten). */
