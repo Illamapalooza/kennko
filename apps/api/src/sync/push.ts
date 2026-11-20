@@ -2,24 +2,30 @@ import { MAX_HELD_RETRY, type PushResponse, type SyncEvent } from '@kennko/core'
 import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
 import { applyEvent, entityKeys, type Applied } from './apply.js'
-import { findNul, parseEvent, storableTime, type Envelope } from './schema.js'
+import { clip, findNul, parseEvent, storableTime, type Envelope } from './schema.js'
 
 type Tx = postgres.TransactionSql
 type Result = PushResponse['results'][number]
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const held = (reason: string): Applied => ({ result: 'held', reason, flags: [] })
-const isInvalid = (reason: string | null) => reason !== null && reason.startsWith('invalid:')
+/**
+ * Held because of what was sent (a payload, time or staff id that fails validation, or a receipt
+ * Postgres refused): retrying cannot change it. Apply-time exceptions are held `error: …` instead and
+ * are retried, since a deploy or a change in the data can clear them.
+ */
+const isPermanent = (reason: string | null) => reason !== null && reason.startsWith('invalid:')
+const messageOf = (err: unknown) => clip(err instanceof Error ? err.message : String(err))
 
 /**
  * Errors the till should simply send again: SQLSTATE class 40 (serialization, deadlock), 57
- * (timeout, cancel, shutdown), 08 (connection), and postgres.js's own connection errors. These fail
- * the whole push instead of being held as `invalid: …`.
+ * (timeout, cancel, shutdown), 08 (connection), 53 (out of resources, too many connections), 55P03
+ * (lock not available), and postgres.js's own connection errors. These fail the whole push.
  */
 export function isRetryable(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code
   if (typeof code !== 'string') return false
-  return /^(40|57|08)[0-9A-Z]{3}$/.test(code) || code.startsWith('CONNECT')
+  return /^(40|57|08|53)[0-9A-Z]{3}$/.test(code) || code === '55P03' || code.startsWith('CONNECT')
 }
 
 /** Carries a held answer out of its savepoint so anything the handler wrote is rolled back. */
@@ -40,7 +46,7 @@ async function applyInSavepoint(tx: Tx, deviceId: string, event: SyncEvent, now:
   } catch (err) {
     if (err instanceof Hold) return err.out
     if (isRetryable(err)) throw err
-    return held(`invalid: ${err instanceof Error ? err.message : String(err)}`)
+    return held(`error: ${messageOf(err)}`)
   }
 }
 
@@ -89,7 +95,7 @@ async function recordEvent(tx: Tx, deviceId: string, env: Envelope, now: Date): 
     })) as Applied
   } catch (err) {
     if (isRetryable(err)) throw err
-    const out = held('invalid: receipt')
+    const out = held(`invalid: receipt: ${messageOf(err)}`)
     // Keys stay so later events on the same entity still wait; keys and payload are made safe to store.
     const keys = entityKeys(env).filter((k) => !k.includes('\u0000'))
     await insertReceipt(tx, deviceId, env, keys, JSON.stringify(JSON.stringify(env.payload ?? null)), out, now)
@@ -111,7 +117,8 @@ type HeldRow = {
 /**
  * Retries this device's held events, oldest seq first. A row sharing an entity with an earlier row
  * that is still held stays held, so per-entity order survives. A row held `invalid: …` is never
- * applied again (what was sent cannot change); it only keeps its place in line.
+ * applied again (what was sent cannot change); it only keeps its place in line. Rows held
+ * `error: …` are retried like any other.
  */
 async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<void> {
   const rows = await tx<HeldRow[]>`
@@ -120,7 +127,7 @@ async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<void> {
     order by seq limit ${MAX_HELD_RETRY}`
   const blocked = new Set<string>()
   for (const row of rows) {
-    if (isInvalid(row.reason) || row.entity_keys.some((k) => blocked.has(k))) {
+    if (isPermanent(row.reason) || row.entity_keys.some((k) => blocked.has(k))) {
       for (const k of row.entity_keys) blocked.add(k)
       continue
     }

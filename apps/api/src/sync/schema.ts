@@ -140,12 +140,20 @@ export function findNul(value: unknown, path: string[] = []): string[] | null {
   return null
 }
 
+/** Text safe to keep in a reason: U+0000 written as `\\u0000`, at most `max` characters. */
+export function clip(text: string, max = 200): string {
+  const safe = text.replaceAll('\u0000', '\\u0000')
+  return safe.length > max ? `${safe.slice(0, max - 1)}…` : safe
+}
+
 const invalid = (path: (string | number | symbol)[], message: string) =>
   ({ ok: false, reason: `invalid: ${path.length > 0 ? `${path.map(String).join('.')}: ` : ''}${message}` }) as const
 
 /** A typed event, or the first problem with it as `invalid: <path>: <message>`. */
 export function parseEvent(env: Envelope): { ok: true; event: SyncEvent } | { ok: false; reason: string } {
-  if (storableTime(env.occurredAt) === null) return invalid(['occurredAt'], 'expected an ISO date-time with an offset, year 2000 or later')
+  if (storableTime(env.occurredAt) === null) {
+    return invalid(['occurredAt'], `expected an ISO date-time with an offset, year 2000 or later, got "${clip(env.occurredAt, 60)}"`)
+  }
   if (env.staffId !== null && !uuid.safeParse(env.staffId).success) return invalid(['staffId'], 'expected a uuid or null')
   const nul = findNul(env.payload)
   if (nul) return invalid(nul, 'contains a NUL character')

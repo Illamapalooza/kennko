@@ -313,7 +313,7 @@ test('a payload that breaks a table check is held invalid with the database mess
   const after = cashMoved({ shiftId: randomUUID() })
   const res = await api.push(token, [open, huge, after])
   expect(res.results.map((r) => r.result)).toEqual(['applied', 'held', 'held'])
-  expect(res.results[1]!.reason).toMatch(/^invalid: .*out of range/)
+  expect(res.results[1]!.reason).toMatch(/^error: .*out of range/)
   expect(res.results[2]!.reason).toBe('shift_unknown')
   expect(await count('cash_moves', deviceId)).toBe(0)
   expect(await count('sync_events', deviceId)).toBe(3)
@@ -423,6 +423,10 @@ test('an occurredAt Postgres cannot store, or a non-uuid staffId, is held invali
   const body = (await res.json()) as { results: { result: string; reason: string | null }[] }
   expect(body.results.map((r) => r.result)).toEqual(['held', 'held', 'held', 'held', 'held', 'applied'])
   for (const r of body.results.slice(0, 4)) expect(r.reason).toMatch(/^invalid: occurredAt: /)
+  // The reason says what the till sent, NUL escaped.
+  expect(body.results[0]!.reason).toContain('got "0000-01-01T00:00:00Z"')
+  expect(body.results[2]!.reason).toContain('got "2026-11-21T00:00:00Z\\u0000"')
+  expect(body.results[2]!.reason).not.toContain('\u0000')
   expect(body.results[4]!.reason).toMatch(/^invalid: staffId: /)
   const rows = await db.sql`select id, occurred_at, staff_id, result from sync_events where device_id = ${deviceId} order by seq`
   expect(rows).toHaveLength(6)
@@ -456,10 +460,10 @@ test('a retryable database error (serialization, timeout, connection) fails the 
 
 test('isRetryable: SQLSTATE classes 40, 57 and 08 and postgres.js connection errors', async () => {
   const { isRetryable } = await import('../src/sync/push.js')
-  for (const code of ['40001', '40P01', '57014', '57P01', '08006', 'CONNECTION_CLOSED', 'CONNECT_TIMEOUT']) {
+  for (const code of ['40001', '40P01', '57014', '57P01', '08006', '53300', '53200', '55P03', 'CONNECTION_CLOSED', 'CONNECT_TIMEOUT']) {
     expect(isRetryable({ code })).toBe(true)
   }
-  for (const code of ['23505', '22003', '22P02', undefined]) expect(isRetryable({ code })).toBe(false)
+  for (const code of ['23505', '22003', '22P02', '55000', undefined]) expect(isRetryable({ code })).toBe(false)
   expect(isRetryable(new Error('plain'))).toBe(false)
 })
 
@@ -479,7 +483,7 @@ test('if Postgres refuses a receipt, the event rolls back and a fallback receipt
     expect(res.status).toBe(200)
     const body = (await res.json()) as { results: { result: string; reason: string | null }[] }
     expect(body.results.map((r) => [r.result, r.reason])).toEqual([
-      ['held', 'invalid: receipt'],
+      ['held', expect.stringMatching(/^invalid: receipt: .*refused/)],
       ['applied', null],
     ])
     const [item] = await db.sql`select is_available from menu_items where id = ${menu.latteId}`
@@ -490,4 +494,51 @@ test('if Postgres refuses a receipt, the event rolls back and a fallback receipt
   } finally {
     await db.sql.unsafe('drop trigger test_refuse on sync_events; drop function test_refuse();')
   }
+})
+
+test('an apply-time error is held error: … and retried; it applies once the cause is gone', async () => {
+  const { deviceId, token } = await seedDevice(db.sql)
+  await db.sql.unsafe(`
+    create function test_flaky() returns trigger language plpgsql as $$
+    begin
+      if new.reason = 'flaky' then raise exception 'handler bug'; end if;
+      return new;
+    end $$;
+    create trigger test_flaky before insert on cash_moves for each row execute function test_flaky();`)
+  const open = shiftOpened()
+  const move = cashMoved({ shiftId: open.payload.shiftId, reason: 'flaky' })
+  const toggle = availability({ itemId: menu.latteId, available: true })
+  try {
+    const res = await api.push(token, [open, move, toggle])
+    expect(res.results.map((r) => [r.result, r.reason])).toEqual([
+      ['applied', null],
+      ['held', expect.stringMatching(/^error: .*handler bug/)],
+      ['applied', null],
+    ])
+  } finally {
+    await db.sql.unsafe('drop trigger test_flaky on cash_moves; drop function test_flaky();')
+  }
+  // The fix is deployed. A resend only (duplicate): the start-of-push retry applies it.
+  const again = await api.push(token, [toggle])
+  expect(results(again)).toEqual(['duplicate'])
+  expect(again.held).toBe(0)
+  expect(await count('cash_moves', deviceId)).toBe(1)
+  const [row] = await db.sql`select result, reason, applied_at from sync_events where device_id = ${deviceId} and id = ${move.id}`
+  expect(row!.result).toBe('applied')
+  expect(row!.reason).toBeNull()
+  expect(row!.applied_at).not.toBeNull()
+})
+
+test('a parse-invalid held row is never re-applied, even if its stored payload would now pass', async () => {
+  const { deviceId, token } = await seedDevice(db.sql)
+  const bad = availability({ itemId: menu.latteId, available: false })
+  const sent = { ...bad, payload: { itemId: menu.latteId, available: 'no' } }
+  const first = await api.push(token, [sent])
+  expect(first.results[0]).toMatchObject({ result: 'held', reason: expect.stringMatching(/^invalid: available: /) })
+  // Make the stored payload valid behind the API's back: a retry would now apply it.
+  await db.sql`update sync_events set payload = ${db.sql.json(bad.payload)} where device_id = ${deviceId} and id = ${bad.id}`
+  const next = await api.push(token, [shiftOpened()])
+  expect(next.held).toBe(1)
+  const [item] = await db.sql`select is_available from menu_items where id = ${menu.latteId}`
+  expect(item!.is_available).toBe(true)
 })
