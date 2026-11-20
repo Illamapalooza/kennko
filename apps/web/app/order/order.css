@@ -704,3 +704,6 @@
 
 .link-back:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
 .order-nav-links li:last-child a { display: block; line-height: var(--tap); max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Notify button sits under the done actions / status actions. */
+.notify-button { width: 100%; min-height: 48px; margin-bottom: 14px; padding: 12px 20px; }

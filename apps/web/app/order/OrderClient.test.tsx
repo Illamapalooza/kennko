@@ -1,7 +1,12 @@
 import { StrictMode } from 'react'
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, waitFor } from '@testing-library/react'
 import { OrderClient } from './OrderClient'
+
+// The notify button imports server actions, which pull in server-only code.
+vi.mock('@/app/push-actions', () => ({
+  subscribeToOrder: vi.fn(), subscribeStaffAlerts: vi.fn(), unsubscribePush: vi.fn(),
+}))
 
 const props = { categories: [], modifierGroups: [], zones: [], customer: null }
 

@@ -4,6 +4,10 @@ import manifest from '../../app/manifest'
 import { adminManifest } from './manifests'
 import { serviceWorkerSource } from './sw-source'
 
+const { safeNotificationUrl } = createRequire(import.meta.url)('../../public/sw-push.js') as {
+  safeNotificationUrl: (url: unknown, origin: string) => string
+}
+
 const { cacheStrategyFor, mayStorePage } = createRequire(import.meta.url)('../../public/sw-routes.js') as {
   cacheStrategyFor: (url: URL, method: string) => 'cache-first' | 'network-first' | 'network-only'
   mayStorePage: (url: URL) => boolean
@@ -97,4 +101,30 @@ describe('service worker source', () => {
   it('does not rely on Set-Cookie, which a worker cannot see', () => {
     expect(source.toLowerCase()).not.toContain('set-cookie')
   })
+})
+
+describe('push handlers', () => {
+  const source = serviceWorkerSource('abc123')
+  it('shows notifications and handles clicks', () => {
+    expect(source).toContain("importScripts('/sw-push.js')")
+    expect(source).toContain("addEventListener('push'")
+    expect(source).toContain("addEventListener('notificationclick'")
+    expect(source).toContain('/icons/icon-192.png')
+    expect(source).toContain('self.safeNotificationUrl(')
+  })
+})
+
+describe('safeNotificationUrl', () => {
+  const o = 'https://kennko.test'
+  it('keeps same-origin relative paths', () => {
+    expect(safeNotificationUrl('/order/KNK-7F3Q', o)).toBe('/order/KNK-7F3Q')
+    expect(safeNotificationUrl('/admin/orders?x=1', o)).toBe('/admin/orders?x=1')
+  })
+  it('accepts an absolute url on this origin as a path', () => {
+    expect(safeNotificationUrl('https://kennko.test/orders', o)).toBe('/orders')
+  })
+  it.each(['https://evil.test/x', '//evil.test/x', 'javascript:alert(1)', '/\\evil.test', '', null, 42])(
+    'falls back to / for %s',
+    (u) => expect(safeNotificationUrl(u, o)).toBe('/'),
+  )
 })

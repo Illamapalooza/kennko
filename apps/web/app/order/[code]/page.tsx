@@ -4,6 +4,7 @@ import { lookupOrder } from '@/lib/orders/lookup'
 import { formatPesos } from '@/lib/money'
 import { formatManilaDateTime } from '@/lib/format/time'
 import { getCurrentCustomer } from '@/lib/auth/customer'
+import { NotifyButton } from '@/components/order/NotifyButton'
 import { OrderNav } from '@/components/order/OrderNav'
 import '../order.css'
 
@@ -79,6 +80,9 @@ export default async function OrderStatusPage({
           <a className="sheet-add" href={customer ? '/orders' : '/account'}>My orders</a>
           <a className="done-secondary" href="/order">Order again</a>
         </div>
+        {order.stage === 'completed' || order.stage === 'cancelled' ? null : (
+          <NotifyButton orderCode={order.orderCode} />
+        )}
       </div>
     </div>
   )

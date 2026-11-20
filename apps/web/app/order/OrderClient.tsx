@@ -13,6 +13,7 @@ import { SIZE_VOLUMES } from '@/lib/menu/sizes'
 import { LocationPin, type SharedPin } from '@/components/order/LocationPin'
 import { CatToon, type CatCoat, type CatPose } from '@kennko/cats'
 import { OrderNav } from '@/components/order/OrderNav'
+import { NotifyButton } from '@/components/order/NotifyButton'
 import { StepBar } from '@/components/order/StepBar'
 import { backTarget, resolveStep, type Step as FlowStep } from '@/components/order/nav'
 import { groupsForItem } from '@/lib/menu/item-groups'
@@ -716,6 +717,8 @@ function DoneStep({
           Order again
         </button>
       </div>
+
+      <NotifyButton orderCode={orderCode} />
 
       {signedIn ? null : (
         <p className="done-links">

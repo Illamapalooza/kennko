@@ -378,3 +378,5 @@
 .staff-pill { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: var(--amber-soft); color: var(--ink); }
 .staff-pill.is-active { background: var(--blue-soft); color: var(--blue); }
 .admin-cards select, .admin-cards .btn { min-height: 44px; }
+
+.admin-main .btn.btn-secondary { min-height: 44px; }
