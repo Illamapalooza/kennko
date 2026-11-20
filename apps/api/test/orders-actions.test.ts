@@ -10,6 +10,7 @@ const ISSUER = 'http://supabase.test/auth/v1'
 const OWNER = '00000000-0000-4000-8000-000000000001'
 const BARISTA = '00000000-0000-4000-8000-000000000002'
 const NOBODY = '00000000-0000-4000-8000-000000000003'
+const DEVICE = '00000000-0000-4000-8000-0000000000f1'
 const MISSING = '00000000-0000-4000-8000-0000000000ff'
 
 type Body = { code?: string; message?: string; errors?: string[]; prepStatus?: string; paymentStatus?: string }
@@ -41,6 +42,7 @@ describe('staff order and payment actions', () => {
            ('${BARISTA}', '${BARISTA}', 'b@x.test', 'Barista', 'barista', true);`,
       )
       .simple()
+    await db.sql`insert into devices (id, name) values (${DEVICE}, 'Front till')`
     const [zone] = await db.sql`insert into delivery_zones (barangay, fee_centavos, latitude, longitude)
       values ('Libertad', 0, 8.942, 125.529) returning id`
     zoneId = zone!.id
@@ -86,8 +88,8 @@ describe('staff order and payment actions', () => {
     seq += 1
     const [o] = await db.sql`
       insert into orders (channel, fulfilment, customer_name, prep_status, payment_status, business_day,
-        ticket_series, ticket_number, subtotal_centavos, total_centavos)
-      values ('counter', 'dine_in', 'Walk-in', 'preparing', 'paid', '2026-11-21', 'C', ${seq}, 5000, 5000)
+        ticket_series, ticket_number, subtotal_centavos, total_centavos, device_id)
+      values ('counter', 'dine_in', 'Walk-in', 'preparing', 'paid', '2026-11-21', 'C', ${seq}, 5000, 5000, ${DEVICE})
       returning id`
     return o!.id as string
   }

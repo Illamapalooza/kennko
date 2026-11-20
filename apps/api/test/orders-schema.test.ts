@@ -9,6 +9,8 @@ const ITEM = '00000000-0000-4000-8000-0000000000a1'
 const GROUP = '00000000-0000-4000-8000-0000000000d1'
 const OPTION = '00000000-0000-4000-8000-0000000000b1'
 
+const DEVICE = '00000000-0000-4000-8000-0000000000f1'
+
 const order = (n: number) => `0000000${n}-0000-4000-8000-000000000000`
 const line = (n: number) => `0000000${n}-0000-4000-8000-0000000000f0`
 const LINE_NO_ITEM = '00000002-0000-4000-8000-0000000000f1'
@@ -63,6 +65,7 @@ values ('${LINE_NO_ITEM}', '${order(2)}', null, 'Old Latte', 'L', 0, 1, 0, 'less
 let db: TestDb
 beforeAll(async () => {
   db = await startTestDb({ seedBefore: { migration: '0014_unified_orders.sql', sql: LEGACY } })
+  await db.sql`insert into devices (id, name) values (${DEVICE}, 'Front till')`
 })
 afterAll(async () => {
   await db.stop()
@@ -269,6 +272,8 @@ const insertOrder = (fields: Record<string, unknown>) => {
     discount_centavos: 0,
     delivery_fee_centavos: 0,
     total_centavos: 10000,
+    // Every counter order comes from a till (0017 orders_counter_device).
+    device_id: (fields.channel ?? 'counter') === 'counter' ? DEVICE : null,
     ...fields,
   }
   return db.sql`insert into orders ${db.sql(row)} returning id`

@@ -2,12 +2,14 @@ import { afterAll, beforeAll, expect, test } from 'vitest'
 import { startTestDb, type TestDb } from './pg.js'
 
 const OWNER = '11111111-1111-4111-8111-111111111111'
+const DEVICE = '22222222-2222-4222-8222-222222222222'
 
 let db: TestDb
 beforeAll(async () => {
   db = await startTestDb()
   await db.sql`insert into auth.users (id, email, email_confirmed_at) values (${OWNER}, 'owner@kennko.test', now())`
   await db.sql`insert into staff (id, user_id, email, full_name, role) values (${OWNER}, ${OWNER}, 'owner@kennko.test', 'Olive', 'owner')`
+  await db.sql`insert into devices (id, name) values (${DEVICE}, 'Front till')`
 })
 afterAll(async () => {
   await db.stop()
@@ -16,9 +18,9 @@ afterAll(async () => {
 const insertOrder = async () => {
   const [row] = await db.sql`
     insert into orders (channel, fulfilment, business_day, ticket_series, ticket_number, customer_name,
-      prep_status, payment_status, subtotal_centavos, discount_centavos, delivery_fee_centavos, total_centavos)
+      prep_status, payment_status, subtotal_centavos, discount_centavos, delivery_fee_centavos, total_centavos, device_id)
     values ('counter', 'dine_in', '2026-11-20', 'C', ${Math.floor(Math.random() * 1e6) + 1}, 'Walk-in',
-      'placed', 'unpaid', 10000, 0, 0, 10000)
+      'placed', 'unpaid', 10000, 0, 0, 10000, ${DEVICE})
     returning id`
   return row.id as string
 }
