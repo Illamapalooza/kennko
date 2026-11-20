@@ -40,6 +40,12 @@ export type FakeAuthAdmin = AuthAdmin & {
   users: Record<string, FakeAuthUser>
   /** Set to make getUser throw, as when Supabase Auth is down. */
   failGetUser: boolean
+  /** Set to make invite throw, as when Supabase Auth refuses or is down. */
+  failInvite: boolean
+  /** The id the next invites answer (GoTrue returns the existing user for a re-invite); random when null. */
+  inviteAs: string | null
+  /** Runs after a successful invite, e.g. to create the auth.users row GoTrue would have made. */
+  onInvite: ((email: string, userId: string) => Promise<void>) | null
   lookups: string[]
   invited: string[]
   deleted: string[]
@@ -50,6 +56,9 @@ export function fakeAuthAdmin(users: Record<string, FakeAuthUser> = {}): FakeAut
   const admin: FakeAuthAdmin = {
     users,
     failGetUser: false,
+    failInvite: false,
+    inviteAs: null,
+    onInvite: null,
     lookups: [],
     invited: [],
     deleted: [],
@@ -60,7 +69,10 @@ export function fakeAuthAdmin(users: Record<string, FakeAuthUser> = {}): FakeAut
     },
     async invite(email) {
       admin.invited.push(email)
-      return { userId: randomUUID() }
+      if (admin.failInvite) throw new Error('Auth invite failed (422)')
+      const userId = admin.inviteAs ?? randomUUID()
+      await admin.onInvite?.(email, userId)
+      return { userId }
     },
     async deleteUser(id) {
       admin.deleted.push(id)

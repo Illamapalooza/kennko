@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppDeps } from '../create-app.js'
-import { requireStaff, type AppEnv } from '../auth.js'
+import { requireStaff, requireWebKey, type AppEnv } from '../auth.js'
 import { apiError, invalid } from '../http.js'
 import { issuePin, toStaffView, type StaffRow } from '../staff/manage.js'
 
@@ -20,6 +20,11 @@ const patchSchema = z
 
 const COLUMNS = 'id, full_name, email, role, is_active, user_id, pin_hash, pin_updated_at'
 
+/** A login the API invited is taken back on a failed insert, except on these (Ruling 15). */
+const KEEP_LOGIN = new Set(['ALREADY_STAFF', 'EMAIL_TAKEN'])
+
+const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
 export function staffRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>()
   const { sql } = deps
@@ -29,10 +34,33 @@ export function staffRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({ staff: rows.map(toStaffView) })
   })
 
+  /**
+   * The website's checkout alert (Ruling 13): active staff with an email. Behind the shared website
+   * key alone, which opens nothing else; a staff login does not open it.
+   */
+  app.get('/alert-emails', requireWebKey(deps), async (c) => {
+    const rows = await sql<{ email: string }[]>`
+      select email from staff where is_active and email is not null order by created_at, id`
+    return c.json({ emails: rows.map((r) => r.email) }, 200, { 'cache-control': 'no-store' })
+  })
+
   app.post('/', requireStaff(deps, 'owner'), async (c) => {
     const body = createSchema.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return invalid('Give a name (1 to 80 characters) and a role.')
-    const { fullName: name, role: r, userId, email } = body.data
+    const { fullName: name, role: r, email } = body.data
+    let userId = body.data.userId
+    // An owner or manager with an email and no login yet: the API sends the invite (Ruling 15). A body
+    // with a userId is the old website, which invited them itself.
+    let invited: string | null = null
+    if (!userId && r !== 'barista' && email) {
+      try {
+        userId = (await deps.authAdmin.invite(email)).userId
+      } catch (err) {
+        console.error('Staff invite failed:', message(err))
+        throw apiError(502, 'INVITE_FAILED', 'Could not send the invite. Try again.')
+      }
+      invited = userId
+    }
     if (r === 'owner' && !userId) {
       throw apiError(409, 'NEEDS_LOGIN', 'An owner needs a website login. Invite them first.')
     }
@@ -45,16 +73,29 @@ export function staffRoutes(deps: AppDeps): Hono<AppEnv> {
       return c.json(toStaffView(row!), 201)
     } catch (err) {
       const e = err as { code?: string; constraint_name?: string }
-      if (e.code === '23505' && e.constraint_name === 'staff_user_id_key') {
-        throw apiError(409, 'ALREADY_STAFF', 'That login already belongs to a staff member.')
-      }
-      if (e.code === '23505') throw apiError(409, 'EMAIL_TAKEN', 'That email already belongs to a staff member.')
+      const code =
+        e.code === '23505' ? (e.constraint_name === 'staff_user_id_key' ? 'ALREADY_STAFF' : 'EMAIL_TAKEN') : null
+      // The invite may have made a login nobody can use without a staff row: take it back so a retry can
+      // invite again. Not on ALREADY_STAFF or EMAIL_TAKEN: GoTrue re-sends an invite to an existing
+      // unconfirmed user and returns that same user, so the login was there before this call.
+      if (invited && !(code && KEEP_LOGIN.has(code))) await deleteInvitedLogin(invited)
+      if (code === 'ALREADY_STAFF') throw apiError(409, 'ALREADY_STAFF', 'That login already belongs to a staff member.')
+      if (code === 'EMAIL_TAKEN') throw apiError(409, 'EMAIL_TAKEN', 'That email already belongs to a staff member.')
       if (e.code === '23503' && e.constraint_name === 'staff_user_id_fkey') {
         return invalid('That login does not exist.')
       }
       throw err
     }
   })
+
+  /** Best effort: a failure is logged (by id, never the email) and the insert's error is still the answer. */
+  async function deleteInvitedLogin(id: string): Promise<void> {
+    try {
+      await deps.authAdmin.deleteUser(id)
+    } catch (err) {
+      console.error(`Could not delete the invited login ${id}:`, message(err))
+    }
+  }
 
   app.patch('/:id', requireStaff(deps, 'owner'), async (c) => {
     const id = c.req.param('id')

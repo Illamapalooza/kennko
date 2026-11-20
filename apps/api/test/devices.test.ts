@@ -49,6 +49,7 @@ describe('devices and pairing', () => {
       push: null,
       defer: inlineDefer,
       now: () => now,
+      webKey: null,
     })
   })
   afterAll(async () => {

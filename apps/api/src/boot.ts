@@ -21,5 +21,6 @@ export function buildApp(env: Record<string, string | undefined>): Hono<AppEnv> 
     defer: vercelDefer,
     push,
     vapidPublicKey: push && config.vapid ? config.vapid.publicKey : null,
+    webKey: config.webKey,
   })
 }

@@ -37,7 +37,7 @@ const sender: PushSender = async (sub, payload) => {
 beforeAll(async () => {
   db = await startTestDb()
   api = syncApp(db.sql, NOW, { push: sender })
-  deps = { sql: db.sql, verifyUser: async () => ({ userId: 'x' }), proofs: fakeProofs(), authAdmin: fakeAuthAdmin(), now: () => NOW, push: sender, defer: inlineDefer }
+  deps = { sql: db.sql, verifyUser: async () => ({ userId: 'x' }), proofs: fakeProofs(), authAdmin: fakeAuthAdmin(), now: () => NOW, push: sender, defer: inlineDefer, webKey: null }
   ;({ token, deviceId } = await seedDevice(db.sql))
   bea = await seedStaff(db.sql, { fullName: 'Bea' })
   owner = await seedStaff(db.sql, { fullName: 'Olive', role: 'owner' })

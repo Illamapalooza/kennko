@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose'
 import type { MiddlewareHandler } from 'hono'
 import type { AppDeps } from './create-app.js'
@@ -91,6 +92,24 @@ export function requireStaff(deps: AppDeps, role?: 'owner' | 'manager'): Middlew
     if (!allowed) throw apiError(403, 'FORBIDDEN', 'Insufficient role')
 
     c.set('staff', { id: row.id, role: row.role })
+    await next()
+  }
+}
+
+const digest = (s: string) => createHash('sha256').update(s, 'utf8').digest()
+
+/**
+ * The website's server-to-server key (`X-Kennko-Web-Key`, Ruling 13), for the staff alert list only:
+ * checkout has no signed-in user to send. Compared in constant time over SHA-256 digests, so neither
+ * the content nor the length of the key leaks. No key configured → 503 whatever the header says.
+ */
+export function requireWebKey(deps: AppDeps): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    if (deps.webKey === null) throw apiError(503, 'NOT_CONFIGURED', 'The website key is not configured')
+    const given = c.req.header('X-Kennko-Web-Key')
+    if (!given || !timingSafeEqual(digest(given), digest(deps.webKey))) {
+      throw apiError(401, 'UNAUTHENTICATED', 'Missing or wrong website key')
+    }
     await next()
   }
 }

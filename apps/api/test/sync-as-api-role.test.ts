@@ -30,6 +30,7 @@ const BARISTA = '00000000-0000-4000-8000-0000000000a2'
 const MANAGER_LOGIN = '00000000-0000-4000-8000-0000000000a3'
 const CUSTOMER = '00000000-0000-4000-8000-0000000000a4'
 const NOW = new Date('2026-11-21T02:00:00Z')
+const WEB_KEY = 'w'.repeat(48)
 
 describe('every route as kennko_api', () => {
   let db: TestDb
@@ -42,6 +43,8 @@ describe('every route as kennko_api', () => {
   let version: number
   let deviceToken: string
   let deviceId: string
+  let readPaymentId: string
+  const auth = fakeAuthAdmin({ [CUSTOMER]: { email: 'cy@x.test', emailConfirmed: true } })
   const pushed: string[] = []
   const sender: PushSender = async (_sub, payload) => {
     pushed.push(payload.title)
@@ -97,10 +100,11 @@ describe('every route as kennko_api', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
-      authAdmin: fakeAuthAdmin({ [CUSTOMER]: { email: 'cy@x.test', emailConfirmed: true } }),
+      authAdmin: auth,
       push: sender,
       defer: inlineDefer,
       now: () => NOW,
+      webKey: WEB_KEY,
     })
     await db.sql.unsafe('set role kennko_api')
   })
@@ -428,8 +432,9 @@ describe('every route as kennko_api', () => {
         values (${own!.id}, ${latteId}, 'Latte', 'M', 'Medium', 12000, 1, 14000, 'regular', 'mixed') returning id`
       await db.sql`insert into order_line_options (line_id, group_name, option_name, price_centavos)
         values (${line!.id}, 'Milk of Choice', 'Oat milk', 2000)`
-      await db.sql`insert into payments (order_id, method, amount_centavos, reference, status, verified_by, verified_at)
-        values (${own!.id}, 'gcash', 14000, 'GC-READ1', 'verified', ${BARISTA}, ${at})`
+      const [pay] = await db.sql`insert into payments (order_id, method, amount_centavos, reference, proof_path, status, verified_by, verified_at)
+        values (${own!.id}, 'gcash', 14000, 'GC-READ1', 'proofs/KNK-READ1/p.jpg', 'verified', ${BARISTA}, ${at}) returning id`
+      readPaymentId = pay!.id as string
       // A guest order under the same, confirmed address.
       await db.sql`
         insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
@@ -446,6 +451,24 @@ describe('every route as kennko_api', () => {
     expect(receipt.shop).toMatchObject({ displayName: expect.any(String) })
     const history = await ok('GET', '/v1/me/orders', customerJwt)
     expect((history.orders as { orderCode: string }[]).map((o) => o.orderCode).sort()).toEqual(['KNK-READ1', 'KNK-READ2'])
+  })
+
+  it('proof link, customer-email data, staff alert list and an invite as kennko_api', async () => {
+    const proof = await ok('GET', `/v1/payments/${readPaymentId}/proof`, baristaJwt)
+    expect(proof.url).toBe('https://storage.test/proofs/KNK-READ1/p.jpg?expires=300')
+    const notice = await ok('GET', `/v1/payments/${readPaymentId}/notice`, baristaJwt)
+    expect(notice).toMatchObject({ to: 'cy@x.test', orderCode: 'KNK-READ1', reference: 'GC-READ1', items: [{ name: 'Latte' }] })
+
+    const res = await app.request('/v1/staff/alert-emails', { headers: { 'X-Kennko-Web-Key': WEB_KEY } })
+    const text = await res.text()
+    expect(res.status, text).toBe(200)
+    expect((JSON.parse(text) as { emails: string[] }).emails).toContain('o@x.test')
+
+    // GoTrue creates the auth user; here the superuser stands in for it.
+    auth.onInvite = (email, id) => asSuper(async () => void (await db.sql`insert into auth.users (id, email) values (${id}, ${email})`))
+    const invited = await ok('POST', '/v1/staff', ownerJwt, { fullName: 'Lia', role: 'manager', email: 'lia@x.test' }, 201)
+    expect(invited).toMatchObject({ hasLogin: true, email: 'lia@x.test' })
+    expect(auth.invited).toEqual(['lia@x.test'])
   })
 
   it('publishMenu from the deploy helper also works as kennko_api', async () => {

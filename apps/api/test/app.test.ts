@@ -24,6 +24,7 @@ describe('app skeleton', () => {
       push: null,
       defer: inlineDefer,
       now: () => new Date(),
+      webKey: null,
     })
 
   it('GET /health answers {ok:true} when the database answers', async () => {
@@ -59,7 +60,14 @@ describe('loadConfig', () => {
       supabaseUrl: 'https://x.supabase.co',
       supabaseServiceRoleKey: 'service-key',
       vapid: null,
+      webKey: null,
     })
+  })
+
+  it('reads KENNKO_WEB_KEY (32+ characters), treats blank as unset, and never echoes it', () => {
+    expect(loadConfig({ ...env, KENNKO_WEB_KEY: 'k'.repeat(32) }).webKey).toBe('k'.repeat(32))
+    expect(loadConfig({ ...env, KENNKO_WEB_KEY: '' }).webKey).toBeNull()
+    expect(() => loadConfig({ ...env, KENNKO_WEB_KEY: 'k'.repeat(31) })).toThrow(/^Missing or invalid environment variable: KENNKO_WEB_KEY$/)
   })
 
   it('reads VAPID keys when all three are set, treats blank as unset', () => {

@@ -92,6 +92,7 @@ describe('web push', () => {
       authAdmin: fakeAuthAdmin(),
       now: () => NOW,
       orderCode: generateOrderCode,
+      webKey: null,
     }
     app = createApp({ ...base, push: sender, vapidPublicKey: 'PUBKEY' })
     appOff = createApp({ ...base, push: null })

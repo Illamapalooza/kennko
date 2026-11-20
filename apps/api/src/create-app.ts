@@ -36,6 +36,8 @@ export type AppDeps = {
    * return the task's promise so they can await it.
    */
   defer: (task: () => Promise<void>) => void | Promise<void>
+  /** `KENNKO_WEB_KEY`: opens `GET /v1/staff/alert-emails` and nothing else. Null turns that route off (503). */
+  webKey: string | null
 }
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {

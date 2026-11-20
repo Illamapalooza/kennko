@@ -50,6 +50,34 @@ describe('buildApp', () => {
     expect(console.error).toHaveBeenCalled()
   })
 
+  it('no KENNKO_WEB_KEY -> boots with the alert list off (503)', async () => {
+    const res = await buildApp(env).request('/v1/staff/alert-emails', { headers: { 'X-Kennko-Web-Key': 'k'.repeat(40) } })
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ code: 'NOT_CONFIGURED' })
+  })
+
+  it('a blank KENNKO_WEB_KEY counts as unset', async () => {
+    const res = await buildApp({ ...env, KENNKO_WEB_KEY: '' }).request('/v1/staff/alert-emails')
+    expect(res.status).toBe(503)
+  })
+
+  it('KENNKO_WEB_KEY set -> the alert list asks for it', async () => {
+    const app = buildApp({ ...env, KENNKO_WEB_KEY: 'k'.repeat(40) })
+    expect((await app.request('/v1/staff/alert-emails')).status).toBe(401)
+    expect((await app.request('/v1/staff/alert-emails', { headers: { 'X-Kennko-Web-Key': 'k'.repeat(39) } })).status).toBe(401)
+  })
+
+  it('a KENNKO_WEB_KEY under 32 characters fails with the variable named, never its value', () => {
+    let message = ''
+    try {
+      buildApp({ ...env, KENNKO_WEB_KEY: 'short-secret-value' })
+    } catch (err) {
+      message = (err as Error).message
+    }
+    expect(message).toContain('KENNKO_WEB_KEY')
+    expect(message).not.toContain('short-secret-value')
+  })
+
   it('push off -> subscribe answers 503 PUSH_UNAVAILABLE', async () => {
     const res = await buildApp({ ...env, ...good, VAPID_SUBJECT: 'nope' }).request('/v1/push/subscriptions', {
       method: 'POST',

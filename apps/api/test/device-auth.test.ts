@@ -28,6 +28,7 @@ describe('device auth', () => {
       push: null,
       defer: inlineDefer,
       now: () => now,
+      webKey: null,
     }
     app = createApp(deps)
     app.get('/device-only', requireDevice(deps), (c) => c.json(c.get('device')))

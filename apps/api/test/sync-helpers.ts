@@ -75,6 +75,7 @@ export function syncApp(
     push: opts.push ?? null,
     defer: inlineDefer,
     now: () => now,
+    webKey: null,
   })
   const post = (token: string | null, body: unknown) =>
     app.request('/v1/sync/push', {

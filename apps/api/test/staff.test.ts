@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { checkStaffPin, hashStaffPin } from '@kennko/core/staff-pin'
 import { createApp } from '../src/create-app.js'
 import { verifierFromJwks, type AppEnv } from '../src/auth.js'
-import { fakeAuthAdmin, fakeProofs, inlineDefer } from './fakes.js'
+import { fakeAuthAdmin, fakeProofs, inlineDefer, type FakeAuthAdmin } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 // Real hash/check; randomStaffPin returns queued values first so uniqueness can be forced.
@@ -25,6 +25,7 @@ describe('staff and PIN management', () => {
   let app: Hono<AppEnv>
   let ownerJwt: string
   let baristaJwt: string
+  const auth: FakeAuthAdmin = fakeAuthAdmin()
 
   beforeAll(async () => {
     db = await startTestDb()
@@ -45,10 +46,11 @@ describe('staff and PIN management', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
-      authAdmin: fakeAuthAdmin(),
+      authAdmin: auth,
       push: null,
       defer: inlineDefer,
       now: () => new Date('2026-11-20T10:00:00Z'),
+      webKey: null,
     })
   })
   afterAll(async () => {
@@ -122,6 +124,19 @@ describe('staff and PIN management', () => {
     const ghost = await req('/v1/staff', 'POST', ownerJwt, { fullName: 'G', role: 'manager', userId: '00000000-0000-4000-8000-0000000000ff' })
     expect(ghost.status).toBe(400)
     expect(await ghost.json()).toMatchObject({ code: 'INVALID' })
+  })
+
+  it('a body with userId never invites, and a failed insert never deletes a login the API did not make', async () => {
+    auth.invited.length = 0
+    auth.deleted.length = 0
+    const ghost = await req('/v1/staff', 'POST', ownerJwt, {
+      fullName: 'G', role: 'manager', userId: '00000000-0000-4000-8000-0000000000ff', email: 'g@x.test',
+    })
+    expect(ghost.status).toBe(400)
+    const ok = await req('/v1/staff', 'POST', ownerJwt, { fullName: 'Mia', role: 'manager', userId: NEW_LOGIN, email: 'n@x.test' })
+    expect(ok.status).toBe(201)
+    expect(auth.invited).toEqual([])
+    expect(auth.deleted).toEqual([])
   })
 
   it('lists staff in creation order without secrets', async () => {

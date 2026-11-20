@@ -89,6 +89,7 @@ describe('order page, receipt and customer history reads', () => {
       push: null,
       defer: inlineDefer,
       now: () => new Date('2026-11-21T02:00:00Z'),
+      webKey: null,
     })
   })
   afterAll(async () => {

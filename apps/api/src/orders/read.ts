@@ -74,7 +74,7 @@ export async function readPublicOrder(sql: postgres.Sql, code: string): Promise<
 type PaymentRow = { reference: string | null; status: string; verified_at: Date | null; recorded_at: Date }
 
 /** The newest verified payment, else the newest non-rejected one, else the newest (the website's rule). */
-function livePayment(payments: PaymentRow[]): PaymentRow | null {
+export function livePayment(payments: PaymentRow[]): PaymentRow | null {
   const newestFirst = [...payments].sort((a, b) => b.recorded_at.getTime() - a.recorded_at.getTime())
   return newestFirst.find((p) => p.verified_at != null) ?? newestFirst.find((p) => p.status !== 'rejected') ?? newestFirst[0] ?? null
 }

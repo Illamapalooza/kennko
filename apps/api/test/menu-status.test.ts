@@ -43,6 +43,7 @@ describe('menu status', () => {
       push: null,
       defer: inlineDefer,
       now: () => new Date(),
+      webKey: null,
     })
 
     const [cat] = await db.sql`insert into menu_categories (name, sort_order) values ('Coffee', 0) returning id`

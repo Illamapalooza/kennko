@@ -66,6 +66,26 @@ export type PublicReceiptView = {
   shop: ShopView | null
 }
 
+/**
+ * `GET /v1/payments/:id/notice` (staff only): what the website's customer emails need about the
+ * payment's order. Unlike the public receipt it carries the full name, the full delivery address and
+ * the full GCash reference, because it goes only to the customer's own inbox (Ruling P6-4).
+ * `reference` is the receipt's payment (newest verified, else newest non-rejected, else newest), and
+ * null until the order's payment is confirmed (`paid` or `refunded`), the same gate as the receipt.
+ */
+export type PaymentNotice = {
+  to: string
+  orderCode: string
+  ticket: string
+  customerName: string
+  fulfilment: 'pickup' | 'delivery'
+  fulfilAt: string | null
+  totalCentavos: number
+  deliveryAddress: string | null
+  reference: string | null
+  items: { name: string; variantLabel: string; quantity: number }[]
+}
+
 /** `GET /v1/me/orders`: one of a signed-in customer's orders. */
 export type HistoryOrderView = {
   id: string

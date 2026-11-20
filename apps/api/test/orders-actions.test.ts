@@ -61,6 +61,7 @@ describe('staff order and payment actions', () => {
       push: null,
       defer: inlineDefer,
       now: () => new Date('2026-11-21T02:00:00Z'),
+      webKey: null,
     })
   })
   afterAll(async () => {

@@ -6,6 +6,8 @@ export type Config = {
   supabaseServiceRoleKey: string
   /** All three VAPID variables or none; none (or a partial set) means push is off and the API still boots. */
   vapid: { publicKey: string; privateKey: string; subject: string } | null
+  /** Shared with the website for the staff alert list only (Ruling 13); null turns that route off. */
+  webKey: string | null
 }
 
 const schema = z.object({
@@ -15,6 +17,7 @@ const schema = z.object({
   VAPID_PUBLIC_KEY: z.string().min(1).optional(),
   VAPID_PRIVATE_KEY: z.string().min(1).optional(),
   VAPID_SUBJECT: z.string().min(1).optional(),
+  KENNKO_WEB_KEY: z.string().min(32).optional(),
 })
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -36,5 +39,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     databaseUrl: parsed.data.DATABASE_URL,
     supabaseUrl: parsed.data.SUPABASE_URL,
     supabaseServiceRoleKey: parsed.data.SUPABASE_SERVICE_ROLE_KEY,
+    webKey: parsed.data.KENNKO_WEB_KEY ?? null,
   }
 }
