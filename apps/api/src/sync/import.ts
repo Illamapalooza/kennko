@@ -139,10 +139,13 @@ async function row<S extends z.ZodType>(
   }
   try {
     const out = (await tx.savepoint((sp) => body(sp, parsed.data))) as Outcome
-    // Stored now (a conflict that cleared): the earlier receipt no longer describes a missing row.
+    // Stored now (a conflict that cleared): close the earlier receipt. sync_events is append-only
+    // for kennko_api (no DELETE grant), so the receipt is marked applied, never removed.
     if (out !== 'rejected') {
       const id = (raw as { id: string }).id
-      await tx`delete from sync_events where device_id = ${deviceId} and id = ${id} and kind like 'import.%' and result = 'held'`
+      await tx`
+        update sync_events set result = 'applied', reason = 'legacy: stored on a later send', applied_at = ${now}
+        where device_id = ${deviceId} and id = ${id} and kind like 'import.%' and result = 'held'`
     }
     return out
   } catch (err) {

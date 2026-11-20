@@ -340,7 +340,7 @@ test('a lone surrogate in a rejected row is kept (as U+FFFD), not a failed chunk
   expect((r!.payload as { customerName: string }).customerName).toBe('a\ufffdb')
 })
 
-test('a row that imports later clears its held import receipt', async () => {
+test('a row that imports later closes its held import receipt (kept, marked applied)', async () => {
   const { token, deviceId } = await seedDevice(db.sql)
   const mine = await api.push(token, [shiftOpened()])
   expect(mine.results[0]!.result).toBe('applied')
@@ -350,5 +350,11 @@ test('a row that imports later clears its held import receipt', async () => {
   expect((await receipts(deviceId)).filter((r) => r.kind === 'import.shift')).toHaveLength(1)
   await db.sql`update shifts set closed_at = now(), counted_centavos = 0 where device_id = ${deviceId}`
   expect(await importOk(token, chunk)).toEqual({ inserted: 1, existing: 0, rejected: 0 })
-  expect((await receipts(deviceId)).filter((r) => r.kind === 'import.shift')).toHaveLength(0)
+  const after = (await receipts(deviceId)).filter((r) => r.kind === 'import.shift')
+  expect(after).toHaveLength(1)
+  expect(after[0]).toMatchObject({ id: open.id, result: 'applied', reason: 'legacy: stored on a later send' })
+  const [stamp] = await db.sql`select applied_at from sync_events where device_id = ${deviceId} and id = ${open.id}`
+  expect(stamp!.applied_at).toEqual(api.now())
+  // A third send changes nothing.
+  expect(await importOk(token, chunk)).toEqual({ inserted: 0, existing: 1, rejected: 0 })
 })

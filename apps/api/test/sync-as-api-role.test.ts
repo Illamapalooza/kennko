@@ -1,0 +1,315 @@
+import { randomUUID } from 'node:crypto'
+import type { CounterOrderPayload, ImportOrder, ImportShift, PushResponse } from '@kennko/core'
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose'
+import type { Hono } from 'hono'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { verifierFromJwks, type AppEnv } from '../src/auth.js'
+import { createApp } from '../src/create-app.js'
+import { publishMenu } from '../src/menu/snapshot.js'
+import { fakeProofs, inlineDefer } from './fakes.js'
+import { startTestDb, type TestDb } from './pg.js'
+import {
+  availability,
+  cashMoved,
+  orderCancelled,
+  orderCreated,
+  prepStatus,
+  shiftClosed,
+  shiftOpened,
+} from './sync-helpers.js'
+
+/**
+ * Production connects as `kennko_api` (no superuser, RLS on), while the other tests run as the
+ * PGlite superuser and so cannot see a missing grant or policy. Here every seed runs as superuser,
+ * then the app's own queries run with `set role kennko_api` on the one session the app uses.
+ */
+const ISSUER = 'http://supabase.test/auth/v1'
+const OWNER = '00000000-0000-4000-8000-0000000000a1'
+const BARISTA = '00000000-0000-4000-8000-0000000000a2'
+const MANAGER_LOGIN = '00000000-0000-4000-8000-0000000000a3'
+const NOW = new Date('2026-11-21T02:00:00Z')
+
+describe('every route as kennko_api', () => {
+  let db: TestDb
+  let app: Hono<AppEnv>
+  let ownerJwt: string
+  let baristaJwt: string
+  let latteId: string
+  let oatId: string
+  let version: number
+  let deviceToken: string
+  let deviceId: string
+
+  /** Runs `fn` as the superuser (seeding and checks), then returns the session to kennko_api. */
+  async function asSuper<T>(fn: () => Promise<T>): Promise<T> {
+    await db.sql.unsafe('reset role')
+    try {
+      return await fn()
+    } finally {
+      await db.sql.unsafe('set role kennko_api')
+    }
+  }
+
+  beforeAll(async () => {
+    db = await startTestDb()
+    await db.sql
+      .unsafe(
+        `insert into auth.users (id, email) values ('${OWNER}', 'o@x.test'), ('${BARISTA}', 'b@x.test'), ('${MANAGER_LOGIN}', 'm@x.test');
+         insert into staff (id, user_id, email, full_name, role, is_active) values
+           ('${OWNER}', '${OWNER}', 'o@x.test', 'Owner', 'owner', true),
+           ('${BARISTA}', '${BARISTA}', 'b@x.test', 'Barista', 'barista', true);`,
+      )
+      .simple()
+    const [cat] = await db.sql`insert into menu_categories (name, sort_order) values ('Coffee', 0) returning id`
+    const [latte] = await db.sql`insert into menu_items (category_id, name) values (${cat!.id}, 'Latte') returning id`
+    latteId = latte!.id
+    await db.sql`insert into menu_variants (item_id, code, label, price_centavos, temperature)
+      values (${latteId}, 'M', 'Medium', 12000, 'iced')`
+    const [group] = await db.sql`insert into option_groups (name) values ('Milk of Choice') returning id`
+    const [oat] = await db.sql`insert into options (group_id, name, price_centavos) values (${group!.id}, 'Oat milk', 2000) returning id`
+    oatId = oat!.id
+    await db.sql`insert into item_option_groups (item_id, group_id) values (${latteId}, ${group!.id})`
+    await db.sql`insert into delivery_zones (barangay, fee_centavos, latitude, longitude) values ('Libertad', 0, 8.942, 125.529)`
+
+    const pair = await generateKeyPair('ES256')
+    const jwk: JWK = { ...(await exportJWK(pair.publicKey)), kid: 'k1', alg: 'ES256', use: 'sig' }
+    const sign = (sub: string) =>
+      new SignJWT({})
+        .setProtectedHeader({ alg: 'ES256', kid: 'k1' })
+        .setSubject(sub)
+        .setIssuer(ISSUER)
+        .setAudience('authenticated')
+        .setIssuedAt()
+        .setExpirationTime('1h')
+        .sign(pair.privateKey)
+    ownerJwt = await sign(OWNER)
+    baristaJwt = await sign(BARISTA)
+    app = createApp({
+      sql: db.sql,
+      verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
+      proofs: fakeProofs(),
+      push: null,
+      defer: inlineDefer,
+      now: () => NOW,
+    })
+    await db.sql.unsafe('set role kennko_api')
+  })
+  afterAll(async () => {
+    await db.stop()
+  })
+
+  const call = async (method: string, path: string, auth?: string, body?: unknown) => {
+    const res = await app.request(path, {
+      method,
+      headers: { ...(auth ? { Authorization: `Bearer ${auth}` } : {}), 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    const text = await res.text()
+    return { status: res.status, text, json: () => JSON.parse(text) as Record<string, unknown> }
+  }
+  /** Expects `ok` (default 200); the body is in the failure message so a 500 says which grant is missing. */
+  const ok = async (method: string, path: string, auth?: string, body?: unknown, status = 200) => {
+    const r = await call(method, path, auth, body)
+    expect(r.status, `${method} ${path}: ${r.text}`).toBe(status)
+    return r.json()
+  }
+  const push = async (events: unknown[]) => (await ok('POST', '/v1/sync/push', deviceToken, { events })) as unknown as PushResponse
+
+  it('the session really is kennko_api', async () => {
+    const [r] = await db.sql`select current_user as u`
+    expect(r!.u).toBe('kennko_api')
+  })
+
+  it('menu: owner publishes, anyone reads, staff read status', async () => {
+    const pub = await ok('POST', '/v1/menu/publish', ownerJwt)
+    version = pub.version as number
+    expect(version).toBeGreaterThan(0)
+    await ok('GET', '/v1/menu')
+    await ok('GET', `/v1/menu/${version}`)
+    await ok('GET', '/v1/menu/status', baristaJwt)
+  })
+
+  it('staff: list, add, rename, issue a PIN, deactivate', async () => {
+    await ok('GET', '/v1/staff', ownerJwt)
+    const ana = await ok('POST', '/v1/staff', ownerJwt, { fullName: 'Ana', role: 'barista' }, 201)
+    await ok('POST', '/v1/staff', ownerJwt, { fullName: 'Mia', role: 'manager', userId: MANAGER_LOGIN, email: 'm@x.test' }, 201)
+    await ok('PATCH', `/v1/staff/${ana.id as string}`, ownerJwt, { fullName: 'Ana Cruz' })
+    const pin = await ok('POST', `/v1/staff/${ana.id as string}/pin`, ownerJwt, undefined, 201)
+    expect(pin.pin).toMatch(/^\d{6}$/)
+    const temp = await ok('POST', '/v1/staff', ownerJwt, { fullName: 'Temp', role: 'barista' }, 201)
+    await ok('PATCH', `/v1/staff/${temp.id as string}`, ownerJwt, { isActive: false })
+  })
+
+  it('devices: add, list, pair, me, revoke a spare one', async () => {
+    const added = await ok('POST', '/v1/devices', ownerJwt, { name: 'Front till' }, 201)
+    await ok('GET', '/v1/devices', ownerJwt)
+    const paired = await ok('POST', '/v1/devices/pair', undefined, { code: added.code })
+    deviceToken = paired.token as string
+    deviceId = added.id as string
+    expect(deviceToken).toBeTruthy()
+    await ok('GET', '/v1/devices/me', deviceToken)
+    const spare = await ok('POST', '/v1/devices', ownerJwt, { name: 'Spare' }, 201)
+    const del = await call('DELETE', `/v1/devices/${spare.id as string}`, ownerJwt)
+    expect([200, 204], del.text).toContain(del.status)
+  })
+
+  it('sync push: shift, cash, order, prep, cancel, sold-out, close; then a held retry', async () => {
+    const open = shiftOpened({}, { staffId: BARISTA })
+    const priced: Partial<CounterOrderPayload> = {
+      menuVersion: version,
+      lines: [
+        {
+          menuItemId: latteId,
+          name: 'Latte',
+          size: 'M',
+          basePriceCentavos: 12000,
+          modifiers: [{ id: oatId, name: 'Oat milk', priceCentavos: 2000 }],
+          quantity: 1,
+          iceLevel: 'regular',
+          iceServe: 'mixed',
+          note: '',
+          lineTotalCentavos: 14000,
+        },
+      ],
+    }
+    const order = orderCreated({ shiftId: open.payload.shiftId, ...priced }, { staffId: BARISTA })
+    const second = orderCreated({ shiftId: open.payload.shiftId, ticketNumber: 2, ...priced })
+    const events = [
+      open,
+      cashMoved({ shiftId: open.payload.shiftId }, { staffId: BARISTA }),
+      order,
+      second,
+      prepStatus({ orderId: order.payload.orderId, to: 'preparing' }, { staffId: BARISTA }),
+      orderCancelled({ orderId: second.payload.orderId }, { staffId: OWNER }),
+      availability({ itemId: latteId, available: false }, { staffId: BARISTA }),
+    ]
+    const res = await push(events)
+    expect(res.results.map((r) => [r.result, r.reason])).toEqual(events.map(() => ['applied', null]))
+
+    // A prep step for an order this till has not sent yet is held, then applies on the next push.
+    const later = orderCreated({ shiftId: open.payload.shiftId, ticketNumber: 3, ...priced })
+    const early = prepStatus({ orderId: later.payload.orderId, to: 'preparing' })
+    expect((await push([early])).results[0]!.result).toBe('held')
+    expect((await push([later])).results[0]!.result).toBe('applied')
+    const held = await asSuper(() => db.sql`select result from sync_events where id = ${early.id}`)
+    expect(held[0]!.result).toBe('applied')
+
+    const close = shiftClosed({ shiftId: open.payload.shiftId })
+    expect((await push([close])).results[0]!.result).toBe('applied')
+  })
+
+  it('sync pull', async () => {
+    const pulled = await ok('GET', '/v1/sync/pull?version=0', deviceToken)
+    expect(pulled).toBeTruthy()
+  })
+
+  it('sync import: a stored row, a rejected row, and a rerun that clears the receipt', async () => {
+    const shift: ImportShift = {
+      id: randomUUID(),
+      openedAt: '2026-11-01T00:00:00.000Z',
+      openingFloatCentavos: 100000,
+      closedAt: '2026-11-01T10:00:00.000Z',
+      countedCentavos: 150000,
+      expectedCentavos: 149000,
+      note: 'ok',
+      openedByStaff: BARISTA,
+      closedByStaff: null,
+    }
+    const order: ImportOrder = {
+      id: randomUUID(),
+      shiftId: shift.id,
+      businessDay: '2026-11-01',
+      ticketNumber: 1,
+      fulfilment: 'dine_in',
+      customerName: 'Walk-in',
+      status: 'done',
+      lines: [
+        {
+          menuItemId: 'latte',
+          name: 'Latte',
+          size: 'M',
+          basePriceCentavos: 12000,
+          modifiers: [],
+          quantity: 1,
+          iceLevel: null,
+          iceServe: null,
+          note: '',
+          lineTotalCentavos: 12000,
+        },
+      ],
+      subtotalCentavos: 12000,
+      discountCentavos: 0,
+      discountLabel: null,
+      totalCentavos: 12000,
+      payment: { id: randomUUID(), method: 'cash', tenderedCentavos: 20000, changeCentavos: 8000, reference: null },
+      createdAt: '2026-11-01T01:00:00.000Z',
+      voidedAt: null,
+      voidReason: null,
+      cancelledByStaff: null,
+    }
+    // The cash move names a shift that is not stored yet: rejected and kept as a held receipt.
+    const orphanShift = { ...shift, id: randomUUID() }
+    const move = { id: randomUUID(), shiftId: orphanShift.id, kind: 'in', amountCentavos: 5000, reason: 'Change', at: '2026-11-02T01:00:00.000Z', staffId: null }
+    const bad = { ...order, id: randomUUID(), payment: { ...order.payment, id: randomUUID() }, ticketNumber: 0 }
+
+    const first = await ok('POST', '/v1/sync/import', deviceToken, { shifts: [shift], orders: [order, bad], cashMoves: [move] })
+    expect(first).toEqual({ inserted: 2, existing: 0, rejected: 2 })
+
+    // Rerun with the missing shift: the cash move stores and its receipt is closed, not deleted.
+    const rerun = await ok('POST', '/v1/sync/import', deviceToken, { shifts: [shift, orphanShift], orders: [order], cashMoves: [move] })
+    expect(rerun).toEqual({ inserted: 2, existing: 2, rejected: 0 })
+    const receipt = await asSuper(() => db.sql`select result, reason, applied_at from sync_events where device_id = ${deviceId} and id = ${move.id}`)
+    expect(receipt[0]).toMatchObject({ result: 'applied', reason: 'legacy: stored on a later send' })
+    expect(receipt[0]!.applied_at).not.toBeNull()
+  })
+
+  it('online orders: create, verify, prep steps, reject and cancel', async () => {
+    const fd = new FormData()
+    fd.set(
+      'order',
+      JSON.stringify({
+        name: 'Ana Cruz',
+        email: 'ana@x.test',
+        phone: '09171234567',
+        fulfilment: 'pickup',
+        address: '',
+        barangay: '',
+        fulfilAt: '2026-11-21T04:00:00.000Z',
+        gcashReference: 'abc123456',
+        note: '',
+        lines: [{ menuItemId: latteId, size: 'M', quantity: 1, modifierIds: [], iceLevel: 'regular', iceServe: 'mixed', note: '' }],
+        claimedTotalCentavos: 12000,
+      }),
+    )
+    const proof = new Uint8Array(64)
+    proof.set([0xff, 0xd8, 0xff, 0xe0])
+    fd.set('proof', new File([proof], 'proof.jpg', { type: 'image/jpeg' }))
+    // Sold out from the till earlier: put it back first so the website can sell it.
+    await asSuper(() => db.sql`update menu_items set is_available = true where id = ${latteId}`)
+    const created = await app.request('/v1/orders', { method: 'POST', body: fd })
+    const createdText = await created.text()
+    expect(created.status, createdText).toBe(201)
+    const orderId = (JSON.parse(createdText) as { orderId: string }).orderId
+    const [pay] = await asSuper(() => db.sql`select id from payments where order_id = ${orderId}`)
+    await ok('POST', `/v1/payments/${pay!.id as string}/verify`, baristaJwt)
+    await ok('PATCH', `/v1/orders/${orderId}`, baristaJwt, { prepStatus: 'preparing' })
+    await ok('PATCH', `/v1/orders/${orderId}`, baristaJwt, { staffNote: 'regular' })
+    await ok('POST', `/v1/orders/${orderId}/cancel`, ownerJwt, { reason: 'out of beans' })
+
+    // A second order whose payment is rejected.
+    const fd2 = new FormData()
+    for (const [k, v] of fd.entries()) fd2.set(k, v)
+    const again = await app.request('/v1/orders', { method: 'POST', body: fd2 })
+    const againText = await again.text()
+    expect(again.status, againText).toBe(201)
+    const id2 = (JSON.parse(againText) as { orderId: string }).orderId
+    const [pay2] = await asSuper(() => db.sql`select id from payments where order_id = ${id2}`)
+    await ok('POST', `/v1/payments/${pay2!.id as string}/reject`, baristaJwt, { reason: 'wrong amount' })
+  })
+
+  it('publishMenu from the deploy helper also works as kennko_api', async () => {
+    await asSuper(() => db.sql`update menu_variants set price_centavos = 13000 where item_id = ${latteId}`)
+    const r = await publishMenu(db.sql, OWNER)
+    expect(r.version).toBeGreaterThan(version)
+  })
+})
