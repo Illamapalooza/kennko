@@ -47,6 +47,7 @@ async function tillWithShift() {
 function pricedOn(version: 1 | 2, quantity = 1): Partial<CounterOrderPayload> {
   const base = version === 1 ? 12000 : 13000
   const total = (base + 2000) * quantity
+  const tendered = Math.max(20000, total)
   return {
     menuVersion: version === 1 ? menu.v1 : menu.v2,
     lines: [
@@ -66,7 +67,7 @@ function pricedOn(version: 1 | 2, quantity = 1): Partial<CounterOrderPayload> {
     subtotalCentavos: total,
     discountCentavos: 0,
     totalCentavos: total,
-    payment: { id: randomUUID(), method: 'cash', tenderedCentavos: 20000, changeCentavos: 20000 - total, reference: null },
+    payment: { id: randomUUID(), method: 'cash', tenderedCentavos: tendered, changeCentavos: tendered - total, reference: null },
   }
 }
 
@@ -394,26 +395,32 @@ test('prep or cancel from the till on an online order is flagged online_order an
   expect(await count('order_events', orderId)).toBe(0)
 })
 
-test('impossible totals are held invalid: totals with no order rows; events on other entities still apply', async () => {
+test('impossible totals are held invalid: totals; the shift\'s later sales, cash moves and close still apply', async () => {
   const p = pricedOn(2)
   const cases: Partial<CounterOrderPayload>[] = [
     { totalCentavos: 14999 },
     { discountCentavos: 16000, totalCentavos: 0 },
     { payment: { ...p.payment!, tenderedCentavos: 20000, changeCentavos: 1 } },
     { lines: [{ ...p.lines![0]!, lineTotalCentavos: 14000 }] },
+    // Without a snapshot, the subtotal must still be the sum of the lines.
+    { menuVersion: null, subtotalCentavos: 16000, totalCentavos: 16000, payment: { ...p.payment!, changeCentavos: 4000 } },
+    { menuVersion: 99, subtotalCentavos: 16000, totalCentavos: 16000, payment: { ...p.payment!, changeCentavos: 4000 } },
   ]
   for (const over of cases) {
     const { token, shiftId } = await tillWithShift()
     const bad = orderCreated({ shiftId, ...p, ...over })
-    const toggle = availability({ itemId: menu.latteId, available: true })
-    // Per-entity order: a later event on the same shift waits behind the held order.
+    // Ruling P4-2: a held sale blocks only its own order, never the shift's other events.
+    const nextSale = orderCreated({ shiftId, ticketNumber: 2, ...pricedOn(2) })
     const sameShift = cashMoved({ shiftId, amountCentavos: 1000 })
-    const res = await api.push(token, [bad, toggle, sameShift])
+    const close = shiftClosed({ shiftId })
+    const res = await api.push(token, [bad, nextSale, sameShift, close])
     expect(res.results.map((r) => [r.result, r.reason])).toEqual([
       ['held', 'invalid: totals'],
       ['applied', null],
-      ['held', 'waits_for_earlier'],
+      ['applied', null],
+      ['applied', null],
     ])
+    expect(res.held).toBe(1)
     expect(await orderRow(bad.payload.orderId)).toBeUndefined()
     expect(await fiveCounts(bad.payload.orderId)).toEqual([0, 0, 0, 0, 0])
   }
@@ -454,6 +461,70 @@ test('an order whose id already exists is applied as already_recorded and writes
   const res = await api.push(token, [resent])
   expect(res.results[0]).toMatchObject({ result: 'applied', reason: 'already_recorded' })
   expect(await fiveCounts(sale.payload.orderId)).toEqual([1, 1, 1, 1, 1])
+
+  // The same id with different totals is flagged, still not written.
+  const differs = orderCreated({ shiftId, ...pricedOn(2, 2), orderId: sale.payload.orderId })
+  const r2 = await api.push(token, [differs])
+  expect(r2.results[0]).toMatchObject({ result: 'flagged', reason: 'already_recorded_differs' })
+  expect(await orderRow(sale.payload.orderId)).toMatchObject({ total_centavos: 15000 })
+  expect(await fiveCounts(sale.payload.orderId)).toEqual([1, 1, 1, 1, 1])
+})
+
+test('a payment id already used by another order is held invalid: payment_id_taken, nothing written', async () => {
+  const { token, shiftId } = await tillWithShift()
+  const first = orderCreated({ shiftId, ...pricedOn(2) })
+  await api.push(token, [first])
+  const p = pricedOn(2)
+  const second = orderCreated({ shiftId, ticketNumber: 2, ...p, payment: { ...p.payment!, id: first.payload.payment.id } })
+  const res = await api.push(token, [second])
+  expect(res.results[0]).toMatchObject({ result: 'held', reason: 'invalid: payment_id_taken' })
+  expect(await fiveCounts(second.payload.orderId)).toEqual([0, 0, 0, 0, 0])
+  // Permanent: a later push does not retry it into an error.
+  const again = await api.push(token, [availability({ itemId: menu.latteId, available: true })])
+  expect(again.held).toBe(1)
+  const [receipt] = await db.sql`select reason from sync_events where id = ${second.id}`
+  expect(receipt!.reason).toBe('invalid: payment_id_taken')
+})
+
+test('prep to cancelled or out_for_delivery on a counter order is flagged not_for_counter, no change', async () => {
+  const { token, shiftId } = await tillWithShift()
+  const sale = orderCreated({ shiftId, ...pricedOn(2) })
+  const orderId = sale.payload.orderId
+  const res = await api.push(token, [
+    sale,
+    prepStatus({ orderId, to: 'cancelled' }),
+    prepStatus({ orderId, to: 'out_for_delivery' }),
+  ])
+  expect(res.results.map((r) => [r.result, r.reason])).toEqual([
+    ['applied', null],
+    ['flagged', 'not_for_counter'],
+    ['flagged', 'not_for_counter'],
+  ])
+  expect(await orderRow(orderId)).toMatchObject({ prep_status: 'placed', payment_status: 'paid' })
+  expect(await count('order_events', orderId)).toBe(1)
+})
+
+test('a held invalid sale does not keep the retry pass from freeing the shift\'s cash move', async () => {
+  const { token } = await seedDevice(db.sql)
+  const open = shiftOpened({}, { staffId: bea })
+  const shiftId = open.payload.shiftId
+  const invalidSale = orderCreated({ shiftId, ...pricedOn(2), customerName: 'x'.repeat(81) })
+  const move = cashMoved({ shiftId })
+  const first = await api.push(token, [invalidSale, move])
+  expect(first.results.map((r) => r.reason)).toEqual([expect.stringContaining('invalid: customerName'), 'shift_unknown'])
+  // The shift (rung first, lower seq) arrives last; the retry pass frees the cash move.
+  const second = await api.push(token, [open])
+  expect(second.held).toBe(1)
+  const [m] = await db.sql`select 1 from cash_moves where id = ${move.payload.id}`
+  expect(m).toBeDefined()
+})
+
+test('a sale still waits behind a held event on its shift', async () => {
+  const { token } = await tillWithShift()
+  const second = shiftOpened()
+  const sale = orderCreated({ shiftId: second.payload.shiftId, ...pricedOn(2) })
+  const res = await api.push(token, [second, sale])
+  expect(res.results.map((r) => r.reason)).toEqual(['another_shift_open', 'waits_for_earlier'])
 })
 
 test('a shift close after the orders, and a sale with an unknown staff id, still apply', async () => {

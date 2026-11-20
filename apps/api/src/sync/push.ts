@@ -1,7 +1,7 @@
 import { MAX_HELD_RETRY, type PushResponse, type SyncEvent } from '@kennko/core'
 import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
-import { applyEvent, entityKeys, type Applied } from './apply.js'
+import { applyEvent, entityKeys, waitKeys, type Applied } from './apply.js'
 import { clip, findNul, parseEvent, storableTime, type Envelope } from './schema.js'
 
 type Tx = postgres.TransactionSql
@@ -85,10 +85,11 @@ async function recordEvent(tx: Tx, deviceId: string, env: Envelope, now: Date): 
   try {
     return (await tx.savepoint(async (sp) => {
       const keys = entityKeys(env)
+      const waits = waitKeys(env)
       const parsed = parseEvent(env)
       let out: Applied
       if (!parsed.ok) out = held(parsed.reason)
-      else if (keys.length > 0 && (await waitsForEarlier(sp, deviceId, env.seq, keys))) out = held('waits_for_earlier')
+      else if (waits.length > 0 && (await waitsForEarlier(sp, deviceId, env.seq, waits))) out = held('waits_for_earlier')
       else out = await applyInSavepoint(sp, deviceId, parsed.event, now)
       await insertReceipt(sp, deviceId, env, keys, payloadJson(env.payload), out, now)
       return out
@@ -115,8 +116,8 @@ type HeldRow = {
 }
 
 /**
- * Retries this device's held events, oldest seq first. A row sharing an entity with an earlier row
- * that is still held stays held, so per-entity order survives. A row held `invalid: …` is never
+ * Retries this device's held events, oldest seq first. A row waiting on an entity that an earlier,
+ * still-held row blocks (`entity_keys`) stays held, so per-entity order survives. A row held `invalid: …` is never
  * applied again (what was sent cannot change); it only keeps its place in line. Rows held
  * `error: …` are retried like any other.
  */
@@ -127,7 +128,7 @@ async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<void> {
     order by seq limit ${MAX_HELD_RETRY}`
   const blocked = new Set<string>()
   for (const row of rows) {
-    if (isPermanent(row.reason) || row.entity_keys.some((k) => blocked.has(k))) {
+    if (isPermanent(row.reason) || waitKeys(row).some((k) => blocked.has(k))) {
       for (const k of row.entity_keys) blocked.add(k)
       continue
     }
@@ -185,6 +186,7 @@ export async function pushEvents(deps: AppDeps, deviceId: string, raw: Envelope[
   })) as PushResponse
 }
 
+/** Whether an earlier held event of this device blocks one of `keys` (the new event's wait keys). */
 async function waitsForEarlier(tx: Tx, deviceId: string, seq: number, keys: string[]): Promise<boolean> {
   const [row] = await tx`
     select 1 from sync_events

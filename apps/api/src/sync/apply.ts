@@ -15,28 +15,39 @@ const applied = (reason: string | null = null): Applied => ({ result: 'applied',
 const held = (reason: string): Applied => ({ result: 'held', reason, flags: [] })
 const flagged = (reason: string, flags: string[] = []): Applied => ({ result: 'flagged', reason, flags })
 
+const payloadOf = (event: { payload: unknown }) => (event.payload ?? {}) as Record<string, unknown>
+const key = (prefix: string, value: unknown) => (typeof value === 'string' && value !== '' ? [`${prefix}:${value}`] : [])
+
 /**
- * The entities an event touches (`order:<id>`, `shift:<id>`). A later event sharing a key with an
- * earlier held one waits behind it. Reads the payload defensively so a payload that failed
+ * The entities a held event blocks (`order:<id>`, `shift:<id>`), stored as `sync_events.entity_keys`.
+ * A sale blocks only its own order (Ruling P4-2): a held or invalid sale never stalls the shift's
+ * other sales, cash moves or close. Reads the payload defensively so a payload that failed
  * validation still keeps its place in line.
  */
 export function entityKeys(event: { kind: SyncEventKind; payload: unknown }): string[] {
-  const p = (event.payload ?? {}) as Record<string, unknown>
-  const key = (prefix: string, value: unknown) => (typeof value === 'string' && value !== '' ? [`${prefix}:${value}`] : [])
+  const p = payloadOf(event)
   switch (event.kind) {
     case 'order.created':
-      return [...key('order', p.orderId), ...key('shift', p.shiftId)]
     case 'order.prep_status':
     case 'order.cancelled':
       return key('order', p.orderId)
     case 'shift.opened':
     case 'shift.closed':
-      return key('shift', p.shiftId)
     case 'cash.moved':
       return key('shift', p.shiftId)
     case 'menu.availability':
       return []
   }
+}
+
+/**
+ * The entities an event waits on: it waits behind an earlier held event that blocks any of them.
+ * The same as `entityKeys`, except a sale also waits on its shift. Derived from kind and payload,
+ * so it needs no column.
+ */
+export function waitKeys(event: { kind: SyncEventKind; payload: unknown }): string[] {
+  const keys = entityKeys(event)
+  return event.kind === 'order.created' ? [...keys, ...key('shift', payloadOf(event).shiftId)] : keys
 }
 
 const shiftOpened: Handler<'shift.opened'> = async (tx, deviceId, event, staffId, now) => {

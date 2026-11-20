@@ -54,11 +54,23 @@ export async function applyOrderCreated(
   if (!shift) return held('shift_unknown')
   if (!totalsAreConsistent(p)) return held('invalid: totals')
   // An order id already stored (sent again under a new event id) is not written twice.
-  const [already] = await tx`select 1 from orders where id = ${p.orderId}`
-  if (already) return applied('already_recorded')
+  const [already] = await tx<{ subtotal_centavos: number; discount_centavos: number; total_centavos: number }[]>`
+    select subtotal_centavos, discount_centavos, total_centavos from orders where id = ${p.orderId}`
+  if (already) {
+    const same =
+      already.subtotal_centavos === p.subtotalCentavos &&
+      already.discount_centavos === p.discountCentavos &&
+      already.total_centavos === p.totalCentavos
+    return same ? applied('already_recorded') : flagged('already_recorded_differs')
+  }
+  // A payment id is the till's; one already on another order would fail the insert on every retry.
+  const [payTaken] = await tx`select 1 from payments where id = ${p.payment.id}`
+  if (payTaken) return held('invalid: payment_id_taken')
 
   const flags: string[] = []
   const snapshot: MenuSnapshot | null = p.menuVersion === null ? null : await readMenuVersion(tx, p.menuVersion)
+  // With nothing to re-price against, at least the subtotal must be the sum of the lines.
+  if (!snapshot && p.subtotalCentavos !== p.lines.reduce((sum, l) => sum + l.lineTotalCentavos, 0)) return held('invalid: totals')
   if (!snapshot) flags.push('unknown_version')
   else if (!repriceCounterOrder(snapshot, p).matches) flags.push('reprice_mismatch')
   const [dup] = await tx`
@@ -163,6 +175,8 @@ export async function applyPrepStatus(
   // Online prep belongs to admin until Plan 5.
   if (order.channel !== 'counter') return flagged('online_order')
   if (order.prep_status === 'cancelled') return applied('already_cancelled')
+  // Voids come through order.cancelled; a counter order is never out for delivery.
+  if (to === 'cancelled' || to === 'out_for_delivery') return flagged('not_for_counter')
   await tx`update orders set prep_status = ${to}, updated_at = ${now} where id = ${orderId}`
   await tx`
     insert into order_events (id, device_id, order_id, kind, from_value, to_value, staff_id, occurred_at, received_at)
