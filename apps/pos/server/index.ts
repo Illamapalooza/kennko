@@ -14,7 +14,7 @@ import { backupDay } from './backup.ts'
 import { ensureCertificate, tillNames, type Certificate } from './secure.ts'
 import { setupPage } from './setup-page.ts'
 import { loadConfig } from './config.ts'
-import { fetchApiMenu, loadMenu, loadSnapshot, saveSnapshot, tillDiscounts, tillMenu } from './menu.ts'
+import { fetchApiMenu, loadMenu, loadSnapshot, saveSnapshot, splitSoldOut, tillDiscounts, tillMenu } from './menu.ts'
 import { createStore } from './store.ts'
 import { createPinDirectory } from './pins.ts'
 import { checkPinFresh, createPinRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice } from './device.ts'
@@ -354,8 +354,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     await checkPin(req, body.managerPin, 'manager')
     let pulled
     try { pulled = await fetchApiMenu(config.api.url, now) } catch (err: any) { throw new OrderError(err.message) }
-    saveSnapshot(DATA, pulled)
-    loadedSnapshot = pulled
+    // Sold-out goes into the till's own list, never baked into the saved snapshot (staff can put an item back).
+    const { snapshot: clean, soldOut } = splitSoldOut(pulled)
+    saveSnapshot(DATA, clean)
+    for (const id of soldOut) store.setAvailable(id, false, now, null, { outbox: false })
+    loadedSnapshot = clean
     return done(menu())
   }
 

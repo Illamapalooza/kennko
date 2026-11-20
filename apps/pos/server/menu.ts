@@ -72,6 +72,25 @@ export async function fetchApiMenu(apiUrl: string, now: number): Promise<MenuSna
 }
 
 /**
+ * A `GET /v1/menu` body for an unpaired till's manual pull: the snapshot with every item, variant and option made
+ * available, plus the ids that were unavailable. The till saves the first and adds the ids to its own `sold_out`, so the
+ * website's sold-out marks are not baked into the saved menu where staff could never undo them.
+ */
+export function splitSoldOut(snap: MenuSnapshot): { snapshot: MenuSnapshot; soldOut: string[] } {
+  const soldOut: string[] = []
+  const on = <T extends { id: string; isAvailable: boolean }>(x: T): T => {
+    if (!x.isAvailable) soldOut.push(x.id)
+    return { ...x, isAvailable: true }
+  }
+  const snapshot: MenuSnapshot = {
+    ...snap,
+    categories: snap.categories.map((c) => ({ ...c, items: c.items.map((i) => ({ ...on(i), variants: i.variants.map(on) })) })),
+    optionGroups: snap.optionGroups.map((g) => ({ ...g, options: g.options.map(on) })),
+  }
+  return { snapshot, soldOut }
+}
+
+/**
  * The menu the till sells from. With a pulled snapshot: a copy with every item, variant and option in `soldOut` marked
  * unavailable, built with `liveDrinkMenu` (so it carries `version`; a sold-out variant loses its price). Without one:
  * `fallback` (the old menu.json or the built-in menu) with item-level marks.

@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import type { MenuSnapshot } from '@kennko/core'
-import { builtInMenu, fetchApiMenu, loadSnapshot, tillDiscounts, tillMenu } from '../server/menu.ts'
+import { builtInMenu, fetchApiMenu, loadSnapshot, splitSoldOut, tillDiscounts, tillMenu } from '../server/menu.ts'
 
 const snapshot: MenuSnapshot = {
   version: 3,
@@ -34,6 +34,36 @@ const snapshot: MenuSnapshot = {
 const reply = (status: number, body: unknown) => vi.fn(async (_url: string) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }))
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('splitSoldOut (manual pull on an unpaired till)', () => {
+  it('saves every item, variant and option available and returns the unavailable ids for sold_out', () => {
+    const withOptions: MenuSnapshot = {
+      ...snapshot,
+      categories: [
+        { ...snapshot.categories[0]!, items: [{ ...snapshot.categories[0]!.items[0]!, optionGroupIds: ['g-milk'] }] },
+        { ...snapshot.categories[1]!, items: [{ ...snapshot.categories[1]!.items[0]!, isAvailable: false }] },
+      ],
+      optionGroups: [{
+        id: 'g-milk', name: 'Milk', minSelect: 0, maxSelect: 1,
+        options: [{ id: 'o-oat', name: 'Oat', priceCentavos: 2000, isAvailable: false }, { id: 'o-soy', name: 'Soy', priceCentavos: 2000, isAvailable: true }],
+      }],
+    }
+    const { snapshot: clean, soldOut } = splitSoldOut(withOptions)
+    expect(soldOut.sort()).toEqual(['i-cake', 'o-oat', 'v2'])
+    const flags = [
+      ...clean.categories.flatMap((c) => c.items.flatMap((i) => [i.isAvailable, ...i.variants.map((v) => v.isAvailable)])),
+      ...clean.optionGroups.flatMap((g) => g.options.map((o) => o.isAvailable)),
+    ]
+    expect(flags.every(Boolean)).toBe(true)
+    expect(clean.version).toBe(withOptions.version)
+    // Not changed in place.
+    expect(withOptions.optionGroups[0]!.options[0]!.isAvailable).toBe(false)
+    // The clean snapshot carries no sold-out marks of its own, so staff can put an item back from the till.
+    const sold = new Set(soldOut)
+    expect(tillMenu(clean, builtInMenu(0), sold, 0).categories.flatMap((c) => c.items).find((i) => i.id === 'i-latte')!.isAvailable).toBe(true)
+    expect(splitSoldOut(clean).soldOut).toEqual([])
+  })
+})
 
 describe('fetchApiMenu', () => {
   it('returns the raw snapshot (Ruling 11: the till saves it as it came)', async () => {
