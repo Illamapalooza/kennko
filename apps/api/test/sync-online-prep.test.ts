@@ -176,6 +176,18 @@ describe('what never notifies (Review Focus 3)', () => {
     expect(sent).toHaveLength(1)
   })
 
+  test('a re-paired till (new device id) resending an applied step answers already_recorded and sends nothing more', async () => {
+    const { orderId } = await seedPaidOnline('pickup')
+    const ev = step(orderId, 'preparing')
+    expect(answers(await api.push(token, [ev]))).toEqual([['applied', null]])
+    expect(sent).toHaveLength(1)
+    const { token: repaired } = await seedDevice(db.sql, 'Front till (re-paired)')
+    expect(answers(await api.push(repaired, [ev]))).toEqual([['applied', 'already_recorded']])
+    expect(sent).toHaveLength(1)
+    expect(await events(orderId)).toHaveLength(1)
+    expect((await order(orderId)).prep_status).toBe('preparing')
+  })
+
   test('a sender that throws still answers 200 applied and the order moves', async () => {
     const { orderId } = await seedPaidOnline('pickup')
     senderThrows = true
