@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CatToon } from '@kennko/cats'
 import type { Discount, LineInput, Menu, OrderType } from '@kennko/core'
-import { ApiError, api, setOnLocked, type Bootstrap, type Live } from './api.ts'
+import { ApiError, api, setOnLocked, type Bootstrap, type Live, type Session } from './api.ts'
 import { ClockIcon, CupIcon, DrawerIcon, ListIcon, LockIcon, TicketIcon } from './components/Icons.tsx'
 import { Gate } from './screens/Gate.tsx'
 import { Sell } from './screens/Sell.tsx'
@@ -27,6 +27,7 @@ export function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null)
   const [bootError, setBootError] = useState('')
   const [unlocked, setUnlocked] = useState(false)
+  const [who, setWho] = useState<Session | null>(null)
   const [menu, setMenu] = useState<Menu | null>(null)
   const [live, setLive] = useState<Live | null>(null)
   const [online, setOnline] = useState(true)
@@ -41,9 +42,11 @@ export function App() {
     return () => clearTimeout(timer)
   }, [toast])
 
+  // The PIN mode and this till's connection change after pairing or a staff refresh; the Gate needs the current one.
+  const refreshBoot = useCallback(() => { api.bootstrap().then(setBoot).catch(() => {}) }, [])
   // Locks this screen at once; ending the session on the till is best effort (the wifi may be down).
-  const lock = useCallback(() => { setUnlocked(false); api.endSession().catch(() => {}) }, [])
-  useEffect(() => { setOnLocked(() => setUnlocked(false)) }, [])
+  const lock = useCallback(() => { setUnlocked(false); setWho(null); refreshBoot(); api.endSession().catch(() => {}) }, [refreshBoot])
+  useEffect(() => { setOnLocked(() => { setUnlocked(false); setWho(null); refreshBoot() }) }, [refreshBoot])
 
   // Start: learn about the shop, then ask the till whether this browser already has a session.
   useEffect(() => {
@@ -53,7 +56,7 @@ export function App() {
         const b = await api.bootstrap()
         let open = b.pinMode === 'off'
         if (!open) {
-          try { await api.session(); open = true } catch (err) {
+          try { setWho(await api.session()); open = true } catch (err) {
             if (!(err instanceof ApiError && err.status === 401)) throw err
           }
         }
@@ -107,9 +110,9 @@ export function App() {
       case 'orders': return <Orders live={live} notify={notify} />
       case 'history': return <History boot={boot} live={live} notify={notify} />
       case 'till': return <Till live={live} notify={notify} />
-      case 'menu': return <MenuScreen boot={boot} menu={menu} setMenu={setMenu} notify={notify} />
+      case 'menu': return <MenuScreen boot={boot} menu={menu} setMenu={setMenu} notify={notify} onDeviceChange={refreshBoot} />
     }
-  }, [boot, menu, live, tab, cart, notify])
+  }, [boot, menu, live, tab, cart, notify, refreshBoot])
 
   if (!boot) {
     return (
@@ -120,7 +123,7 @@ export function App() {
       </div>
     )
   }
-  if (!unlocked) return <Gate onUnlock={() => setUnlocked(true)} secureUrl={boot.secureUrl} />
+  if (!unlocked) return <Gate onUnlock={(session) => { setWho(session); setUnlocked(true) }} secureUrl={boot.secureUrl} pinMode={boot.pinMode} />
 
   return (
     <div className="app">
@@ -134,8 +137,9 @@ export function App() {
           </button>
         ))}
         <span className="rail-gap" />
+        {who?.name ? <span className="rail-who">{who.name.trim().split(/\s+/)[0]}</span> : null}
         {boot.pinMode !== 'off' ? (
-          <button type="button" className="rail-btn rail-lock" onClick={lock}>
+          <button type="button" className="rail-btn rail-lock" onClick={lock} title={who?.name ? `Signed in as ${who.name}` : undefined}>
             <LockIcon />
             <span>Lock</span>
           </button>

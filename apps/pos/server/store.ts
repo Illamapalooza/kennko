@@ -3,6 +3,7 @@ import {
   OrderError, cleanDiscount, manilaDay, nextStatus, prevStatus, priceLines, summarise, totals,
   type CashMove, type Discount, type LineInput, type Menu, type Order, type OrderType, type PaymentMethod, type Shift, type Summary,
 } from '@kennko/core'
+import type { CachedStaff } from './pins.ts'
 
 export type NewOrder = {
   lines: LineInput[]
@@ -61,6 +62,12 @@ const SCHEMA = `
     staff_name text,
     role text not null check (role in ('staff', 'manager')),
     created_at integer not null
+  );
+  create table if not exists staff_cache (
+    id text primary key,
+    full_name text not null,
+    role text not null check (role in ('owner', 'manager', 'barista')),
+    pin_hash text not null
   );
 `
 
@@ -136,6 +143,21 @@ export function createStore(file: string) {
     openShift,
     getOrder,
     shiftSummary,
+
+    /** The people the till lets in, as last fetched from the Kennko API (device.ts). Read on every PIN check. */
+    staffCache(): CachedStaff[] {
+      return db.prepare('select * from staff_cache order by full_name, id').all()
+        .map((r: any) => ({ id: r.id, fullName: r.full_name, role: r.role, pinHash: r.pin_hash }))
+    },
+
+    /** Swaps the whole cache in one transaction, so a PIN check never sees half of it. */
+    replaceStaffCache(rows: CachedStaff[]): void {
+      tx(() => {
+        db.prepare('delete from staff_cache').run()
+        const add = db.prepare('insert into staff_cache (id, full_name, role, pin_hash) values (?, ?, ?, ?)')
+        for (const r of rows) add.run(r.id, r.fullName, r.role, r.pinHash)
+      })
+    },
 
     soldOut(): string[] {
       return db.prepare('select item_id from sold_out').all().map((r: any) => r.item_id as string)

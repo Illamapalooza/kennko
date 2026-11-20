@@ -25,7 +25,7 @@ Needs Node.js 24 or newer (it uses Node's built-in SQLite).
 | **Orders** | The barista queue: Queued → Preparing → Serving → Done. Every tablet follows live. |
 | **History** | Every order of a day, its receipt, and voiding (manager PIN). CSV export. |
 | **Till** | Open with starting cash, cash in and out, sales so far, expected cash, and closing with a count (manager PIN). |
-| **Menu** | Switch a drink off when it runs out. "Update from website" pulls the drinks and prices from the published menu on the Kennko API. |
+| **Menu** | Switch a drink off when it runs out. "Update from website" pulls the drinks and prices from the published menu on the Kennko API. **This till** connects the till to Kennko (see below). |
 
 ## The projector wall
 
@@ -50,23 +50,56 @@ Things to know:
 - **Updates arrive on the next open.** After `npm run pos:build`, an installed tablet picks up the new screens the next time the app is opened or reloaded.
 - **Reload every tablet after updating the till.** A tab left open from before an update keeps the old screens; after the switch to session PINs, an old tab keeps sending its PIN the old way and is refused until it is reloaded and the PIN typed once more.
 
+## Connect the till to Kennko
+
+Connecting lets the till use each person's own PIN, set by the owner in the website's admin.
+
+1. On the website, the owner opens **admin › Tills**, adds this till and gets a 6-digit code (valid 10 minutes).
+2. On the till, open **Menu › This till › Connect this till**, type the code, then a manager PIN.
+
+The till then shows "Connected as <name>". It needs internet only for this step; nothing else waits on the website.
+
+### PIN modes
+
+| Mode | When | What opens the till |
+|---|---|---|
+| **Per person** | The till is connected and the owner has issued a PIN to at least one owner or manager. | Each person's own 6-digit PIN. Voids, cash out, closing and menu update need an owner's or manager's own PIN. The PINs in `config.json` no longer work. |
+| **Shared** | Not connected yet, or no owner or manager has a PIN. | `staffPin` and `managerPin` from `config.json`, as before. |
+| **Off** | Shared, and `staffPin` is `""`. | Nothing; the till opens straight away. |
+
+So connecting the till changes nothing at the counter until the owner issues PINs in admin. The switch to per-person
+signs every tablet out once; each person then types their own PIN, and their first name shows above Lock.
+
+- **PINs are checked on the till.** The till keeps the people allowed in (their name, role and a scrambled copy of
+  the PIN, never the PIN itself) in `data/pos.db`, so PINs work with the internet down.
+- **The list refreshes** when the till starts, every 5 minutes while it has internet, and right after connecting.
+  Someone switched off in admin, or whose PIN was taken away, drops off the list at the next refresh and their
+  tablet goes back to the PIN screen.
+- **Disconnected in admin.** If the owner disconnects the till in admin › Tills, the till keeps selling with the PINs
+  it already has and the Menu screen says "Disconnected in admin". Connect it again with a new code.
+- **Forget the connection** with `POST /api/device/forget` (a manager PIN). The PIN list stays, so the same PINs keep
+  working. There is no button for it on purpose; disconnecting in admin is the normal way.
+
 ## Settings
 
 Copy `config.example.json` to `config.json` and edit it. **Change both PINs before real use.**
 
 | Key | Meaning |
 |---|---|
-| `staffPin` | Opens the till. Typed once per browser; the till then remembers that browser for 16 hours (until Lock, or the browser is closed), even across a restart of the till. The manager PIN opens it too. `""` turns it off. |
-| `managerPin` | Asked for voids, cash out, closing the till and updating the menu. If it is `""`, those are blocked: an empty entry is never accepted. |
+| `staffPin` | Opens the till in shared mode (see PIN modes). Typed once per browser; the till then remembers that browser for 16 hours (until Lock, or the browser is closed), even across a restart of the till. The manager PIN opens it too. `""` turns it off. Ignored in per-person mode. |
+| `managerPin` | Asked for voids, cash out, closing the till, updating the menu and connecting the till, in shared or off mode. If it is `""`, those are blocked: an empty entry is never accepted. Ignored in per-person mode. |
 | `shop` | Name, address, phone and footer printed on receipts. |
 | `discounts` | One-tap discounts. `kind` is `percent` (1 to 100) or `amount` (centavos). |
-| `api` | `{ "url" }`, the Kennko API the menu update reads from (`GET <url>/v1/menu`). Defaults to the `KENNKO_API_URL` environment variable. An old `website` block is ignored. |
+| `api` | `{ "url" }`, the Kennko API the menu update reads from (`GET <url>/v1/menu`) and the till connects to (`/v1/devices/*`). Defaults to the `KENNKO_API_URL` environment variable. An old `website` block is ignored. |
 | `securePort` | The https port tablets install the app from. Default `4443`; `0` turns it off. |
 | `backupDir` | A second folder for the daily backup, such as a USB stick or a cloud-synced folder. `""` keeps one copy only. |
 
 ## Where things live
 
-- `data/pos.db` is every sale, shift and cash movement. It is not in git.
+- `data/pos.db` is every sale, shift and cash movement, the tablets' sessions and the cached staff list. It is not in git.
+- `data/device.json` is this till's connection to Kennko: its name and its token for the API. The token works like a
+  password, so the file is readable only by the user the till runs as. Not in git. Deleting it is the same as
+  forgetting the connection.
 - `data/backups/pos-YYYY-MM-DD.db` is a full copy of it, one file per day, newest 30 kept. See Backups below.
 - `data/cert/` is the till's own certificate and the authority that signs it (see Install it as an app). Not in git.
 - `data/menu.json` is the menu last pulled from the website. Without it the built-in menu (`packages/core/src/seed-menu.ts`, the same list the website seeds) is used.

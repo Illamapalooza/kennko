@@ -17,6 +17,7 @@ import { loadConfig } from './config.ts'
 import { fetchApiMenu, loadMenu, saveMenu } from './menu.ts'
 import { createStore } from './store.ts'
 import { createPinDirectory } from './pins.ts'
+import { applyDeviceInfo, fetchDeviceInfo, forgetDevice, loadDevice, pairWithApi, saveDevice } from './device.ts'
 import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
 import { reportCsv } from './report.ts'
 import { WALL_LINGER_MS, wallOrders } from './wall-feed.ts'
@@ -36,7 +37,8 @@ const store = createStore(path.join(DATA, 'pos.db'))
 let baseMenu: Menu = loadMenu(DATA, Date.now())
 // The PIN is typed once per browser and swapped for a session cookie; sessions live in pos.db and survive a restart.
 const sessions = createSessions(store.db, () => Date.now())
-const pins = createPinDirectory({ staffPin: config.staffPin, managerPin: config.managerPin, staff: () => [] })
+// Each person's own PIN, checked against the staff cache in pos.db (filled from the API by refreshStaff below).
+const pins = createPinDirectory({ staffPin: config.staffPin, managerPin: config.managerPin, staff: () => store.staffCache() })
 
 /** Copies the sales database to data/backups (and to config.backupDir when set). Never throws: a failed backup must not stop a sale. */
 let lastBackup = ''
@@ -53,6 +55,29 @@ function backup(): void {
 backup()
 setInterval(backup, 60 * 60 * 1000).unref()
 
+/**
+ * Fetches who may use this till from the API and applies it (device.ts). At startup, every 5 minutes and right after
+ * pairing. Nothing waits on it but pairing: offline leaves the cache as it is, and a revoked till keeps selling.
+ * Runs one at a time, so a slow answer for an old pairing cannot land after a new one.
+ */
+let refreshing: Promise<void> = Promise.resolve()
+function refreshStaff(): Promise<void> {
+  refreshing = refreshing.then(async () => {
+    try {
+      const device = loadDevice(DATA)
+      if (!device || device.revokedAt !== null) return
+      const result = await fetchDeviceInfo(config.api.url, device.token)
+      if (loadDevice(DATA)?.token !== device.token) return // forgotten or paired again while asking
+      if (applyDeviceInfo(store, sessions, pins, result, DATA, Date.now())) broadcast()
+      if (result.status === 'revoked') console.warn('  This till was disconnected in admin. It keeps selling; connect it again from the Menu screen.')
+    } catch (err: any) {
+      console.error(`  Could not refresh the staff list: ${err.message}`)
+    }
+  })
+  return refreshing
+}
+setInterval(refreshStaff, 5 * 60 * 1000).unref()
+
 /** The menu the till sells from: the saved menu with today's sold-out marks applied. */
 function menu(): Menu {
   const soldOut = new Set(store.soldOut())
@@ -66,7 +91,8 @@ function menu(): Menu {
 }
 
 // ---------- live updates ----------
-const clients = new Set<http.ServerResponse>()
+// Each tablet's feed remembers its session token, so a feed whose session has ended is closed (see broadcast).
+const clients = new Map<http.ServerResponse, string | undefined>()
 let version = 0
 // menuKey changes whenever the menu or a sold-out mark does, so every tablet knows to fetch it again.
 const snapshot = () => JSON.stringify({
@@ -82,11 +108,16 @@ const wallSnapshot = () => {
 function broadcast() {
   version += 1
   const frame = `data: ${snapshot()}\n\n`
-  for (const res of clients) res.write(frame)
+  const open = pins.mode() === 'off'
+  for (const [res, token] of clients) {
+    // A session ended by Lock elsewhere or by a staff refresh: close the feed so that tablet asks for a PIN.
+    if (!open && !sessions.get(token)) { clients.delete(res); res.end(); continue }
+    res.write(frame)
+  }
   const wallFrame = `data: ${wallSnapshot()}\n\n`
   for (const res of wallClients) res.write(wallFrame)
 }
-setInterval(() => { for (const res of clients) res.write(': keepalive\n\n') }, 20000).unref()
+setInterval(() => { for (const res of clients.keys()) res.write(': keepalive\n\n') }, 20000).unref()
 // Re-sent on a timer too, so a finished order drops off the wall once its cat has had time to leave.
 setInterval(() => { if (wallClients.size) { const frame = `data: ${wallSnapshot()}\n\n`; for (const res of wallClients) res.write(frame) } }, 20000).unref()
 
@@ -177,7 +208,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const now = Date.now()
 
   if (req.method === 'GET' && route === '/api/bootstrap') {
-    return json(res, 200, { shop: config.shop, discounts: config.discounts, pinMode: pins.mode(), websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req) })
+    const device = loadDevice(DATA)
+    return json(res, 200, {
+      shop: config.shop, discounts: config.discounts, pinMode: pins.mode(), websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req),
+      device: device ? { name: device.name, revoked: device.revokedAt !== null } : null,
+    })
   }
   if (req.method === 'GET' && route === '/api/wall/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
@@ -216,7 +251,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (route === '/api/events') {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
       res.write(`retry: 2000\n\ndata: ${snapshot()}\n\n`)
-      clients.add(res)
+      clients.set(res, readSessionCookie(req.headers.cookie, cameInSecure(req)))
       req.on('close', () => clients.delete(res))
       return
     }
@@ -275,6 +310,21 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     try { baseMenu = await fetchApiMenu(config.api.url, now) } catch (err: any) { throw new OrderError(err.message) }
     saveMenu(DATA, baseMenu)
     return done(menu())
+  }
+
+  if (route === '/api/device/pair') {
+    await checkPin(req, body.managerPin, 'manager')
+    if (typeof body.code !== 'string' || !/^\d{6}$/.test(body.code)) throw new OrderError('The code is 6 digits.')
+    let device
+    try { device = await pairWithApi(config.api.url, body.code, now) } catch (err: any) { throw new OrderError(err.message) }
+    saveDevice(DATA, device)
+    await refreshStaff()
+    return json(res, 200, { name: device.name })
+  }
+  if (route === '/api/device/forget') {
+    await checkPin(req, body.managerPin, 'manager')
+    forgetDevice(DATA) // the staff cache stays, so the same PINs keep working
+    return json(res, 200, { ok: true })
   }
 
   if (route === '/api/till/open') return done(store.startShift(body.floatCentavos, now))
@@ -375,6 +425,7 @@ server.on('error', (err: any) => {
 })
 
 server.listen(port, '0.0.0.0', () => {
+  refreshStaff()
   const lan = LAN().map((address) => `http://${address}:${port}/`)
   const shift = store.openShift()
   console.log(`\n  KENNKO POS${DEV ? '  (development)' : ''}`)
@@ -388,6 +439,9 @@ server.listen(port, '0.0.0.0', () => {
   console.log(`  Menu:            ${baseMenu.source === 'website' ? 'from the website' : 'built-in'}, ${baseMenu.categories.reduce((n, c) => n + c.items.length, 0)} drinks`)
   console.log(`  Till:            ${shift ? `open, expecting ${formatPesos(store.shiftSummary(shift).expectedCashCentavos)} in the drawer` : 'closed'}`)
   console.log(`  Backup:          ${lastBackup}`)
-  if (config.staffPin === '1234' || config.managerPin === '0000') console.log('  PINs are still the defaults (staff 1234, manager 0000). Change them in config.json before real use.')
+  const device = loadDevice(DATA)
+  console.log(`  Kennko account:  ${device ? (device.revokedAt !== null ? `disconnected in admin (was "${device.name}")` : `connected as "${device.name}"`) : 'not connected (Menu › This till)'}`)
+  console.log(`  PINs:            ${({ off: 'off', shared: 'shared, from config.json', 'per-person': "each person's own" } as const)[pins.mode()]}`)
+  if (pins.mode() !== 'per-person' && (config.staffPin === '1234' || config.managerPin === '0000')) console.log('  PINs are still the defaults (staff 1234, manager 0000). Change them in config.json before real use.')
   console.log('  Press Ctrl+C to stop.\n')
 })

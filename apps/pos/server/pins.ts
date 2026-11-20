@@ -1,7 +1,12 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { checkStaffPin, isStaffPin } from '@kennko/core/staff-pin'
 import type { Who } from './sessions.ts'
 
-/** off: no PIN to open the till. shared: the two PINs in config.json. per-person: each person's own PIN (Task 9). */
+/**
+ * off: no PIN to open the till. shared: the two PINs in config.json. per-person: each person's own 6-digit PIN,
+ * checked against the staff cache; on once the cache holds an owner or manager, so the till is never left without
+ * someone who can void or close.
+ */
 export type PinMode = 'off' | 'shared' | 'per-person'
 
 /** A person the till may let in, as cached from the Kennko API. */
@@ -21,13 +26,25 @@ function same(given: string, expected: string): boolean {
  */
 export function createPinDirectory(opts: { staffPin: string; managerPin: string; staff: () => CachedStaff[] }) {
   const sharedWho = (role: Who['role']): Who => ({ staffId: null, name: null, role })
+  const leads = (s: CachedStaff) => s.role === 'owner' || s.role === 'manager'
+  const personWho = (s: CachedStaff): Who => ({ staffId: s.id, name: s.fullName, role: s.role === 'barista' ? 'staff' : 'manager' })
+
+  /** The first cached person whose hash matches. The API never issues one PIN to two active people (Ruling 5). */
+  async function findPerson(pin: string, rows: CachedStaff[]): Promise<Who | null> {
+    if (!isStaffPin(pin)) return null
+    for (const s of rows) if (await checkStaffPin(pin, s.pinHash)) return personWho(s)
+    return null
+  }
+
+  const mode = (staff: CachedStaff[]): PinMode => (staff.some(leads) ? 'per-person' : opts.staffPin ? 'shared' : 'off')
+
   return {
-    mode(): PinMode {
-      return opts.staffPin ? 'shared' : 'off'
-    },
+    mode: (): PinMode => mode(opts.staff()),
 
     /** The PIN that opens the till on a device. */
     async checkGate(pin: string): Promise<Who | null> {
+      const staff = opts.staff()
+      if (mode(staff) === 'per-person') return findPerson(pin, staff)
       if (same(pin, opts.managerPin)) return sharedWho('manager')
       if (same(pin, opts.staffPin)) return sharedWho('staff')
       return null
@@ -35,6 +52,8 @@ export function createPinDirectory(opts: { staffPin: string; managerPin: string;
 
     /** The PIN for voids, cash out, closing the till and updating the menu. */
     async checkManager(pin: string): Promise<Who | null> {
+      const staff = opts.staff()
+      if (mode(staff) === 'per-person') return findPerson(pin, staff.filter(leads))
       return same(pin, opts.managerPin) ? sharedWho('manager') : null
     },
   }

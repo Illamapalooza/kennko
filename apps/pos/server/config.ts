@@ -6,7 +6,7 @@ export type Config = {
   port: number
   /** The secure (https) address tablets install the app from. 0 turns it off. */
   securePort: number
-  /** Asked once per device before the till opens. "" turns it off. */
+  /** Opens the till in shared PIN mode (pins.ts). "" turns it off. */
   staffPin: string
   /** Asked for voids, cash out, closing the till and menu sync. */
   managerPin: string

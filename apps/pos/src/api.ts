@@ -8,6 +8,8 @@ export type Bootstrap = {
   websiteConfigured: boolean
   /** The https address of this same till, when it is running; installing as an app needs it. */
   secureUrl: string | null
+  /** This till's connection to the Kennko API: null until paired; revoked once the owner disconnects it in admin. */
+  device: { name: string; revoked: boolean } | null
 }
 
 export type Live = { version: number; now: number; day: string; active: Order[]; shift: Shift | null; menuKey: string }
@@ -66,6 +68,7 @@ export const api = {
   voidOrder: (id: number, reason: string, managerPin: string) => call<Order>('POST', `/api/orders/${id}/void`, { reason, managerPin }),
   setAvailable: (itemId: string, available: boolean) => call<Menu>('POST', '/api/menu/availability', { itemId, available }),
   syncMenu: (managerPin: string) => call<Menu>('POST', '/api/menu/sync', { managerPin }),
+  pairDevice: (code: string, managerPin: string) => call<{ name: string }>('POST', '/api/device/pair', { code, managerPin }),
   till: () => call<TillState>('GET', '/api/till'),
   openTill: (floatCentavos: number) => call<Shift>('POST', '/api/till/open', { floatCentavos }),
   cashMove: (kind: 'in' | 'out', amountCentavos: number, reason: string, managerPin: string) =>

@@ -2,13 +2,23 @@ import { useState } from 'react'
 import { formatPesos, type Menu } from '@kennko/core'
 import { api, type Bootstrap } from '../api.ts'
 import { PinPrompt } from '../components/PinPrompt.tsx'
+import { ConnectTill } from '../components/ConnectTill.tsx'
 
-type Props = { boot: Bootstrap; menu: Menu; setMenu: (menu: Menu) => void; notify: (message: string) => void }
+type Props = {
+  boot: Bootstrap
+  menu: Menu
+  setMenu: (menu: Menu) => void
+  notify: (message: string) => void
+  /** After pairing: the till's connection and PIN mode may have changed. */
+  onDeviceChange: () => void
+}
 
-/** Mark a drink sold out for the moment, or pull fresh prices from the website. */
-export function MenuScreen({ boot, menu, setMenu, notify }: Props) {
+/** Mark a drink sold out for the moment, pull fresh prices from the website, or connect this till to Kennko. */
+export function MenuScreen({ boot, menu, setMenu, notify, onDeviceChange }: Props) {
   const [busy, setBusy] = useState('')
   const [syncing, setSyncing] = useState(false)
+  const [connecting, setConnecting] = useState(false)
+  const device = boot.device
 
   const toggle = async (itemId: string, available: boolean) => {
     setBusy(itemId)
@@ -25,6 +35,15 @@ export function MenuScreen({ boot, menu, setMenu, notify }: Props) {
       <p className="muted">
         {menu.source === 'website' ? `Prices from the website, updated ${updated}.` : 'Using the menu that came with the till.'} Switch a drink off when it runs out; it comes back when you switch it on.
       </p>
+      <section className="card till-card">
+        <h2>This till</h2>
+        {device && !device.revoked ? <p>Connected as <b>{device.name}</b></p> : null}
+        {!device ? <p className="muted">Not connected to Kennko</p> : null}
+        {device?.revoked ? <p className="note-amber" role="status">Disconnected in admin. Connect again with a new code.</p> : null}
+        {!device || device.revoked ? (
+          <button type="button" className="btn btn-outline" onClick={() => setConnecting(true)}>Connect this till</button>
+        ) : null}
+      </section>
       {menu.categories.map((category) => (
         <section className="card" key={category.id}>
           <h2>{category.name}</h2>
@@ -52,6 +71,16 @@ export function MenuScreen({ boot, menu, setMenu, notify }: Props) {
             setMenu(await api.syncMenu(pin))
             notify('The menu now matches the website.')
             setSyncing(false)
+          }}
+        />
+      ) : null}
+      {connecting ? (
+        <ConnectTill
+          onClose={() => setConnecting(false)}
+          onConnected={(name) => {
+            setConnecting(false)
+            notify(`This till is connected as ${name}.`)
+            onDeviceChange()
           }}
         />
       ) : null}
