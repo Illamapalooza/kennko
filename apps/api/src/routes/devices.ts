@@ -28,7 +28,8 @@ export function deviceRoutes(deps: AppDeps): Hono<AppEnv> {
           returning id, name`
         return c.json({ id: row!.id, name: row!.name, code, expiresAt: expires.toISOString() }, 201)
       } catch (err) {
-        if ((err as { code?: string }).code === '23505') continue
+        const e = err as { code?: string; constraint_name?: string }
+        if (e.code === '23505' && e.constraint_name === 'devices_pending_code') continue
         throw err
       }
     }

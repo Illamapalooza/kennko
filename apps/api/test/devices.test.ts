@@ -54,14 +54,12 @@ describe('devices and pairing', () => {
     await db.stop()
   })
 
-  const owner = { Authorization: '' }
   const req = (path: string, method: string, auth?: string, body?: unknown) =>
     app.request(path, {
       method,
       headers: { ...(auth ? { Authorization: `Bearer ${auth}` } : {}), 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
-  void owner
   type Created = { id: string; name: string; code: string; expiresAt: string }
   const add = async (name = 'Till') => {
     const res = await req('/v1/devices', 'POST', ownerJwt, { name })
@@ -147,12 +145,15 @@ describe('devices and pairing', () => {
     expect((await req('/v1/devices/nope', 'DELETE', ownerJwt)).status).toBe(404)
     expect((await req(`/v1/devices/${d.id}`, 'DELETE', baristaJwt)).status).toBe(403)
 
+    const afterRevoke = (await (await req('/v1/devices', 'GET', ownerJwt)).json()) as { devices: { id: string }[] }
+    expect(afterRevoke.devices.map((x) => x.id)).not.toContain(d.id)
+
     await db.sql`delete from devices`
-    const waiting = await add('Waiting')
+    await add('Waiting')
     now = new Date(now.getTime() + 700_000)
-    const expired = await add('Expired')
+    await add('Expired')
     now = new Date(now.getTime() + 700_000)
-    const fresh = await add('Fresh')
+    await add('Fresh')
     const paired = await add('Paired')
     const tok = ((await (await pair(paired.code)).json()) as { token: string }).token
     await req('/v1/devices/me', 'GET', tok)
@@ -167,9 +168,6 @@ describe('devices and pairing', () => {
     expect(by['Paired']!.pairedAt).toBe(now.toISOString())
     expect(by['Paired']!.lastSeenAt).toBe(now.toISOString())
     expect(JSON.stringify(list)).not.toMatch(/hash/)
-    expect(waiting.id).toBeTruthy()
-    expect(expired.id).toBeTruthy()
-    expect(fresh.id).toBeTruthy()
   })
 
   it('bad bodies -> 400', async () => {
