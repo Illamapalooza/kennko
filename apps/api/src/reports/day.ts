@@ -113,12 +113,18 @@ export async function readDayRows(sql: Sql, date: string): Promise<DayRows> {
           where o.shift_id = any(${shiftIds}::uuid[]) and ${counted(sql)}
           order by o.received_at, o.id`
 
+  // A held sale's day is the businessDay it carried; with none readable (it may be why it was held),
+  // the Manila date it happened.
   const held = await sql<HeldRow[]>`
     select d.name as device_name, e.id, e.result, e.reason, e.payload->'ticketNumber' as ticket,
       e.payload->'totalCentavos' as total, e.resolve_note
     from sync_events e
     join devices d on d.id = e.device_id
-    where e.kind in ('order.created', 'import.order') and e.result in ('held', 'discarded') and e.payload->>'businessDay' = ${date}
+    where e.kind in ('order.created', 'import.order') and e.result in ('held', 'discarded')
+      and coalesce(
+        case when e.payload->>'businessDay' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then e.payload->>'businessDay' end,
+        to_char(e.occurred_at at time zone 'Asia/Manila', 'YYYY-MM-DD')
+      ) = ${date}
     order by e.received_at, e.seq`
 
   return {

@@ -227,6 +227,25 @@ describe('the day report adds up', () => {
     ])
   })
 
+  test('a held sale with no readable businessDay is listed on the Manila date it happened', async () => {
+    api.setNow(new Date('2026-11-30T02:00:00Z'))
+    const till = await seedDevice(db.sql, 'Till F')
+    const open = shiftOpened({}, { occurredAt: '2026-11-29T15:00:00.000Z' })
+    // 00:30 and 00:40 Manila on the 30th (still the 29th in UTC).
+    const missing = sale(open.payload.shiftId, '2026-11-30', 7, '2026-11-29T16:30:00.000Z')
+    const { businessDay: _drop, ...noDay } = missing.payload
+    missing.payload = noDay as typeof missing.payload
+    const garbled = sale(open.payload.shiftId, '2026-11-30', 8, '2026-11-29T16:40:00.000Z')
+    garbled.payload = { ...garbled.payload, businessDay: 'yesterday' }
+    const res = await api.push(till.token, [open, missing, garbled])
+    expect(res.results.map((r) => r.result)).toEqual(['applied', 'held', 'held'])
+
+    const r = await report('2026-11-30')
+    expect(r.held.held).toEqual({ count: 2, totalCentavos: 28000 })
+    expect(r.held.rows.map((h) => h.eventId)).toEqual([missing.id, garbled.id])
+    expect((await report('2026-11-29')).held.rows).toEqual([])
+  })
+
   test("an online order on the next business day is not counted; voids, refunds and pending payments are apart", async () => {
     const day = '2026-11-25'
     await onlineOrder(day, 30000)
