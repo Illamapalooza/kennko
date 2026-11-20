@@ -7,10 +7,11 @@
     "dev": "tsx watch src/dev.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=server.js --external:hono --external:hono/* --external:postgres --external:jose --external:zod --external:web-push"
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=server.js --external:hono --external:hono/* --external:postgres --external:jose --external:zod --external:web-push --external:@vercel/functions"
   },
   "dependencies": {
     "@kennko/core": "*",
+    "@vercel/functions": "^3.11.3",
     "hono": "^4.13.0",
     "jose": "^6.2.0",
     "postgres": "^4.1.0",

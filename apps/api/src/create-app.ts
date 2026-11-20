@@ -22,6 +22,11 @@ export type AppDeps = {
   push: PushSender | null
   /** Shared with browsers by GET /v1/push/public-key. */
   vapidPublicKey?: string | null
+  /**
+   * Runs post-commit push work off the response path. Production hands it to `waitUntil`; tests
+   * return the task's promise so they can await it.
+   */
+  defer: (task: () => Promise<void>) => void | Promise<void>
 }
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {

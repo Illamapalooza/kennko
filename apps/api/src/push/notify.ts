@@ -80,13 +80,38 @@ export async function notifyStaffNewOrder(deps: PushDeps, orderId: string): Prom
   }
 }
 
+/** A subscription follows at most this many orders; the oldest order's watch is dropped first. */
+export const MAX_WATCHES = 20
+
+/** Adds a watch, then trims the subscription back to its newest MAX_WATCHES orders. */
+export async function watchOrder(sql: AppDeps['sql'], subscriptionId: string, orderId: string): Promise<void> {
+  await sql`
+    insert into push_order_watch (order_id, subscription_id) values (${orderId}, ${subscriptionId})
+    on conflict do nothing`
+  await trimWatches(sql, [subscriptionId])
+}
+
+async function trimWatches(sql: AppDeps['sql'], subscriptionIds: string[]): Promise<void> {
+  for (const id of subscriptionIds) {
+    await sql`
+      delete from push_order_watch
+      where subscription_id = ${id} and order_id in (
+        select w.order_id from push_order_watch w join orders o on o.id = w.order_id
+        where w.subscription_id = ${id}
+        order by o.created_at desc, o.id desc
+        offset ${MAX_WATCHES})`
+  }
+}
+
 /** A signed-in customer's other devices follow their new order without another tap. */
 export async function watchForAccount(sql: AppDeps['sql'], orderId: string, userId: string): Promise<void> {
   try {
-    await sql`
+    const subs = await sql<{ id: string }[]>`
       insert into push_order_watch (order_id, subscription_id)
       select ${orderId}, id from push_subscriptions where customer_user_id = ${userId}
-      on conflict do nothing`
+      on conflict do nothing
+      returning subscription_id as id`
+    await trimWatches(sql, subs.map((r) => r.id))
   } catch (err) {
     console.error('could not watch new order for account', err)
   }

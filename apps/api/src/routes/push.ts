@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { AppDeps } from '../create-app.js'
 import { optionalUser, requireStaff, type AppEnv } from '../auth.js'
 import { invalid } from '../http.js'
+import { watchOrder } from '../push/notify.js'
 
 const subscribeSchema = z.object({
   subscription: z.object({
@@ -59,9 +60,7 @@ export function pushRoutes(deps: AppDeps): Hono<AppEnv> {
       returning id`
     // A staff device's endpoint cannot be taken over by an order code.
     if (!row) return invalid('This device is already registered for staff alerts.')
-    await sql`
-      insert into push_order_watch (order_id, subscription_id) values (${order.id}, ${row.id})
-      on conflict do nothing`
+    await watchOrder(sql, row.id, order.id)
     return c.json({ ok: true }, 201)
   })
 

@@ -5,6 +5,7 @@ import { createApp } from './create-app.js'
 import { createUserVerifier, type AppEnv } from './auth.js'
 import { loadConfig } from './config.js'
 import { createSql } from './db.js'
+import { vercelDefer } from './push/defer.js'
 import { createPushSender } from './push/send.js'
 import { createProofStore } from './storage.js'
 
@@ -15,6 +16,7 @@ const app: Hono<AppEnv> = createApp({
   verifyUser: createUserVerifier(config.supabaseUrl),
   proofs: createProofStore(config.supabaseUrl, config.supabaseServiceRoleKey),
   now: () => new Date(),
+  defer: vercelDefer,
   push: config.vapid ? createPushSender(config.vapid) : null,
   vapidPublicKey: config.vapid?.publicKey ?? null,
 })

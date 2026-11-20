@@ -1,6 +1,7 @@
 import { canMovePrep, type Fulfilment, type PrepStatus } from '@kennko/core'
 import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
+import { afterCommit } from '../push/defer.js'
 import { notifyOrder, type OrderPushEvent } from '../push/notify.js'
 
 export type ActionResult =
@@ -147,6 +148,7 @@ function cancelOrderTx(
 function decidePaymentTx(
   deps: AppDeps,
   input: { paymentId: string; staffId: string; decision: 'verify' } | { paymentId: string; staffId: string; decision: 'reject'; reason: string },
+  decided: { orderId?: string },
 ): Promise<ActionResult> {
   const { paymentId, staffId } = input
   if (!UUID.test(paymentId)) return Promise.resolve(notFound())
@@ -159,6 +161,7 @@ function decidePaymentTx(
       where p.id = ${paymentId} for update of o`
     if (!existing) return notFound()
     const orderId = existing.id
+    decided.orderId = orderId
     const verifying = input.decision === 'verify'
     const rejectReason = input.decision === 'reject' ? input.reason : null
 
@@ -208,21 +211,22 @@ export async function patchOrder(
 ): Promise<ActionResult> {
   const result = await patchOrderTx(deps, input)
   const event = input.prepStatus && PREP_EVENTS[input.prepStatus]
-  if (result.ok && event) await notifyOrder(deps, input.orderId, event)
+  if (result.ok && event) await afterCommit(deps, () => notifyOrder(deps, input.orderId, event))
   return result
 }
 
 export async function cancelOrder(deps: AppDeps, input: Parameters<typeof cancelOrderTx>[1]): Promise<ActionResult> {
   const result = await cancelOrderTx(deps, input)
-  if (result.ok) await notifyOrder(deps, input.orderId, 'problem')
+  if (result.ok) await afterCommit(deps, () => notifyOrder(deps, input.orderId, 'problem'))
   return result
 }
 
 export async function decidePayment(deps: AppDeps, input: Parameters<typeof decidePaymentTx>[1]): Promise<ActionResult> {
-  const result = await decidePaymentTx(deps, input)
-  if (result.ok) {
-    const [row] = await deps.sql<{ order_id: string }[]>`select order_id from payments where id = ${input.paymentId}`
-    if (row) await notifyOrder(deps, row.order_id, input.decision === 'verify' ? 'paid' : 'problem')
+  const decided: { orderId?: string } = {}
+  const result = await decidePaymentTx(deps, input, decided)
+  if (result.ok && decided.orderId) {
+    const orderId = decided.orderId
+    await afterCommit(deps, () => notifyOrder(deps, orderId, input.decision === 'verify' ? 'paid' : 'problem'))
   }
   return result
 }

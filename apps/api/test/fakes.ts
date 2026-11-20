@@ -25,3 +25,8 @@ export function fakeProofs(): FakeProofStore {
   }
   return store
 }
+
+/** Runs the deferred push work to completion so assertions are deterministic. */
+export const inlineDefer = async (task: () => Promise<void>): Promise<void> => {
+  await task()
+}

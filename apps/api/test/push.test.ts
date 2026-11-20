@@ -6,7 +6,7 @@ import { verifierFromJwks, type AppEnv } from '../src/auth.js'
 import { generateOrderCode } from '../src/orders/create.js'
 import { publishMenu } from '../src/menu/snapshot.js'
 import type { PushPayload, PushSender } from '../src/push/send.js'
-import { fakeProofs } from './fakes.js'
+import { fakeProofs, inlineDefer } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 const ISSUER = 'http://supabase.test/auth/v1'
@@ -25,6 +25,9 @@ describe('web push', () => {
   let db: TestDb
   let app: Hono<AppEnv>
   let appOff: Hono<AppEnv>
+  let appFlaky: Hono<AppEnv>
+  let appBadDefer: Hono<AppEnv>
+  let flakyOn = false
   let tokens: Record<string, string>
   let sent: Sent[]
   let behaviour: (endpoint: string) => 'sent' | 'gone' | 'failed' | 'throw'
@@ -75,6 +78,7 @@ describe('web push', () => {
       customer: await sign(CUSTOMER),
     }
     const base = {
+      defer: inlineDefer,
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
@@ -83,6 +87,22 @@ describe('web push', () => {
     }
     app = createApp({ ...base, push: sender, vapidPublicKey: 'PUBKEY' })
     appOff = createApp({ ...base, push: null })
+    // Same app, but the database fails whenever push looks up an order or its watchers.
+    const flaky = new Proxy(db.sql, {
+      apply(target, thisArg, args) {
+        const text = Array.isArray(args[0]) ? (args[0] as string[]).join('?') : ''
+        if (flakyOn && /order_code|push_order_watch/.test(text) && !/insert into/.test(text)) throw new Error('db blip')
+        return Reflect.apply(target, thisArg, args)
+      },
+    })
+    appFlaky = createApp({ ...base, sql: flaky, push: sender })
+    appBadDefer = createApp({
+      ...base,
+      push: sender,
+      defer: () => {
+        throw new Error('defer exploded')
+      },
+    })
   })
   afterAll(async () => {
     await db.stop()
@@ -90,6 +110,7 @@ describe('web push', () => {
   beforeEach(() => {
     sent = []
     behaviour = () => 'sent'
+    flakyOn = false
   })
 
   async function seedOnline(userId: string | null = null) {
@@ -152,6 +173,22 @@ describe('web push', () => {
       expect(rows[0]).toMatchObject({ p256dh: 'new', auth: 'newer', customer_user_id: CUSTOMER })
       const watch = await db.sql`select order_id from push_order_watch where subscription_id = ${rows[0]!.id}`
       expect(watch.map((w) => w.order_id).sort()).toEqual([a.orderId, b.orderId].sort())
+    })
+
+    it('a subscription watches at most 20 orders; the oldest watch is dropped', async () => {
+      const s = sub('cap')
+      const orders: string[] = []
+      for (let i = 0; i < 21; i++) {
+        const o = await seedOnline()
+        await db.sql`update orders set created_at = '2026-01-01T00:00:00Z'::timestamptz + ${i} * interval '1 minute' where id = ${o.orderId}`
+        orders.push(o.orderId)
+        expect((await subscribe(null, { subscription: s, orderCode: o.code })).status).toBe(201)
+      }
+      const row = await subRow(s.endpoint)
+      const watch = await db.sql`select order_id from push_order_watch where subscription_id = ${row!.id}`
+      expect(watch).toHaveLength(20)
+      expect(watch.map((w) => w.order_id)).not.toContain(orders[0])
+      expect(watch.map((w) => w.order_id)).toContain(orders[20])
     })
 
     it('unknown order code -> 404 NOT_FOUND with errors[]', async () => {
@@ -302,6 +339,23 @@ describe('web push', () => {
       expect(r.status).toBe(200)
       const [row] = await db.sql`select payment_status from orders where id = ${o.orderId}`
       expect(row!.payment_status).toBe('paid')
+    })
+
+    it('a failing post-commit lookup or a throwing defer still returns 200 for verify', async () => {
+      const a = await seedOnline()
+      await subscribe(null, { subscription: sub('l1'), orderCode: a.code })
+      flakyOn = true
+      const r = await call('barista', 'POST', `/v1/payments/${a.paymentId}/verify`, undefined, appFlaky)
+      expect(r.status).toBe(200)
+      expect(r.body).toMatchObject({ paymentStatus: 'paid' })
+      expect(sent).toHaveLength(0)
+
+      flakyOn = false
+      const b = await seedOnline()
+      const r2 = await call('barista', 'POST', `/v1/payments/${b.paymentId}/verify`, undefined, appBadDefer)
+      expect(r2.status).toBe(200)
+      const r3 = await call('barista', 'PATCH', `/v1/orders/${b.orderId}`, { prepStatus: 'preparing' }, appBadDefer)
+      expect(r3.status).toBe(200)
     })
 
     it('push disabled -> actions still succeed', async () => {

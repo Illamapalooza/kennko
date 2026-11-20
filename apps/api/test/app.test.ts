@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../src/create-app.js'
 import { loadConfig } from '../src/config.js'
-import { fakeProofs } from './fakes.js'
+import { fakeProofs, inlineDefer } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 describe('app skeleton', () => {
@@ -21,6 +21,7 @@ describe('app skeleton', () => {
       },
       proofs: fakeProofs(),
       push: null,
+      defer: inlineDefer,
       now: () => new Date(),
     })
 

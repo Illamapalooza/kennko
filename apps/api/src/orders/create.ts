@@ -17,6 +17,7 @@ import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
 import { readLatestMenu } from '../menu/read.js'
 import { validateImage } from './image.js'
+import { afterCommit } from '../push/defer.js'
 import { notifyStaffNewOrder, watchForAccount } from '../push/notify.js'
 import { nextTicket } from './tickets.js'
 
@@ -58,7 +59,7 @@ export type CreateOrderResult =
 
 type Failure = Extract<CreateOrderResult, { ok: false }>
 
-export type CreateOrderDeps = Pick<AppDeps, 'sql' | 'proofs' | 'now' | 'orderCode' | 'push'>
+export type CreateOrderDeps = Pick<AppDeps, 'sql' | 'proofs' | 'now' | 'orderCode' | 'push' | 'defer'>
 
 // Excludes 0/O, 1/I/L, B/8, S/5, 2/Z, G/6 -- customers read these aloud.
 const CODE_ALPHABET = 'ACDEFHJKLMNPRTUVWXY34679'
@@ -291,9 +292,11 @@ export async function createOnlineOrder(deps: CreateOrderDeps, input: CreateOrde
         return { orderId, ticketNumber }
       })) as { orderId: string; ticketNumber: number }
 
-      // After commit. Both helpers swallow their own errors, so the order is never failed by push.
-      if (userId) await watchForAccount(deps.sql, saved.orderId, userId)
-      await notifyStaffNewOrder(deps, saved.orderId)
+      // After commit, off the response path; a push problem can never fail the order.
+      await afterCommit(deps, async () => {
+        if (userId) await watchForAccount(deps.sql, saved.orderId, userId)
+        await notifyStaffNewOrder(deps, saved.orderId)
+      })
 
       return {
         ok: true,
