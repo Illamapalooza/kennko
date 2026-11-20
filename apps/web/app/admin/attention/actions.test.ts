@@ -88,6 +88,15 @@ describe('closeShift', () => {
   })
 })
 
+describe('owner guard', () => {
+  it('makes no call when requireOwner rejects', async () => {
+    requireOwner.mockRejectedValue(new Error('redirect'))
+    await expect(discardEvent('D', 'E', 'n')).rejects.toThrow('redirect')
+    await expect(closeShift('s1', '10', 'x')).rejects.toThrow('redirect')
+    expect(staffFetch).not.toHaveBeenCalled()
+  })
+})
+
 describe('markOrderSeen', () => {
   it('posts to the order and revalidates', async () => {
     staffFetch.mockResolvedValue(json(200, { ok: true }))

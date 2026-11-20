@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { formatPesos } from '@kennko/core'
 import { closeShift } from '@/app/admin/attention/actions'
+import { parsePesos } from '@/app/admin/attention/pesos'
 
 /** Closes a stuck open shift from admin: the cash counted and a reason, then a confirm step. */
 export function CloseShiftForm({ shiftId, tillName }: { shiftId: string; tillName: string }) {
@@ -36,6 +38,8 @@ export function CloseShiftForm({ shiftId, tillName }: { shiftId: string; tillNam
       onSubmit={(e) => {
         e.preventDefault()
         if (confirming) return submit()
+        const parsed = parsePesos(counted)
+        if (parsed === null) return setError('Enter the counted cash in pesos.')
         setError(null)
         setConfirming(true)
       }}
@@ -50,7 +54,7 @@ export function CloseShiftForm({ shiftId, tillName }: { shiftId: string; tillNam
       </label>
       {confirming ? (
         <p className="admin-notice">
-          Close {tillName}&apos;s shift with ₱{counted.trim()} counted? The till&apos;s own close, if it arrives later, replaces this.
+          Close {tillName}&apos;s shift with {formatPesos(parsePesos(counted) ?? 0)} counted? The till&apos;s own close, if it arrives later, replaces this.
         </p>
       ) : null}
       {error ? (

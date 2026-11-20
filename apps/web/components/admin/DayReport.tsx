@@ -9,6 +9,8 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 const tallyText = (t: Tally) => `${plural(t.orders, 'order')}, ${peso(t.totalCentavos)}`
 const ticket = (n: number | null) => (n === null ? 'Unreadable sale' : ticketLabel('C', n))
 
+const TEXT_COLUMNS = new Set(['Flags', 'Reason', 'Owner note'])
+
 function Table({ head, children, label }: { head: string[]; children: React.ReactNode; label: string }) {
   return (
     <div className="report-scroll">
@@ -16,7 +18,7 @@ function Table({ head, children, label }: { head: string[]; children: React.Reac
         <thead>
           <tr>
             {head.map((h, i) => (
-              <th key={h} className={i === 0 ? undefined : 'num'}>
+              <th key={h} className={i === 0 || TEXT_COLUMNS.has(h) ? undefined : 'num'}>
                 {h}
               </th>
             ))}
@@ -185,7 +187,7 @@ export function DayReport({ report }: { report: DayReportData }) {
                 <td>
                   {f.ticket} · {f.channel === 'online' ? 'Online' : (f.deviceName ?? 'Counter')}
                 </td>
-                <td className="num">{f.flags.map(flagText).join('; ')}</td>
+                <td>{f.flags.map(flagText).join('; ')}</td>
                 <td className="num">{peso(f.totalCentavos)}</td>
               </tr>
             ))}
@@ -245,8 +247,8 @@ function HeldList({
               {ticket(r.ticketNumber)} · {r.deviceName}
             </td>
             <td className="num">{r.totalCentavos === null ? 'Unknown' : peso(r.totalCentavos)}</td>
-            <td className="num">{reasonText(r.result, r.reason)}</td>
-            {withNote ? <td className="num">{r.note ?? ''}</td> : null}
+            <td>{reasonText(r.result, r.reason)}</td>
+            {withNote ? <td>{r.note ?? ''}</td> : null}
           </tr>
         ))}
       </Table>
