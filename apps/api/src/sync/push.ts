@@ -2,7 +2,7 @@ import { MAX_HELD_RETRY, type PushResponse, type SyncEvent } from '@kennko/core'
 import type postgres from 'postgres'
 import type { AppDeps } from '../create-app.js'
 import { applyEvent, entityKeys, waitKeys, type Applied } from './apply.js'
-import { clip, findNul, parseEvent, storableTime, type Envelope } from './schema.js'
+import { clip, findNul, parseEvent, scrubSurrogates, storableTime, type Envelope } from './schema.js'
 
 type Tx = postgres.TransactionSql
 type Result = PushResponse['results'][number]
@@ -52,8 +52,9 @@ async function applyInSavepoint(tx: Tx, deviceId: string, event: SyncEvent, now:
 
 /** The payload as jsonb text. One holding U+0000 (which jsonb rejects) is kept as a JSON string of its JSON text. */
 export function payloadJson(payload: unknown): string {
-  const text = JSON.stringify(payload ?? null)
-  return findNul(payload) ? JSON.stringify(text) : text
+  const clean = scrubSurrogates(payload ?? null)
+  const text = JSON.stringify(clean)
+  return findNul(clean) ? JSON.stringify(text) : text
 }
 
 async function insertReceipt(
@@ -122,11 +123,16 @@ type HeldRow = {
  * `error: …` are retried like any other.
  */
 async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<void> {
+  // Permanent rows (`invalid: …`, including legacy import receipts) are never retried, so they stay out of
+  // the window; the entities they hold (pushed invalid rows) still block later events.
   const rows = await tx<HeldRow[]>`
     select id, seq, kind, payload, staff_id, occurred_at, entity_keys, reason
-    from sync_events where device_id = ${deviceId} and result = 'held'
+    from sync_events where device_id = ${deviceId} and result = 'held' and coalesce(reason, '') not like 'invalid:%'
     order by seq limit ${MAX_HELD_RETRY}`
-  const blocked = new Set<string>()
+  const permanent = await tx<{ k: string }[]>`
+    select distinct unnest(entity_keys) as k from sync_events
+    where device_id = ${deviceId} and result = 'held' and reason like 'invalid:%'`
+  const blocked = new Set<string>(permanent.map((r) => r.k))
   for (const row of rows) {
     if (isPermanent(row.reason) || waitKeys(row).some((k) => blocked.has(k))) {
       for (const k of row.entity_keys) blocked.add(k)
@@ -181,7 +187,8 @@ export async function pushEvents(deps: AppDeps, deviceId: string, raw: Envelope[
     if (anyApplied) await retryHeld(tx, deviceId, now)
 
     const [{ n }] = await tx<{ n: number }[]>`
-      select count(*)::int as n from sync_events where device_id = ${deviceId} and result = 'held'`
+      select count(*)::int as n from sync_events
+      where device_id = ${deviceId} and result = 'held' and kind not like 'import.%'`
     return { results, held: n }
   })) as PushResponse
 }

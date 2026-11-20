@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ImportChunk, ImportOrder, ImportResponse, ImportShift } from '@kennko/core'
 import { afterAll, beforeAll, expect, test } from 'vitest'
 import { startTestDb, type TestDb } from './pg.js'
-import { seedDevice, seedStaff, shiftOpened, syncApp } from './sync-helpers.js'
+import { cashMoved, seedDevice, seedStaff, shiftOpened, syncApp } from './sync-helpers.js'
 
 let db: TestDb
 let api: ReturnType<typeof syncApp>
@@ -296,4 +296,59 @@ test('101 rows or a missing array → 400 INVALID; revoked and anonymous → 401
   await db.sql`update devices set revoked_at = now(), token_hash = null where id = ${deviceId}`
   const revoked = await post(token, { shifts: [], orders: [], cashMoves: [] })
   expect(revoked.status).toBe(401)
+})
+
+async function flood(deviceId: string, n: number) {
+  await db.sql`
+    insert into sync_events (device_id, id, seq, kind, payload, entity_keys, occurred_at, received_at, result, reason)
+    select ${deviceId}, gen_random_uuid(), 0, 'import.order', '{}'::jsonb, '{}'::text[], now(), now(), 'held', 'invalid: legacy: x'
+    from generate_series(1, ${n})`
+}
+
+test('250 legacy receipts do not starve the retry of a genuinely held event; the push held count ignores them', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  await flood(deviceId, 250)
+  const open = shiftOpened()
+  const move = cashMoved({ shiftId: open.payload.shiftId })
+  const first = await api.push(token, [move])
+  expect(first.results[0]!.result).toBe('held')
+  expect(first.held).toBe(1)
+  const second = await api.push(token, [open])
+  expect(second.results[0]!.result).toBe('applied')
+  const [row] = await db.sql`select result from sync_events where device_id = ${deviceId} and id = ${move.id}`
+  expect(row!.result).toBe('applied')
+  expect(await db.sql`select 1 from cash_moves where id = ${move.payload.id}`).toHaveLength(1)
+})
+
+test('a pushed invalid row still blocks its entity from the retry pass', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  await flood(deviceId, 250)
+  const sid = shiftOpened().payload.shiftId
+  const bad = shiftOpened({ shiftId: sid, openingFloatCentavos: -5 })
+  const move = cashMoved({ shiftId: sid })
+  await api.push(token, [bad, move])
+  await api.push(token, [shiftOpened()])
+  const [row] = await db.sql`select result from sync_events where device_id = ${deviceId} and id = ${move.id}`
+  expect(row!.result).toBe('held')
+})
+
+test('a lone surrogate in a rejected row is kept (as U+FFFD), not a failed chunk', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  const bad = order(randomUUID(), { totalCentavos: 1, customerName: 'a\ud800b' })
+  expect(await importOk(token, { shifts: [], orders: [bad], cashMoves: [] })).toEqual({ inserted: 0, existing: 0, rejected: 1 })
+  const [r] = await db.sql`select payload from sync_events where device_id = ${deviceId}`
+  expect((r!.payload as { customerName: string }).customerName).toBe('a\ufffdb')
+})
+
+test('a row that imports later clears its held import receipt', async () => {
+  const { token, deviceId } = await seedDevice(db.sql)
+  const mine = await api.push(token, [shiftOpened()])
+  expect(mine.results[0]!.result).toBe('applied')
+  const open = shift({ closedAt: null, countedCentavos: null, expectedCentavos: null })
+  const chunk = { shifts: [open], orders: [], cashMoves: [] }
+  expect(await importOk(token, chunk)).toEqual({ inserted: 0, existing: 0, rejected: 1 })
+  expect((await receipts(deviceId)).filter((r) => r.kind === 'import.shift')).toHaveLength(1)
+  await db.sql`update shifts set closed_at = now(), counted_centavos = 0 where device_id = ${deviceId}`
+  expect(await importOk(token, chunk)).toEqual({ inserted: 1, existing: 0, rejected: 0 })
+  expect((await receipts(deviceId)).filter((r) => r.kind === 'import.shift')).toHaveLength(0)
 })

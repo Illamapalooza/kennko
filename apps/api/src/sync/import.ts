@@ -105,11 +105,14 @@ async function recordRejected(tx: Tx, deviceId: string, kind: KindOf, raw: unkno
   const id = typeof obj.id === 'string' && UUID.test(obj.id) ? obj.id : stableId(kind, raw)
   const t = obj[RECEIPT_TIME[kind]]
   const occurredAt = typeof t === 'string' ? (storableTime(t) ?? now) : now
-  await tx`
-    insert into sync_events (device_id, id, seq, kind, payload, staff_id, entity_keys, occurred_at, received_at, result, reason)
-    values (${deviceId}, ${id}, 0, ${kind}, ${payloadJson(raw)}::text::jsonb, null, '{}'::text[], ${occurredAt}, ${now}, 'held',
-      ${`invalid: legacy: ${clip(why, 150)}`})
-    on conflict do nothing`
+  // Its own savepoint: if Postgres refuses the receipt, the transaction stays usable.
+  await tx.savepoint(
+    (sp) => sp`
+      insert into sync_events (device_id, id, seq, kind, payload, staff_id, entity_keys, occurred_at, received_at, result, reason)
+      values (${deviceId}, ${id}, 0, ${kind}, ${payloadJson(raw)}::text::jsonb, null, '{}'::text[], ${occurredAt}, ${now}, 'held',
+        ${`invalid: legacy: ${clip(why, 150)}`})
+      on conflict do nothing`,
+  )
   return 'rejected'
 }
 
@@ -135,7 +138,13 @@ async function row<S extends z.ZodType>(
     return recordRejected(tx, deviceId, kind, raw, `${issue.path.join('.')}: ${issue.message}`, now)
   }
   try {
-    return (await tx.savepoint((sp) => body(sp, parsed.data))) as Outcome
+    const out = (await tx.savepoint((sp) => body(sp, parsed.data))) as Outcome
+    // Stored now (a conflict that cleared): the earlier receipt no longer describes a missing row.
+    if (out !== 'rejected') {
+      const id = (raw as { id: string }).id
+      await tx`delete from sync_events where device_id = ${deviceId} and id = ${id} and kind like 'import.%' and result = 'held'`
+    }
+    return out
   } catch (err) {
     const code = (err as { code?: unknown } | null)?.code
     if (err instanceof Reject || (!isRetryable(err) && typeof code === 'string' && /^(22|23)/.test(code))) {

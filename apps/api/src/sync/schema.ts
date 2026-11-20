@@ -187,3 +187,15 @@ export function parseEvent(env: Envelope): { ok: true; event: SyncEvent } | { ok
   const issue = parsed.error.issues[0]!
   return invalid(issue.path, issue.message)
 }
+
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g
+
+/** The value with every unpaired surrogate in a string or key replaced by U+FFFD (jsonb rejects them). */
+export function scrubSurrogates(value: unknown): unknown {
+  if (typeof value === 'string') return value.replace(LONE_SURROGATE, '\ufffd')
+  if (Array.isArray(value)) return value.map(scrubSurrogates)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k.replace(LONE_SURROGATE, '\ufffd'), scrubSurrogates(v)]))
+  }
+  return value
+}
