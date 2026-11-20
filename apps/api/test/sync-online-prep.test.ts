@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { AppDeps } from '../src/create-app.js'
 import { patchOrder } from '../src/orders/actions.js'
 import type { PushPayload, PushSender } from '../src/push/send.js'
-import { fakeProofs, inlineDefer } from './fakes.js'
+import { fakeAuthAdmin, fakeProofs, inlineDefer } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 import {
   orderCancelled,
@@ -37,7 +37,7 @@ const sender: PushSender = async (sub, payload) => {
 beforeAll(async () => {
   db = await startTestDb()
   api = syncApp(db.sql, NOW, { push: sender })
-  deps = { sql: db.sql, verifyUser: async () => ({ userId: 'x' }), proofs: fakeProofs(), now: () => NOW, push: sender, defer: inlineDefer }
+  deps = { sql: db.sql, verifyUser: async () => ({ userId: 'x' }), proofs: fakeProofs(), authAdmin: fakeAuthAdmin(), now: () => NOW, push: sender, defer: inlineDefer }
   ;({ token, deviceId } = await seedDevice(db.sql))
   bea = await seedStaff(db.sql, { fullName: 'Bea' })
   owner = await seedStaff(db.sql, { fullName: 'Olive', role: 'owner' })

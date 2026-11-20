@@ -19,7 +19,7 @@ import { createApp } from '../src/create-app.js'
 import { verifierFromJwks, type AppEnv } from '../src/auth.js'
 import { generateOrderCode } from '../src/orders/create.js'
 import { publishMenu } from '../src/menu/snapshot.js'
-import { fakeProofs, inlineDefer, type FakeProofStore } from './fakes.js'
+import { fakeAuthAdmin, fakeProofs, inlineDefer, type FakeProofStore } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 const ISSUER = 'http://supabase.test/auth/v1'
@@ -99,6 +99,7 @@ describe('POST /v1/orders', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs,
+      authAdmin: fakeAuthAdmin(),
       push: null,
       defer: inlineDefer,
       now: () => NOW,

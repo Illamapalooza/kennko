@@ -1,6 +1,7 @@
 /**
  * Payment proofs in Supabase Storage (private bucket `payment-proofs`), over the Storage REST API.
- * The only place the service-role key is used: SQL goes through DATABASE_URL as kennko_api.
+ * With `auth-admin.ts`, the only module that uses the service-role key (Ruling 12): SQL goes through
+ * DATABASE_URL as kennko_api.
  */
 export type ProofStore = {
   upload(path: string, bytes: Uint8Array, contentType: string): Promise<void>

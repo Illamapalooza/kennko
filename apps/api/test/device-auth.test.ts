@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../src/create-app.js'
 import { requireDevice, requireStaff, verifierFromJwks, type AppEnv } from '../src/auth.js'
 import { newDeviceToken, newPairingCode, sha256Hex } from '../src/devices/tokens.js'
-import { fakeProofs, inlineDefer } from './fakes.js'
+import { fakeAuthAdmin, fakeProofs, inlineDefer } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 describe('device auth', () => {
@@ -24,6 +24,7 @@ describe('device auth', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [] }), 'http://supabase.test/auth/v1'),
       proofs: fakeProofs(),
+      authAdmin: fakeAuthAdmin(),
       push: null,
       defer: inlineDefer,
       now: () => now,

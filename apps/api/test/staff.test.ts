@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { checkStaffPin, hashStaffPin } from '@kennko/core/staff-pin'
 import { createApp } from '../src/create-app.js'
 import { verifierFromJwks, type AppEnv } from '../src/auth.js'
-import { fakeProofs, inlineDefer } from './fakes.js'
+import { fakeAuthAdmin, fakeProofs, inlineDefer } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 // Real hash/check; randomStaffPin returns queued values first so uniqueness can be forced.
@@ -45,6 +45,7 @@ describe('staff and PIN management', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
+      authAdmin: fakeAuthAdmin(),
       push: null,
       defer: inlineDefer,
       now: () => new Date('2026-11-20T10:00:00Z'),

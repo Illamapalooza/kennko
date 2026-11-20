@@ -1,5 +1,6 @@
 import type { Hono } from 'hono'
 import { createApp } from './create-app.js'
+import { createAuthAdmin } from './auth-admin.js'
 import { createUserVerifier, type AppEnv } from './auth.js'
 import { loadConfig } from './config.js'
 import { createSql } from './db.js'
@@ -15,6 +16,7 @@ export function buildApp(env: Record<string, string | undefined>): Hono<AppEnv> 
     sql: createSql(config.databaseUrl),
     verifyUser: createUserVerifier(config.supabaseUrl),
     proofs: createProofStore(config.supabaseUrl, config.supabaseServiceRoleKey),
+    authAdmin: createAuthAdmin(config.supabaseUrl, config.supabaseServiceRoleKey),
     now: () => new Date(),
     defer: vercelDefer,
     push,

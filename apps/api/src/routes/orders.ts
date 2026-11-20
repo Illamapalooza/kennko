@@ -3,9 +3,10 @@ import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import type { AppDeps } from '../create-app.js'
 import { optionalUser, requireStaff, type AppEnv } from '../auth.js'
-import { invalid, respond } from '../http.js'
+import { apiError, invalid, respond } from '../http.js'
 import { cancelOrder, patchOrder } from '../orders/actions.js'
 import { createOnlineOrder, type SubmittedOrder } from '../orders/create.js'
+import { readPublicOrder, readReceipt } from '../orders/read.js'
 
 const lineSchema = z.object({
   menuItemId: z.string(),
@@ -90,6 +91,22 @@ export function ordersRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const { ok: _ok, ...body } = result
     return c.json(body, 201)
+  })
+
+  // Public, keyed on the order code: today's projections exactly (Ruling 10). Never cached, so a
+  // status change shows on the next refresh and no shared cache keeps a customer's order.
+  app.get('/by-code/:code', async (c) => {
+    const order = await readPublicOrder(deps.sql, c.req.param('code'))
+    if (!order) throw apiError(404, 'NOT_FOUND', 'No order with that code')
+    c.header('cache-control', 'no-store')
+    return c.json(order)
+  })
+
+  app.get('/by-code/:code/receipt', async (c) => {
+    const receipt = await readReceipt(deps.sql, c.req.param('code'))
+    if (!receipt) throw apiError(404, 'NOT_FOUND', 'No order with that code')
+    c.header('cache-control', 'no-store')
+    return c.json(receipt)
   })
 
   app.patch('/:id', requireStaff(deps), async (c) => {

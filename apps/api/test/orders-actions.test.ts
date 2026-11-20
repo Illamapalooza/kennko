@@ -3,7 +3,7 @@ import type { Hono } from 'hono'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../src/create-app.js'
 import { verifierFromJwks, type AppEnv } from '../src/auth.js'
-import { fakeProofs, inlineDefer } from './fakes.js'
+import { fakeAuthAdmin, fakeProofs, inlineDefer } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 const ISSUER = 'http://supabase.test/auth/v1'
@@ -57,6 +57,7 @@ describe('staff order and payment actions', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
+      authAdmin: fakeAuthAdmin(),
       push: null,
       defer: inlineDefer,
       now: () => new Date('2026-11-21T02:00:00Z'),

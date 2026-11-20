@@ -6,7 +6,7 @@ import { verifierFromJwks, type AppEnv } from '../src/auth.js'
 import { generateOrderCode } from '../src/orders/create.js'
 import { publishMenu } from '../src/menu/snapshot.js'
 import type { PushPayload, PushSender } from '../src/push/send.js'
-import { fakeProofs, inlineDefer } from './fakes.js'
+import { fakeAuthAdmin, fakeProofs, inlineDefer } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 
 const ISSUER = 'http://supabase.test/auth/v1'
@@ -89,6 +89,7 @@ describe('web push', () => {
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
+      authAdmin: fakeAuthAdmin(),
       now: () => NOW,
       orderCode: generateOrderCode,
     }

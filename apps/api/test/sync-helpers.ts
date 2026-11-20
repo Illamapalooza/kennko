@@ -5,7 +5,7 @@ import { createApp } from '../src/create-app.js'
 import { newDeviceToken, sha256Hex } from '../src/devices/tokens.js'
 import { publishMenu } from '../src/menu/snapshot.js'
 import type { PushSender } from '../src/push/send.js'
-import { fakeProofs, inlineDefer } from './fakes.js'
+import { fakeAuthAdmin, fakeProofs, inlineDefer } from './fakes.js'
 
 /** A paired till: its id and the bearer token it sends. */
 export async function seedDevice(sql: postgres.Sql, name = 'Front till'): Promise<{ deviceId: string; token: string }> {
@@ -71,6 +71,7 @@ export function syncApp(
         throw new Error('no staff tokens in sync tests')
       }),
     proofs: fakeProofs(),
+    authAdmin: fakeAuthAdmin(),
     push: opts.push ?? null,
     defer: inlineDefer,
     now: () => now,

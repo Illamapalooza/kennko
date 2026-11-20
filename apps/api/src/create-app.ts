@@ -3,8 +3,10 @@ import { HTTPException } from 'hono/http-exception'
 import type postgres from 'postgres'
 import type { AppEnv } from './auth.js'
 import { apiError } from './http.js'
+import type { AuthAdmin } from './auth-admin.js'
 import { attentionRoutes } from './routes/attention.js'
 import { deviceRoutes } from './routes/devices.js'
+import { meRoutes } from './routes/me.js'
 import { menuRoutes } from './routes/menu.js'
 import { ordersRoutes } from './routes/orders.js'
 import { paymentRoutes } from './routes/payments.js'
@@ -19,6 +21,8 @@ export type AppDeps = {
   sql: postgres.Sql
   verifyUser: (token: string) => Promise<{ userId: string }>
   proofs: ProofStore
+  /** Supabase Auth admin (service key): confirmed-email lookups for history, staff invites. */
+  authAdmin: AuthAdmin
   /** Injected so tests can pin the clock. */
   now: () => Date
   /** Order code generator; defaults to `KNK-` + 6 characters. Tests inject collisions. */
@@ -54,6 +58,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   app.route('/v1/attention', attentionRoutes(deps))
   app.route('/v1/devices', deviceRoutes(deps))
+  app.route('/v1/me', meRoutes(deps))
   app.route('/v1/menu', menuRoutes(deps))
   app.route('/v1/orders', ordersRoutes(deps))
   app.route('/v1/payments', paymentRoutes(deps))

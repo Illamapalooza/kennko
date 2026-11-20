@@ -7,7 +7,7 @@ import { verifierFromJwks, type AppEnv } from '../src/auth.js'
 import { createApp } from '../src/create-app.js'
 import { publishMenu } from '../src/menu/snapshot.js'
 import type { PushSender } from '../src/push/send.js'
-import { fakeProofs, inlineDefer } from './fakes.js'
+import { fakeAuthAdmin, fakeProofs, inlineDefer } from './fakes.js'
 import { startTestDb, type TestDb } from './pg.js'
 import {
   availability,
@@ -28,6 +28,7 @@ const ISSUER = 'http://supabase.test/auth/v1'
 const OWNER = '00000000-0000-4000-8000-0000000000a1'
 const BARISTA = '00000000-0000-4000-8000-0000000000a2'
 const MANAGER_LOGIN = '00000000-0000-4000-8000-0000000000a3'
+const CUSTOMER = '00000000-0000-4000-8000-0000000000a4'
 const NOW = new Date('2026-11-21T02:00:00Z')
 
 describe('every route as kennko_api', () => {
@@ -35,6 +36,7 @@ describe('every route as kennko_api', () => {
   let app: Hono<AppEnv>
   let ownerJwt: string
   let baristaJwt: string
+  let customerJwt: string
   let latteId: string
   let oatId: string
   let version: number
@@ -60,7 +62,7 @@ describe('every route as kennko_api', () => {
     db = await startTestDb()
     await db.sql
       .unsafe(
-        `insert into auth.users (id, email) values ('${OWNER}', 'o@x.test'), ('${BARISTA}', 'b@x.test'), ('${MANAGER_LOGIN}', 'm@x.test');
+        `insert into auth.users (id, email) values ('${OWNER}', 'o@x.test'), ('${BARISTA}', 'b@x.test'), ('${MANAGER_LOGIN}', 'm@x.test'), ('${CUSTOMER}', 'cy@x.test');
          insert into staff (id, user_id, email, full_name, role, is_active) values
            ('${OWNER}', '${OWNER}', 'o@x.test', 'Owner', 'owner', true),
            ('${BARISTA}', '${BARISTA}', 'b@x.test', 'Barista', 'barista', true);`,
@@ -90,10 +92,12 @@ describe('every route as kennko_api', () => {
         .sign(pair.privateKey)
     ownerJwt = await sign(OWNER)
     baristaJwt = await sign(BARISTA)
+    customerJwt = await sign(CUSTOMER)
     app = createApp({
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
       proofs: fakeProofs(),
+      authAdmin: fakeAuthAdmin({ [CUSTOMER]: { email: 'cy@x.test', emailConfirmed: true } }),
       push: sender,
       defer: inlineDefer,
       now: () => NOW,
@@ -406,6 +410,42 @@ describe('every route as kennko_api', () => {
     expect(shifts.length).toBeGreaterThan(0)
     expect((r.held as { rows: unknown[] }).rows).toEqual([])
     expect((await call('GET', '/v1/reports/day/2026-11-21', baristaJwt)).status).toBe(403)
+  })
+
+  it('order page, receipt and customer history as kennko_api', async () => {
+    await asSuper(async () => {
+      const at = NOW.toISOString()
+      const [own] = await db.sql`
+        insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
+          ticket_series, ticket_number, customer_name, customer_phone, customer_email, customer_user_id, fulfil_at,
+          subtotal_centavos, total_centavos, created_at, updated_at)
+        values ('online', 'KNK-READ1', 'pickup', 'preparing', 'paid', '2026-11-21', 'W', 950, 'Cy', '09170000000',
+          'cy@x.test', ${CUSTOMER}, ${at}, 14000, 14000, ${at}, ${at})
+        returning id`
+      const [line] = await db.sql`
+        insert into order_lines (order_id, item_id, item_name, variant_code, variant_label, unit_price_centavos,
+          quantity, line_total_centavos, ice_level, ice_serve)
+        values (${own!.id}, ${latteId}, 'Latte', 'M', 'Medium', 12000, 1, 14000, 'regular', 'mixed') returning id`
+      await db.sql`insert into order_line_options (line_id, group_name, option_name, price_centavos)
+        values (${line!.id}, 'Milk of Choice', 'Oat milk', 2000)`
+      await db.sql`insert into payments (order_id, method, amount_centavos, reference, status, verified_by, verified_at)
+        values (${own!.id}, 'gcash', 14000, 'GC-READ1', 'verified', ${BARISTA}, ${at})`
+      // A guest order under the same, confirmed address.
+      await db.sql`
+        insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
+          ticket_series, ticket_number, customer_name, customer_phone, customer_email, fulfil_at,
+          subtotal_centavos, total_centavos, created_at, updated_at)
+        values ('online', 'KNK-READ2', 'pickup', 'placed', 'pending_verification', '2026-11-21', 'W', 951, 'Cy',
+          '09170000000', 'CY@x.test', ${at}, 12000, 12000, ${at}, ${at})`
+    })
+
+    const page = await ok('GET', '/v1/orders/by-code/knk-read1')
+    expect(page).toMatchObject({ orderCode: 'KNK-READ1', ticket: 'W950', lines: [{ name: 'Latte' }] })
+    const receipt = await ok('GET', '/v1/orders/by-code/KNK-READ1/receipt')
+    expect(receipt.order).toMatchObject({ payment: { reference: 'GC-READ1' }, lines: [{ options: [{ name: 'Oat milk' }] }] })
+    expect(receipt.shop).toMatchObject({ displayName: expect.any(String) })
+    const history = await ok('GET', '/v1/me/orders', customerJwt)
+    expect((history.orders as { orderCode: string }[]).map((o) => o.orderCode).sort()).toEqual(['KNK-READ1', 'KNK-READ2'])
   })
 
   it('publishMenu from the deploy helper also works as kennko_api', async () => {

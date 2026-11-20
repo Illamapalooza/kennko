@@ -6,7 +6,7 @@ import { apiError } from './http.js'
 
 export type StaffRole = 'owner' | 'manager' | 'barista'
 
-/** Hono context typing: `staff` behind `requireStaff`, `device` behind `requireDevice`, `userId` behind `optionalUser`. */
+/** Hono context typing: `staff` behind `requireStaff`, `device` behind `requireDevice`, `userId` behind `optionalUser` (or `requireUser`, never null there). */
 export type AppEnv = {
   Variables: {
     staff: { id: string; role: StaffRole }
@@ -60,6 +60,16 @@ export function optionalUser(deps: AppDeps): MiddlewareHandler<AppEnv> {
       }
     }
     c.set('userId', userId)
+    await next()
+  }
+}
+
+/** Customer routes: 401 on a missing or invalid token, otherwise sets `userId`. */
+export function requireUser(deps: AppDeps): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const token = bearer(c.req.header('Authorization'))
+    if (!token) throw apiError(401, 'UNAUTHENTICATED', 'Missing bearer token')
+    c.set('userId', (await deps.verifyUser(token)).userId)
     await next()
   }
 }
