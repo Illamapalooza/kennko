@@ -417,3 +417,6 @@
 .attention-form .admin-field { margin-bottom: 0; }
 .attention-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .attention-row .btn, .attention-retry .btn, .attention-form .btn { min-height: 44px; justify-self: start; }
+
+/* Customers. Amber only marks "Free drink waiting" and the paper pill (.report-pill). */
+.points-negative { color: #b3261e; font-weight: 700; }

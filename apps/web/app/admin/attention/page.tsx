@@ -3,6 +3,7 @@ import { formatPesos, type AttentionView } from '@kennko/core'
 import { requireOwner } from '@/lib/auth/session'
 import { staffFetch } from '@/lib/api/client'
 import { AttentionRow, FlaggedOrderRow, RetryTillButton } from '@/components/admin/AttentionRow'
+import { PaperStampRow } from '@/components/admin/PaperStampRow'
 import { CloseShiftForm } from '@/components/admin/CloseShiftForm'
 import { manilaStamp } from '../reports/dates'
 import { canCloseShift } from './text'
@@ -52,10 +53,21 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
         <p className="admin-error" role="alert">
           Couldn&apos;t load this. Refresh to try again.
         </p>
-      ) : view.events.length + view.orders.length + view.shifts.length === 0 ? (
+      ) : view.events.length + view.orders.length + view.shifts.length + view.stamps.length === 0 ? (
         <p>Nothing needs a look.</p>
       ) : (
         <>
+          {view.stamps.length > 0 ? (
+            <section aria-labelledby="stamps-to-check">
+              <h2 id="stamps-to-check">Stamps to check</h2>
+              <div className="attention-list">
+                {view.stamps.map((s) => (
+                  <PaperStampRow key={s.id} stamp={s} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
           {view.shifts.length > 0 ? (
             <section aria-labelledby="open-shifts">
               <h2 id="open-shifts">Open shifts</h2>

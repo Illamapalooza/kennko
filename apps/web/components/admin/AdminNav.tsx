@@ -11,6 +11,7 @@ type NavLink = { href: string; label: string; exact?: boolean; minRole?: 'manage
 const LINKS: NavLink[] = [
   { href: '/admin', label: 'Overview', exact: true },
   { href: '/admin/orders', label: 'Orders' },
+  { href: '/admin/customers', label: 'Customers', minRole: 'manager' },
   { href: '/admin/reports', label: 'Reports', minRole: 'manager' },
   { href: '/admin/menu', label: 'Menu' },
   { href: '/admin/staff', label: 'Staff', minRole: 'owner' },

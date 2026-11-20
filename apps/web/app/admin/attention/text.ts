@@ -12,6 +12,12 @@ const FLAGGED: Record<string, string> = {
   not_paid: 'Sent for an order that was not paid',
   not_from_till: 'Sent for an order that did not come from this till',
   unknown_item: 'Sold an item the menu does not have',
+  unknown_customer: 'Customer code not found (deleted account or typo)',
+  linked_other: 'Order already belongs to another customer',
+  not_linked: 'Stamp without a customer on the order',
+  no_drink: 'Stamp on an order with no drink',
+  unknown_claim: 'Free drink not found',
+  claim_reused: 'Free drink used on two orders',
 }
 
 const ORDER_FLAGS: Record<string, string> = {

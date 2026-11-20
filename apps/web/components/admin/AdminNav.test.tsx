@@ -61,6 +61,17 @@ describe('AdminNav', () => {
     expect(screen.queryByRole('link', { name: /Needs a look/ })).toBeNull()
   })
 
+  it('shows Customers to a manager, after Orders, and hides it from a barista', () => {
+    path = '/admin'
+    const { unmount } = render(<AdminNav ordersToCheck={0} role="manager" />)
+    const names = screen.getAllByRole('link').map((l) => l.textContent)
+    expect(screen.getByRole('link', { name: 'Customers' }).getAttribute('href')).toBe('/admin/customers')
+    expect(names.indexOf('Customers')).toBe(names.indexOf('Orders') + 1)
+    unmount()
+    render(<AdminNav ordersToCheck={0} role="barista" />)
+    expect(screen.queryByRole('link', { name: 'Customers' })).toBeNull()
+  })
+
   it('hides Reports from a barista', () => {
     path = '/admin'
     render(<AdminNav ordersToCheck={0} role="barista" />)

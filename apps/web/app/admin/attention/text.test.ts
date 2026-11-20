@@ -20,6 +20,15 @@ describe('reasonText', () => {
     for (const [i, line] of lines.entries()) expect(line, reasons[i]).not.toBe(reasons[i])
     expect(new Set(lines).size).toBe(reasons.length)
   })
+  it('maps the loyalty reasons', () => {
+    expect(reasonText('flagged', 'unknown_customer')).toBe('Customer code not found (deleted account or typo)')
+    expect(reasonText('flagged', 'linked_other')).toBe('Order already belongs to another customer')
+    expect(reasonText('flagged', 'not_linked')).toBe('Stamp without a customer on the order')
+    expect(reasonText('flagged', 'no_drink')).toBe('Stamp on an order with no drink')
+    expect(reasonText('flagged', 'unknown_claim')).toBe('Free drink not found')
+    expect(reasonText('flagged', 'claim_reused')).toBe('Free drink used on two orders')
+    expect(reasonText('held', 'no_drink')).toBe('Stamp on an order with no drink')
+  })
   it('joins several flagged reasons', () => {
     expect(reasonText('flagged', 'not_paid,online_order')).toBe(`${reasonText('flagged', 'not_paid')}; ${reasonText('flagged', 'online_order')}`)
   })
