@@ -114,6 +114,28 @@ every sale, shift, cash move and sold-out change on its own computer first, then
   screen, when the person is known (per-person mode). Sales, opening, cash in and sold-out changes are credited to the
   signed-in person; a void, cash out and closing to the manager whose PIN approved it.
 
+## Online orders
+
+Paid orders from the website show up on the Orders board next to counter orders, as **W1, W2...** with an amber
+"Online" tag. Counter orders keep their **#** numbers.
+
+- **Only paid orders arrive**, within about 15 seconds of the customer's payment being confirmed. Unpaid, rejected and
+  refunded orders never show, and an order cancelled in admin disappears from the board on the next sync.
+- **Buttons.** Each ticket has one forward button, and the customer is told at each step, as if admin had pressed it:
+  - **Start** (queued → preparing): "W3 is being prepared".
+  - **Ready** (pickup) or **Out for delivery** (delivery): "W3 is ready for pickup" (pickup) / "W3 is on its way" (delivery).
+  - **Picked up** or **Delivered**: the customer gets "W3 is complete".
+- **No Back, and no Void.** The customer has already been told, so a step cannot be undone here. **Cancelling and
+  refunding are done in admin**, never on the till. If admin moves an order first, the next sync corrects the ticket.
+- **Delivery tickets** also show the address, barangay and the customer's phone. Pickup tickets show no phone. No
+  prices or totals are shown on any online ticket.
+- **Offline:** orders already pulled stay on the board and the buttons still work. Each step is saved on the till
+  and sent to Kennko when the internet returns (it waits in the outbox, in order).
+- **Not in History, reports or the cash count.** Online orders live apart from counter sales, so the day summary,
+  shift cash, History and the CSV never include them. Online payments are handled by Kennko, not the drawer.
+- **Privacy:** the customer's phone and address are deleted from the till when it is disconnected (revoked in admin,
+  or forgotten), and orders leave the till once they drop out of the sync.
+
 ## Settings
 
 Copy `config.example.json` to `config.json` and edit it. **Change both PINs before real use.**

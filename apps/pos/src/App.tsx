@@ -121,7 +121,7 @@ export function App() {
     refreshBoot()
   }, [unlocked, menuKey, lastSyncAt, refreshBoot])
 
-  const activeCount = live?.active.length ?? 0
+  const activeCount = (live?.active.length ?? 0) + (live?.online?.length ?? 0)
   const screen = useMemo(() => {
     if (!boot || !menu || !live) return <div className="loading">Opening the till…</div>
     switch (tab) {

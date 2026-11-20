@@ -1,4 +1,4 @@
-import type { CashMove, Discount, Menu, Order, Shift, Summary } from '@kennko/core'
+import type { CashMove, Discount, Menu, OnlineQueueOrder, Order, Shift, Summary } from '@kennko/core'
 
 export type Bootstrap = {
   shop: { name: string; address: string; phone: string; receiptFooter: string }
@@ -30,7 +30,7 @@ export type SyncStatus = {
   importing: number
 }
 
-export type Live = { version: number; now: number; day: string; active: Order[]; shift: Shift | null; menuKey: string; sync: SyncStatus }
+export type Live = { version: number; now: number; day: string; active: Order[]; online: OnlineQueueOrder[]; shift: Shift | null; menuKey: string; sync: SyncStatus }
 
 export type TillState = {
   shift: Shift | null
@@ -81,6 +81,7 @@ export const api = {
   menu: () => call<Menu>('GET', '/api/menu'),
   orders: (day: string) => call<Order[]>('GET', `/api/orders?day=${day}`),
   createOrder: (body: unknown) => call<Order>('POST', '/api/orders', body),
+  advanceOnline: (id: string) => call<OnlineQueueOrder>('POST', `/api/online/${id}/advance`, {}),
   advance: (id: number) => call<Order>('POST', `/api/orders/${id}/advance`, {}),
   undo: (id: number) => call<Order>('POST', `/api/orders/${id}/undo`, {}),
   voidOrder: (id: number, reason: string, managerPin: string) => call<Order>('POST', `/api/orders/${id}/void`, { reason, managerPin }),
