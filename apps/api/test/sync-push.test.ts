@@ -4,6 +4,7 @@ import { startTestDb, type TestDb } from './pg.js'
 import {
   availability,
   cashMoved,
+  prepStatus,
   publishTwoVersions,
   seedDevice,
   seedStaff,
@@ -541,4 +542,31 @@ test('a parse-invalid held row is never re-applied, even if its stored payload w
   expect(next.held).toBe(1)
   const [item] = await db.sql`select is_available from menu_items where id = ${menu.latteId}`
   expect(item!.is_available).toBe(true)
+})
+
+test('rows waiting behind a permanent invalid row do not fill the retry window', async () => {
+  const { deviceId, token } = await seedDevice(db.sql)
+  const doomed = shiftOpened({ openingFloatCentavos: -1 })
+  const shiftId = doomed.payload.shiftId
+  expect((await api.push(token, [doomed])).results[0]!.reason).toMatch(/^invalid: /)
+  // MAX_HELD_RETRY cash moves behind it: held waits_for_earlier forever.
+  for (let i = 0; i < 4; i++) {
+    const moves = Array.from({ length: 50 }, () => cashMoved({ shiftId }))
+    const res = await api.push(token, moves)
+    expect(new Set(res.results.map((r) => r.reason))).toEqual(new Set(['waits_for_earlier']))
+  }
+  // A newer, retryable row: a prep step for an order the API does not have yet.
+  const orderId = randomUUID()
+  const prep = prepStatus({ orderId, to: 'preparing' })
+  expect((await api.push(token, [prep])).results[0]).toMatchObject({ result: 'held', reason: 'order_unknown' })
+  await db.sql`
+    insert into orders (id, channel, fulfilment, customer_name, prep_status, payment_status, business_day,
+      ticket_series, ticket_number, subtotal_centavos, total_centavos, device_id)
+    values (${orderId}, 'counter', 'dine_in', 'Walk-in', 'placed', 'paid', '2026-11-21', 'C', 1, 5000, 5000, ${deviceId})`
+  // The next push retries it although 201 older rows are still held.
+  await api.push(token, [availability({ itemId: menu.latteId, available: true })])
+  const [row] = await db.sql`select result from sync_events where device_id = ${deviceId} and id = ${prep.id}`
+  expect(row!.result).toBe('applied')
+  const [o] = await db.sql`select prep_status from orders where id = ${orderId}`
+  expect(o!.prep_status).toBe('preparing')
 })

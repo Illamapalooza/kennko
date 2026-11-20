@@ -125,38 +125,57 @@ type HeldRow = {
 async function retryHeld(tx: Tx, deviceId: string, now: Date): Promise<void> {
   // Permanent rows (`invalid: …`, including legacy import receipts) are never retried, so they stay out of
   // the window; the entities they hold (pushed invalid rows) still block later events.
-  const rows = await tx<HeldRow[]>`
-    select id, seq, kind, payload, staff_id, occurred_at, entity_keys, reason
-    from sync_events where device_id = ${deviceId} and result = 'held' and coalesce(reason, '') not like 'invalid:%'
-    order by seq limit ${MAX_HELD_RETRY}`
   const permanent = await tx<{ k: string }[]>`
     select distinct unnest(entity_keys) as k from sync_events
     where device_id = ${deviceId} and result = 'held' and reason like 'invalid:%'`
-  const blocked = new Set<string>(permanent.map((r) => r.k))
-  for (const row of rows) {
-    if (isPermanent(row.reason) || waitKeys(row).some((k) => blocked.has(k))) {
-      for (const k of row.entity_keys) blocked.add(k)
-      continue
+  const permanentKeys = permanent.map((r) => r.k)
+  const blocked = new Set<string>(permanentKeys)
+  // The window counts only rows actually retried: rows behind a permanent one are skipped in SQL (an event has
+  // one entity key, so it adds nothing new to `blocked`) or, when blocked another way (a sale behind a doomed
+  // shift, or behind a row skipped earlier), skipped while paging. So doomed rows can never starve newer ones.
+  let tried = 0
+  let after = -1n
+  for (;;) {
+    const page = await tx<HeldRow[]>`
+      select id, seq, kind, payload, staff_id, occurred_at, entity_keys, reason
+      from sync_events where device_id = ${deviceId} and result = 'held' and coalesce(reason, '') not like 'invalid:%'
+        and seq > ${after.toString()} and not (entity_keys && ${permanentKeys}::text[])
+      order by seq limit ${MAX_HELD_RETRY}`
+    if (page.length === 0) return
+    after = BigInt(page[page.length - 1]!.seq)
+    for (const row of page) {
+      if (tried >= MAX_HELD_RETRY) return
+      if (await retryOne(tx, deviceId, row, blocked, now)) tried += 1
     }
-    const parsed = parseEvent({
-      id: row.id,
-      seq: Number(row.seq),
-      kind: row.kind,
-      occurredAt: row.occurred_at.toISOString(),
-      staffId: row.staff_id,
-      payload: row.payload,
-    })
-    const out = parsed.ok ? await applyInSavepoint(tx, deviceId, parsed.event, now) : held(parsed.reason)
-    if (out.result === 'held') {
-      for (const k of row.entity_keys) blocked.add(k)
-      if (out.reason !== row.reason) {
-        await tx`update sync_events set reason = ${out.reason} where device_id = ${deviceId} and id = ${row.id}`
-      }
-      continue
-    }
-    await tx`update sync_events set result = ${out.result}, reason = ${out.reason}, applied_at = ${now}
-      where device_id = ${deviceId} and id = ${row.id}`
+    if (page.length < MAX_HELD_RETRY) return
   }
+}
+
+/** Retries one held row unless an earlier held row blocks it. True when it was actually retried. */
+async function retryOne(tx: Tx, deviceId: string, row: HeldRow, blocked: Set<string>, now: Date): Promise<boolean> {
+  if (isPermanent(row.reason) || waitKeys(row).some((k) => blocked.has(k))) {
+    for (const k of row.entity_keys) blocked.add(k)
+    return false
+  }
+  const parsed = parseEvent({
+    id: row.id,
+    seq: Number(row.seq),
+    kind: row.kind,
+    occurredAt: row.occurred_at.toISOString(),
+    staffId: row.staff_id,
+    payload: row.payload,
+  })
+  const out = parsed.ok ? await applyInSavepoint(tx, deviceId, parsed.event, now) : held(parsed.reason)
+  if (out.result === 'held') {
+    for (const k of row.entity_keys) blocked.add(k)
+    if (out.reason !== row.reason) {
+      await tx`update sync_events set reason = ${out.reason} where device_id = ${deviceId} and id = ${row.id}`
+    }
+    return true
+  }
+  await tx`update sync_events set result = ${out.result}, reason = ${out.reason}, applied_at = ${now}
+    where device_id = ${deviceId} and id = ${row.id}`
+  return true
 }
 
 /**
