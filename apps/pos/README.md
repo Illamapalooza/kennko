@@ -76,9 +76,11 @@ signs every tablet out once; each person then types their own PIN, and their fir
   Someone switched off in admin, or whose PIN was taken away, drops off the list at the next refresh and their
   tablet goes back to the PIN screen.
 - **A new PIN works on the next try.** When a typed PIN matches no one, the till asks the website for the list
-  straight away (at most once every 30 seconds) and checks the PIN again; that counts as one wrong try, not two. So a
+  straight away (at most once every 30 seconds, waiting at most 2.5 seconds for the answer) and checks the PIN
+  again; a slower answer still updates the list for the next try. That counts as one wrong try, not two. So a
   PIN issued a moment ago in admin usually works at the first try; if the till asked in the last 30 seconds, it
-  works on a try after that, or at the latest at the 5-minute refresh. With the internet down the till checks only the list it already has.
+  works on a try after that, or at the latest at the 5-minute refresh. With the internet down the till checks only
+  the list it already has.
 - **Disconnected in admin.** If the owner disconnects the till in admin › Tills, the till keeps selling with the PINs
   it already has and the Menu screen says "Disconnected in admin". Connect it again with a new code.
 - **Forget the connection** with `POST /api/device/forget` (a manager PIN). The PIN list stays, so the same PINs keep

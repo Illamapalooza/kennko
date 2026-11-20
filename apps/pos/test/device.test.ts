@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { hashStaffPin } from '@kennko/core/staff-pin'
 import { applyDeviceInfo, checkPinFresh, createStaffRefresh, fetchDeviceInfo, forgetDevice, loadDevice, pairWithApi, saveDevice, type DeviceFile } from '../server/device.ts'
 import { createPinDirectory, type CachedStaff } from '../server/pins.ts'
@@ -217,7 +217,7 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
   let carl: CachedStaff
   beforeAll(async () => { carl = { id: 'b-2', fullName: 'Carl', role: 'barista', pinHash: await hashStaffPin('333333') } })
 
-  function paired(respond: () => Response) {
+  function paired(respond: () => Response | Promise<Response>) {
     const t = till([bea, ana])
     const dir = tempDir()
     saveDevice(dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
@@ -272,6 +272,31 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
     expect(await checkPinFresh(() => t.pins.checkGate('333333'), t.refresh.soon)).toBeNull()
     expect(t.store.staffCache()).toHaveLength(2)
     expect(t.changes()).toBe(0)
+  })
+
+  describe('with a slow website', () => {
+    afterEach(() => { vi.useRealTimers() })
+    // setImmediate is left real, so this waits on real work (scrypt, fetch) without moving the fake clock.
+    const until = async (done: () => boolean) => { while (!done()) await new Promise((r) => setImmediate(r)) }
+
+    it('answers within 2.5 s from the current list, and the next try sees the refreshed one', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      let answer!: (r: Response) => void
+      const t = paired(() => new Promise<Response>((resolve) => { answer = resolve }))
+      let settled = false
+      const first = checkPinFresh(() => t.pins.checkGate('333333'), t.refresh.soon).then((who) => { settled = true; return who })
+      await until(() => t.api.calls.length === 1) // the first check missed and the refresh has asked
+      await vi.advanceTimersByTimeAsync(2_499)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await first).toBeNull() // the website has not answered: the PIN is not on the list yet
+      expect(t.api.calls).toHaveLength(1)
+
+      answer(reply(200, { staff: [bea, ana, carl] })) // the refresh carries on in the background
+      await until(() => t.store.staffCache().length === 3)
+      expect(await checkPinFresh(() => t.pins.checkGate('333333'), t.refresh.soon)).toEqual({ staffId: 'b-2', role: 'staff', name: 'Carl' })
+      expect(t.api.calls).toHaveLength(1) // a right PIN asks nothing
+    })
   })
 
   it('does not ask when the till is not paired, or was disconnected in admin', async () => {

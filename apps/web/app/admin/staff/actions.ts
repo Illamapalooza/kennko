@@ -3,13 +3,14 @@
 import { revalidatePath } from 'next/cache'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { requireOwner } from '@/lib/auth/session'
-import { callApi } from '@/lib/api/call'
+import { callApi, callApiWithCode } from '@/lib/api/call'
 import type { StaffRole } from '@/lib/auth/types'
 
 type Result = { ok: true } | { ok: false; message: string }
 type PinResult = { ok: true; pin: string } | { ok: false; message: string }
 
 const ROLES: StaffRole[] = ['owner', 'manager', 'barista']
+const KEEP_LOGIN_CODES = new Set(['ALREADY_STAFF', 'EMAIL_TAKEN'])
 const STAFF_MESSAGES = { notFound: 'That person no longer exists. Refresh the page.' }
 
 export async function addStaff(formData: FormData): Promise<Result> {
@@ -40,11 +41,13 @@ export async function addStaff(formData: FormData): Promise<Result> {
     body.userId = userId
   }
 
-  const result = await callApi('/v1/staff', 'POST', body, STAFF_MESSAGES)
+  const result = await callApiWithCode('/v1/staff', 'POST', body, STAFF_MESSAGES)
   if (!result.ok) {
-    // The invite above made a login nobody can use without a staff row; take it back so a retry can invite again.
-    if (body.userId) await deleteInvitedUser(body.userId)
-    return result
+    // The invite above may have made a login nobody can use without a staff row; take it back so a retry can
+    // invite again. Not on ALREADY_STAFF or EMAIL_TAKEN: Supabase re-sends an invite to an existing unconfirmed
+    // user and returns that same user, so the login was there before this call.
+    if (body.userId && !KEEP_LOGIN_CODES.has(result.code ?? '')) await deleteInvitedUser(body.userId)
+    return { ok: false, message: result.message }
   }
   revalidatePath('/admin/staff')
   return { ok: true }

@@ -90,12 +90,28 @@ describe('addStaff', () => {
     expect(result).toEqual({ ok: false, message: 'That login already belongs to a staff member.' })
   })
 
-  it('deletes the just-invited login when the API refuses the person', async () => {
+  it('keeps the login when the API says it already belongs to staff (ALREADY_STAFF, EMAIL_TAKEN)', async () => {
+    // Supabase re-sends an invite to an unconfirmed user and returns the same, older user: not ours to delete.
+    inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'u-9' } }, error: null })
+    staffFetch.mockResolvedValueOnce(json(409, { code: 'ALREADY_STAFF', message: 'That login already belongs to a staff member.' }))
+    expect(await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))).toEqual({
+      ok: false,
+      message: 'That login already belongs to a staff member.',
+    })
+    staffFetch.mockResolvedValueOnce(json(409, { code: 'EMAIL_TAKEN', message: 'That email already belongs to a staff member.' }))
+    expect(await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))).toEqual({
+      ok: false,
+      message: 'That email already belongs to a staff member.',
+    })
+    expect(deleteUser).not.toHaveBeenCalled()
+  })
+
+  it('deletes the just-invited login when the API fails with a 500', async () => {
     inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'u-9' } }, error: null })
     deleteUser.mockResolvedValue({ data: {}, error: null })
-    staffFetch.mockResolvedValue(json(409, { code: 'ALREADY_STAFF', message: 'That login already belongs to a staff member.' }))
+    staffFetch.mockResolvedValue(json(500, { code: 'INTERNAL', message: 'boom' }))
     const result = await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))
-    expect(result).toEqual({ ok: false, message: 'That login already belongs to a staff member.' })
+    expect(result).toEqual({ ok: false, message: 'Something went wrong. Try again.' })
     expect(deleteUser).toHaveBeenCalledWith('u-9')
   })
 

@@ -185,8 +185,15 @@ Expect `staff_id_fkey` among the rows.
 select pg_describe_object(classid, objid, objsubid) from pg_depend where refobjid = 'public.staff_role'::regtype;
 ```
 
-Expect only the `staff` table's `role` column and its default, and the `_staff_role` array type. Any function, view
-or policy in the list means stop. If either result differs, stop and ask before applying.
+Expect exactly these three rows:
+
+```
+column role of table staff
+default value for column role of table staff
+type staff_role[]
+```
+
+Anything else (a function, view or policy) means stop. If either result differs, stop and ask before applying.
 
 **Don't use the Staff screen between steps 1 and 3.** The old website's invite form would create staff rows whose
 login can't sign in.
@@ -227,9 +234,17 @@ Deploy right after the API. Smoke checks:
 
 ### 4. Till (shop computer)
 
-The shop till is the Windows computer at the counter. Update it by double-clicking `deploy\windows\setup.cmd` (see
-[deploy/windows/README.md](../../deploy/windows/README.md)); it pulls, rebuilds and restarts, keeping the PINs and the
-sales. The till still asks for the `config.json` PIN until the owner has a PIN.
+The shop till is the Windows computer at the counter. Update it as in
+[deploy/windows/README.md](../../deploy/windows/README.md) › Updating: first pull the new code (`setup.cmd` does not
+pull),
+
+```
+cd $HOME\kennko
+git pull
+```
+
+then double-click `deploy\windows\setup.cmd`. It rebuilds and restarts, keeping the PINs and the sales. The till
+still asks for the `config.json` PIN until the owner has a PIN.
 
 - Check that `api.url` is set in `apps\pos\config.json` (the API address from step 2). Without it the till cannot pair.
 - Check that `managerPin` is not empty. An empty `managerPin` blocks voids, closing the till and pairing.

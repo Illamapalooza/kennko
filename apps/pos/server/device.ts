@@ -128,12 +128,15 @@ export function applyDeviceInfo(store: Store, sessions: Sessions, pins: PinDirec
 }
 
 const SOON_MS = 30_000
+// How long a wrong PIN waits for the website before answering from the list the till already has.
+const SOON_WAIT_MS = 2_500
 
 /**
  * The till's staff refresh. `refresh` fetches who may use this till and applies it; runs one at a time, so a slow
  * answer for an old pairing cannot land after a new one. `soon` is the same refresh for a wrong PIN, so a PIN issued
  * in admin a moment ago works on the next try: paired, not revoked and at most once every 30 seconds, else it does
- * nothing. It resolves true when it asked the API (whatever the answer), bounded by the fetch timeout.
+ * nothing. It waits at most 2.5 seconds; a slower answer still lands in the cache for the next try. It resolves true
+ * when it asked the API (whatever the answer, or none yet).
  */
 export function createStaffRefresh(opts: {
   dataDir: string; apiUrl: string; store: Store; sessions: Sessions; pins: PinDirectory; onChange: () => void
@@ -165,7 +168,10 @@ export function createStaffRefresh(opts: {
     const t = now()
     if (t - lastSoon < SOON_MS) return false
     lastSoon = t
-    await refresh()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const waited = new Promise<void>((resolve) => { timer = setTimeout(resolve, SOON_WAIT_MS); timer.unref?.() })
+    await Promise.race([refresh(), waited])
+    clearTimeout(timer)
     return true
   }
 
