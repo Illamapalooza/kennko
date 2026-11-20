@@ -26,6 +26,8 @@ export type Menu = {
   /** Where this copy came from and when, so staff can tell a stale menu. */
   source: 'built-in' | 'website'
   updatedAt: number
+  /** Published menu version this copy came from, when it came from a snapshot. */
+  version?: number
 }
 
 export function findItem(menu: Menu, id: string): MenuItem | undefined {

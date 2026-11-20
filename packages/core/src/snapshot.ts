@@ -39,5 +39,5 @@ export function liveDrinkMenu(snapshot: MenuSnapshot, now: number): Menu {
       modifiers: g.options.map((o) => ({ id: o.id, name: o.name, priceCentavos: o.priceCentavos, isAvailable: o.isAvailable })),
     }))
 
-  return { categories, modifierGroups, source: 'website', updatedAt: now }
+  return { categories, modifierGroups, source: 'website', updatedAt: now, version: snapshot.version }
 }

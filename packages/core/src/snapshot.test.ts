@@ -125,3 +125,7 @@ test('drops a sold-out variant from prices', () => {
   const latte = liveDrinkMenu(soldOut, 0).categories[0]!.items.find((i) => i.id === 'i-latte')!
   expect(latte.prices.map((p) => p.size)).toEqual(['M', 'L', 'HOT'])
 })
+
+test('liveDrinkMenu carries the snapshot version', () => {
+  expect(liveDrinkMenu(snapshot, 0).version).toBe(snapshot.version)
+})
