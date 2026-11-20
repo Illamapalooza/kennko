@@ -78,7 +78,7 @@ export function Till({ live, notify }: { live: Live; notify: (message: string) =
                 <ul className="moves">
                   {state.moves.map((move) => (
                     <li key={move.id}>
-                      <span>{move.reason}<small>{when(move.at)}</small></span>
+                      <span>{move.reason}<small>{when(move.at)}{move.staffName ? ` · by ${move.staffName.trim().split(/\s+/)[0]}` : ''}</small></span>
                       <b className={move.kind === 'out' ? 'neg' : 'pos'}>{move.kind === 'out' ? '-' : '+'}{formatPesos(move.amountCentavos)}</b>
                     </li>
                   ))}

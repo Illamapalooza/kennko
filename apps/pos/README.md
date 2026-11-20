@@ -72,19 +72,47 @@ signs every tablet out once; each person then types their own PIN, and their fir
 
 - **PINs are checked on the till.** The till keeps the people allowed in (their name, role and a scrambled copy of
   the PIN, never the PIN itself) in `data/pos.db`, so PINs work with the internet down.
-- **The list refreshes** when the till starts, every 5 minutes while it has internet, and right after connecting.
+- **The list refreshes** with every sync (when the till starts, about every 15 seconds while it has internet, and right after connecting).
   Someone switched off in admin, or whose PIN was taken away, drops off the list at the next refresh and their
   tablet goes back to the PIN screen.
 - **A new PIN works on the next try.** When a typed PIN matches no one, the till asks the website for the list
   straight away (at most once every 30 seconds, waiting at most 2.5 seconds for the answer) and checks the PIN
   again; a slower answer still updates the list for the next try. That counts as one wrong try, not two. So a
   PIN issued a moment ago in admin usually works at the first try; if the till asked in the last 30 seconds, it
-  works on a try after that, or at the latest at the 5-minute refresh. With the internet down the till checks only
+  works on a try after that, or at the latest at the next sync. With the internet down the till checks only
   the list it already has.
 - **Disconnected in admin.** If the owner disconnects the till in admin › Tills, the till keeps selling with the PINs
   it already has and the Menu screen says "Disconnected in admin". Connect it again with a new code.
 - **Forget the connection** with `POST /api/device/forget` (a manager PIN). The PIN list stays, so the same PINs keep
   working. There is no button for it on purpose; disconnecting in admin is the normal way.
+
+## Sync
+
+Once connected, the till and Kennko keep each other up to date. Sales never wait for the internet: the till saves
+every sale, shift, cash move and sold-out change on its own computer first, then sends them in the background.
+
+- **What goes to Kennko:** orders and their prep steps, cancellations, shifts opening and closing, cash in and out, and
+  sold-out changes. **What comes back:** the published menu and prices, discount presets, shop name, address and phone,
+  and the list of people with PINs. The menu applies itself when Kennko has a newer version; no PIN is needed.
+- **The outbox** is the `outbox` table in `data/pos.db`. A change leaves it as soon as Kennko answers; if the internet is
+  down it simply waits, in order, and is sent when the connection returns. It is in the daily backup.
+- **The "Offline" badge** (amber, at the top of every screen) shows only when the till is connected and its last
+  try failed: "Offline: 12 sales waiting to send", or "Offline: changes waiting to send" when only other changes wait.
+  Selling carries on as normal. If Kennko refuses a request instead, the pill says "Sync problem: ..." with the reason.
+- **The clock warning** appears when this computer's clock is more than 5 minutes away from Kennko's: "This
+  computer's clock is 7 minutes behind. Sales still work; fix the time in Windows settings so reports line up."
+- **One-time copy of old sales:** the first time a connected till runs this version it copies its existing history
+  (`pos.db`) to Kennko, 100 rows at a time, and the Menu screen says "Copying sales history to Kennko: 140 left."
+  Nothing is lost if it is interrupted; it carries on at the next sync.
+- **Check now** (Menu screen, connected tills) runs one sync and waits at most 10 seconds; if Kennko is slow it says
+  "Still checking — the menu updates by itself." A till that is not connected keeps **Update from website**, which
+  asks for a manager PIN.
+- **Sold out:** a connected till sends the change to Kennko. When the menu is pulled, Kennko's sold-out marks replace
+  the till's, then the till's own unsent changes are put back on top. In per-person mode the switch asks for the
+  person's own PIN ("Your PIN"), so the change is credited to them.
+- **Who did it:** voids show "Voided by {first name}" in History and cash moves show "by {first name}" on the Till
+  screen, when the person is known (per-person mode). Sales, opening, cash in and sold-out changes are credited to the
+  signed-in person; a void, cash out and closing to the manager whose PIN approved it.
 
 ## Settings
 

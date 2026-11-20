@@ -5,6 +5,7 @@ import { Modal } from '../components/Modal.tsx'
 import { PinPrompt } from '../components/PinPrompt.tsx'
 import { Receipt } from '../components/Receipt.tsx'
 
+const firstName = (name: string) => name.trim().split(/\s+/)[0]
 const time = (ms: number) => new Date(ms).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })
 
 /** Every order of a day, newest first. Tap one for its receipt, or to void it. */
@@ -41,7 +42,7 @@ export function History({ boot, live, notify }: { boot: Bootstrap; live: Live; n
                 <b className="row-number">#{order.number}</b>
                 <span className="row-main">
                   <span>{order.lines.map((l) => `${l.quantity}× ${l.name}`).join(', ')}</span>
-                  <small>{time(order.createdAt)}{order.customerName ? ` · ${order.customerName}` : ''} · {PAYMENT_LABELS[order.paymentMethod]}</small>
+                  <small>{time(order.createdAt)}{order.customerName ? ` · ${order.customerName}` : ''} · {PAYMENT_LABELS[order.paymentMethod]}{order.status === 'voided' && order.voidedByName ? ` · Voided by ${firstName(order.voidedByName)}` : ''}</small>
                 </span>
                 <span className={`pill pill-${order.status}`}>{STATUS_LABELS[order.status]}</span>
                 <b className="row-total">{formatPesos(order.totalCentavos)}</b>
@@ -53,6 +54,7 @@ export function History({ boot, live, notify }: { boot: Bootstrap; live: Live; n
 
       {open && !askPin ? (
         <Modal title={`Order #${open.number}`} onClose={closeOrder}>
+          {open.status === 'voided' && open.voidedByName ? <p className="muted no-print">Voided by {firstName(open.voidedByName)}</p> : null}
           <Receipt order={open} shop={boot.shop} />
           {voiding ? (
             <div className="field no-print">

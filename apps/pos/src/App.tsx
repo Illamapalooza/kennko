@@ -9,6 +9,7 @@ import { Orders } from './screens/Orders.tsx'
 import { History } from './screens/History.tsx'
 import { Till } from './screens/Till.tsx'
 import { MenuScreen } from './screens/MenuScreen.tsx'
+import { clockWarning, offlineBadge, syncProblem } from './syncText.ts'
 
 export type CartLine = LineInput & { key: string }
 export type Cart = { lines: CartLine[]; type: OrderType; customerName: string; discount: Discount | null }
@@ -22,6 +23,17 @@ const TABS: { id: Tab; label: string; icon: () => React.JSX.Element }[] = [
   { id: 'till', label: 'Till', icon: DrawerIcon },
   { id: 'menu', label: 'Menu', icon: ListIcon },
 ]
+
+/** Amber pills under the "Lost touch" banner; status only, never a modal, and they wrap on a narrow tablet. */
+function SyncPills({ live }: { live: Live }) {
+  const texts = [offlineBadge(live.sync) ?? syncProblem(live.sync), clockWarning(live.sync)].filter((t): t is string => t !== null)
+  if (texts.length === 0) return null
+  return (
+    <div className="sync-pills">
+      {texts.map((text) => <p key={text} className="sync-pill" role="status">{text}</p>)}
+    </div>
+  )
+}
 
 export function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null)
@@ -102,6 +114,13 @@ export function App() {
     api.menu().then(setMenu).catch((err) => notify(err.message))
   }, [unlocked, menuKey, notify])
 
+  // Discount presets and shop details come from the pulled snapshot: fetch them again when the menu or a sync changes.
+  const lastSyncAt = live?.sync.lastSyncAt
+  useEffect(() => {
+    if (!unlocked || menuKey === undefined) return
+    refreshBoot()
+  }, [unlocked, menuKey, lastSyncAt, refreshBoot])
+
   const activeCount = live?.active.length ?? 0
   const screen = useMemo(() => {
     if (!boot || !menu || !live) return <div className="loading">Opening the till…</div>
@@ -110,7 +129,7 @@ export function App() {
       case 'orders': return <Orders live={live} notify={notify} />
       case 'history': return <History boot={boot} live={live} notify={notify} />
       case 'till': return <Till live={live} notify={notify} />
-      case 'menu': return <MenuScreen boot={boot} menu={menu} setMenu={setMenu} notify={notify} onDeviceChange={refreshBoot} />
+      case 'menu': return <MenuScreen boot={boot} live={live} menu={menu} setMenu={setMenu} notify={notify} onDeviceChange={refreshBoot} />
     }
   }, [boot, menu, live, tab, cart, notify, refreshBoot])
 
@@ -147,6 +166,7 @@ export function App() {
       </nav>
       <main className="main">
         {!online ? <div className="banner" role="status">Lost touch with the till computer. Trying again…</div> : null}
+        {live ? <SyncPills live={live} /> : null}
         {screen}
       </main>
       {toast ? <div className="toast" role="alert" onClick={() => setToast('')}>{toast}</div> : null}
