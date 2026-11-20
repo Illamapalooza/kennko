@@ -41,7 +41,14 @@ export function nextDelay(failures: number): number {
   return BACKOFF_MS[Math.min(failures - 1, BACKOFF_MS.length - 1)]!
 }
 
-type Answer = { kind: 'ok'; body: any } | { kind: 'failed'; problem: string } | { kind: 'revoked' } | { kind: 'stale' }
+/**
+ * `failed.offline`: the website could not be reached or answered 5xx (or something that was not the API). A 4xx from
+ * the API itself is a sync problem instead (Ruling P4-5): the till is online, the batch is kept and retried.
+ */
+type Answer = { kind: 'ok'; body: any } | { kind: 'failed'; problem: string; offline: boolean } | { kind: 'revoked' } | { kind: 'stale' }
+type Failure = { problem: string; offline: boolean }
+
+const ACKED = new Set(['applied', 'flagged', 'held', 'duplicate'])
 
 const isPullState = (b: any): b is PullState =>
   Boolean(b)
@@ -74,14 +81,18 @@ export function createSync(opts: {
 
   let failures = 0
   let problem: string | null = null
+  let offline = false
+  let lastLogged: string | null = null
   let lastSyncAt: number | null = null
   let clockSkewMs: number | null = null
   let menuVersion: number | null = loadSnapshot(dataDir)?.version ?? null
 
   let running: Promise<void> | null = null
   let again = false
+  let kicked = false
   let started = false
   let timer: ReturnType<typeof setTimeout> | null = null
+  let dueAt = 0
 
   function status(): SyncStatus {
     const device = loadDevice(dataDir)
@@ -89,7 +100,7 @@ export function createSync(opts: {
     const revoked = device?.revokedAt != null
     const pending = store.pending()
     return {
-      paired, revoked, offline: paired && !revoked && failures > 0,
+      paired, revoked, offline: paired && !revoked && failures > 0 && offline,
       pendingSales: pending.sales, pendingEvents: pending.events,
       lastSyncAt, clockSkewMs, problem, menuVersion,
     }
@@ -97,7 +108,7 @@ export function createSync(opts: {
 
   /** One request to the API. Never throws. `stale` = the till was forgotten or paired again while it was asking. */
   async function call(device: DeviceFile, path: string, init: RequestInit): Promise<Answer> {
-    if (!api) return { kind: 'failed', problem: 'The website connection is not set up on this computer.' }
+    if (!api) return { kind: 'failed', problem: 'The website connection is not set up on this computer.', offline: true }
     const sentAt = now()
     let res: Response
     try {
@@ -108,15 +119,19 @@ export function createSync(opts: {
       })
     } catch (err: any) {
       return loadDevice(dataDir)?.token !== device.token ? { kind: 'stale' }
-        : { kind: 'failed', problem: err?.name === 'TimeoutError' || err?.name === 'AbortError' ? SLOW : UNREACHABLE }
+        : { kind: 'failed', problem: err?.name === 'TimeoutError' || err?.name === 'AbortError' ? SLOW : UNREACHABLE, offline: true }
     }
     clockSkewMs = clockSkew(res, sentAt, now())
     const body: any = await res.json().catch(() => undefined)
     if (loadDevice(dataDir)?.token !== device.token) return { kind: 'stale' }
     // Only the API's own codes mean revoked; any other 401 (a hosting protection page, say) is just offline.
     if (res.status === 401 && REVOKED_CODES.has(body?.code)) return { kind: 'revoked' }
-    if (!res.ok) return { kind: 'failed', problem: `The website refused the request (${res.status}).` }
-    if (body === undefined) return { kind: 'failed', problem: GARBLED }
+    if (res.status >= 400 && res.status < 500 && res.status !== 401) {
+      const message = typeof body?.message === 'string' && body.message.trim() ? body.message.trim().slice(0, 300) : null
+      return { kind: 'failed', problem: message ?? `The website refused the request (${res.status}).`, offline: false }
+    }
+    if (!res.ok) return { kind: 'failed', problem: `The website refused the request (${res.status}).`, offline: true }
+    if (body === undefined) return { kind: 'failed', problem: GARBLED, offline: true }
     return { kind: 'ok', body }
   }
 
@@ -127,14 +142,16 @@ export function createSync(opts: {
     if (!device || device.revokedAt !== null) {
       failures = 0
       problem = null
+      offline = false
       return changed
     }
-    let failure: string | null = null
+    let failure: Failure | null = null
 
     const revoke = () => {
       applyDeviceInfo(store, sessions, pins, { status: 'revoked' }, dataDir, now())
       failures = 0
       problem = null
+      offline = false
       console.warn('  This till was disconnected in admin. It keeps selling; connect it again from the Menu screen.')
       return changed
     }
@@ -148,12 +165,15 @@ export function createSync(opts: {
       })
       if (a.kind === 'stale') return changed
       if (a.kind === 'revoked') return revoke()
-      if (a.kind === 'failed') { failure = a.problem; break }
-      if (!Array.isArray(a.body?.results)) { failure = GARBLED; break }
+      if (a.kind === 'failed') { failure = a; break }
+      if (!Array.isArray(a.body?.results)) { failure = { problem: GARBLED, offline: true }; break }
+      // Only an id this batch sent, answered with one of the four results, is deleted; anything else is sent again.
       const sent = new Set(events.map((e) => e.id))
-      const answered = a.body.results.map((r: any) => r?.id).filter((id: unknown): id is string => typeof id === 'string' && sent.has(id))
+      const answered = a.body.results
+        .filter((r: any) => typeof r?.id === 'string' && sent.has(r.id) && ACKED.has(r.result))
+        .map((r: any) => r.id as string)
       store.ackOutbox(answered)
-      if (answered.length === 0) { failure = 'The website did not take the waiting changes.'; break } // never loop on one batch
+      if (answered.length === 0) { failure = { problem: 'The website did not take the waiting changes.', offline: false }; break } // never loop on one batch
     }
 
     // Pull, even after a failed push: the sold-out replay keeps the till's own unsent marks on top (Ruling 14).
@@ -162,8 +182,8 @@ export function createSync(opts: {
     const a = await call(device, `/v1/sync/pull${loaded ? `?version=${loaded.version}` : ''}`, { method: 'GET' })
     if (a.kind === 'stale') return changed
     if (a.kind === 'revoked') return revoke()
-    if (a.kind === 'failed') failure ??= a.problem
-    else if (!isPullState(a.body)) failure ??= GARBLED
+    if (a.kind === 'failed') failure ??= a
+    else if (!isPullState(a.body)) failure ??= { problem: GARBLED, offline: true }
     else {
       const state = a.body
       const snapshot = state.menu?.snapshot
@@ -181,10 +201,15 @@ export function createSync(opts: {
 
     if (failure) {
       failures++
-      problem = failure
+      problem = failure.problem
+      offline = failure.offline
+      if (!failure.offline && problem !== lastLogged) console.warn(`  The website refused the till's sync: ${problem}`)
+      lastLogged = failure.offline ? null : problem
     } else {
       failures = 0
       problem = null
+      offline = false
+      lastLogged = null
       lastSyncAt = now()
     }
     return changed
@@ -192,6 +217,7 @@ export function createSync(opts: {
 
   function schedule(ms: number) {
     if (timer !== null) timers.clear(timer)
+    dueAt = now() + ms
     timer = timers.set(() => { timer = null; void runOnce() }, ms)
     ;(timer as any)?.unref?.()
   }
@@ -205,6 +231,7 @@ export function createSync(opts: {
     running = (async () => {
       do {
         again = false
+        kicked = false
         let before: string | null = null
         let changed = { menu: false, staff: false }
         try {
@@ -212,6 +239,7 @@ export function createSync(opts: {
           changed = await cycle()
         } catch (err: any) {
           failures++
+          offline = true
           problem = `The sync stopped: ${err?.message ?? err}`
           console.error(`  Sync failed: ${err?.message ?? err}`)
         }
@@ -221,7 +249,8 @@ export function createSync(opts: {
         } catch (err: any) {
           console.error(`  Sync could not report a change: ${err?.message ?? err}`)
         }
-      } while (again)
+        // A kick during a failing run waits for the backoff like everything else; a success runs it straight away.
+      } while (again || (kicked && failures === 0))
     })().finally(() => {
       running = null
       if (started) schedule(nextDelay(failures))
@@ -235,16 +264,21 @@ export function createSync(opts: {
       started = true
       void runOnce()
     },
-    /** Something changed on the till: sync in 300 ms (a burst of changes makes one run), and restart the wait. */
+    /**
+     * Something changed on the till: sync in 300 ms (a burst of changes makes one run). While failing, a kick never
+     * brings the next try forward: it waits out the rest of the backoff.
+     */
     kick(): void {
-      if (running) { again = true; return }
-      schedule(KICK_DEBOUNCE_MS)
+      if (running) { kicked = true; return }
+      const remaining = failures > 0 && timer !== null ? dueAt - now() : 0
+      schedule(Math.max(KICK_DEBOUNCE_MS, remaining))
     },
     runOnce,
     status,
     stop(): void {
       started = false
       again = false
+      kicked = false
       if (timer !== null) timers.clear(timer)
       timer = null
     },

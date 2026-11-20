@@ -208,10 +208,10 @@ describe('pushing the outbox', () => {
     expect(t.sync.status().offline).toBe(false)
   })
 
-  it('counts a timeout, a 400 and a non-API 401 as offline', async () => {
+  it('counts a timeout, a 5xx and a non-API 401 as offline', async () => {
     for (const answer of [
       () => { throw new DOMException('timed out', 'TimeoutError') },
-      () => json(400, { code: 'INVALID', message: 'bad' }),
+      () => json(502, { code: 'BAD_GATEWAY', message: 'bad' }),
       () => json(401, { code: 'SOMETHING_ELSE' }),
       () => new Response('<html>protected</html>', { status: 401 }),
     ]) {
@@ -223,6 +223,90 @@ describe('pushing the outbox', () => {
       expect(t.sync.status()).toMatchObject({ offline: true, revoked: false })
       expect(loadDevice(t.dataDir)!.revokedAt).toBeNull()
     }
+  })
+
+  it('acks only ids answered with a known result; an unknown result keeps its row', async () => {
+    const t = till()
+    for (let i = 0; i < 3; i++) t.store.setAvailable(`item-${i}`, false, T, null, { outbox: true })
+    let firstPush = true
+    t.api.onPush((events) => {
+      const results = events.map((e, i) => ({ id: e.id, result: firstPush && i === 1 ? 'error' : 'applied', reason: null, flags: [] }))
+      firstPush = false
+      return json(200, { results, held: 0 })
+    })
+    const kept = t.store.outboxEvents()[1]!.id
+    await t.sync.runOnce()
+    // The first push acks two; the second push sends only the row answered 'error'.
+    expect(t.api.pushes().map((p) => p.body.events.map((e: SyncEvent) => e.id))[1]).toEqual([kept])
+    expect(t.store.pending().events).toBe(0)
+    t.store.setAvailable('z', false, T, null, { outbox: true })
+    t.api.onPush((events) => json(200, { results: events.map((e) => ({ id: e.id, result: 'error', reason: null, flags: [] })), held: 0 }))
+    await t.sync.runOnce()
+    expect(t.store.pending().events).toBe(1)
+  })
+
+  it('partial results: 30 of 50 acked leaves 20, which go in the next push; ids that were not sent are ignored', async () => {
+    const t = till()
+    for (let i = 0; i < 50; i++) t.store.setAvailable(`item-${i}`, false, T, null, { outbox: true })
+    const all = t.store.outboxEvents().map((e) => e.id)
+    let n = 0
+    t.api.onPush((events) => {
+      n++
+      const answered = n === 1 ? events.slice(0, 30) : events
+      const results = [...answered.map((e) => ({ id: e.id, result: 'applied', reason: null, flags: [] })),
+        { id: '99999999-9999-4999-8999-999999999999', result: 'applied', reason: null, flags: [] }]
+      return json(200, { results, held: 0 })
+    })
+    await t.sync.runOnce()
+    const pushes = t.api.pushes()
+    expect(pushes.map((p) => p.body.events.length)).toEqual([50, 20])
+    expect(pushes[1]!.body.events.map((e: SyncEvent) => e.id)).toEqual(all.slice(30))
+    expect(t.store.pending().events).toBe(0)
+  })
+
+  it('an answer naming only ids that were not sent acks nothing and keeps the batch', async () => {
+    const t = till()
+    t.store.setAvailable('x', false, T, null, { outbox: true })
+    t.api.onPush(() => json(200, { results: [{ id: '99999999-9999-4999-8999-999999999999', result: 'applied', reason: null, flags: [] }], held: 0 }))
+    await t.sync.runOnce()
+    expect(t.api.pushes()).toHaveLength(1)
+    expect(t.store.pending().events).toBe(1)
+  })
+
+  it('P4-5: a 4xx on push keeps the batch and is a problem (the API message), not offline; backs off; logged once per message', async () => {
+    const t = till()
+    t.store.setAvailable('x', false, T, null, { outbox: true })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    t.api.onPush(() => json(400, { code: 'INVALID', message: 'Send 1 to 50 events (events.0.kind: Invalid)' }))
+    t.sync.start()
+    await settle()
+    expect(t.store.pending().events).toBe(1)
+    expect(t.sync.status()).toMatchObject({ offline: false, problem: 'Send 1 to 50 events (events.0.kind: Invalid)', lastSyncAt: null })
+    expect(t.timers.delays()).toEqual([15_000])
+    t.timers.fire()
+    await settle()
+    expect(t.timers.delays()).toEqual([30_000])
+    expect(warn.mock.calls.filter((c) => String(c[0]).includes('Send 1 to 50 events'))).toHaveLength(1)
+    t.api.onPush(() => json(413, { code: 'TOO_BIG', message: 'Too big' }))
+    t.timers.fire()
+    await settle()
+    expect(t.sync.status().problem).toBe('Too big')
+    expect(warn.mock.calls.filter((c) => String(c[0]).includes('Too big'))).toHaveLength(1)
+    expect(t.store.pending().events).toBe(1)
+    t.sync.stop()
+    warn.mockRestore()
+  })
+
+  it('P4-5: a 4xx on pull without a message falls back to the status, and is not offline', async () => {
+    const t = till()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    t.api.onPull(() => new Response('forbidden', { status: 403 }))
+    await t.sync.runOnce()
+    expect(t.sync.status()).toMatchObject({ offline: false, problem: 'The website refused the request (403).' })
+    t.api.onPull(() => json(200, { menu: null, soldOut: [], staff: [], shop: SHOP }))
+    await t.sync.runOnce()
+    expect(t.sync.status()).toMatchObject({ offline: false, problem: null, lastSyncAt: T })
+    warn.mockRestore()
   })
 })
 
@@ -417,6 +501,40 @@ describe('scheduling', () => {
     expect(most).toBe(1)
   })
 
+  it('while failing, a kick never shortens the backoff wait', async () => {
+    const t = till()
+    t.store.setAvailable('x', false, T, null, { outbox: true })
+    t.api.onPush(() => json(503, { code: 'UNAVAILABLE', message: 'down' }))
+    t.sync.start()
+    await settle()
+    expect(t.timers.delays()).toEqual([15_000])
+    t.setClock(T + 1000)
+    t.sync.kick()
+    expect(t.timers.delays()).toEqual([14_000])
+    t.setClock(T + 14_900)
+    t.sync.kick()
+    expect(t.timers.delays()).toEqual([KICK_DEBOUNCE_MS])
+    t.sync.stop()
+  })
+
+  it('a kick during a failing run does not queue an immediate rerun', async () => {
+    const t = till()
+    t.store.setAvailable('x', false, T, null, { outbox: true })
+    let release!: () => void
+    t.api.onPush(async () => {
+      await new Promise<void>((r) => { release = r })
+      return json(503, { code: 'UNAVAILABLE', message: 'down' })
+    })
+    t.sync.start()
+    await settle()
+    t.sync.kick()
+    release()
+    await settle()
+    expect(t.api.pushes()).toHaveLength(1)
+    expect(t.timers.delays()).toEqual([15_000])
+    t.sync.stop()
+  })
+
   it('never throws out of a run, whatever the store does', async () => {
     const t = till()
     vi.spyOn(t.store, 'outboxEvents').mockImplementation(() => { throw new Error('disk on fire') })
@@ -451,5 +569,14 @@ describe('replaceSoldOut', () => {
     store.setAvailable('D', true, T, null, { outbox: true })
     store.replaceSoldOut(['A', 'C', 'D', 'E'])
     expect(store.soldOut().sort()).toEqual(['A', 'B', 'E'])
+  })
+
+  it('skips an availability row whose payload does not parse', () => {
+    const store = createStore(':memory:')
+    store.setAvailable('B', false, T, null, { outbox: true })
+    store.db.prepare("insert into outbox (id, kind, entity, entity_local_id, staff_id, occurred_at, payload) values ('bad-1', 'menu.availability', 'menu', null, null, ?, 'not json')").run(T)
+    store.setAvailable('C', false, T, null, { outbox: true })
+    store.replaceSoldOut(['A'])
+    expect(store.soldOut().sort()).toEqual(['A', 'B', 'C'])
   })
 })

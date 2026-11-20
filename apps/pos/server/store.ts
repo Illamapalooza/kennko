@@ -385,7 +385,8 @@ export function createStore(file: string) {
         const on = db.prepare('delete from sold_out where item_id = ?')
         for (const id of ids) off.run(id)
         for (const row of db.prepare("select payload from outbox where kind = 'menu.availability' order by seq").all() as any[]) {
-          const p = JSON.parse(row.payload)
+          let p: any
+          try { p = JSON.parse(row.payload) } catch { continue } // a broken row never stops the pull
           if (typeof p?.itemId !== 'string') continue
           if (p.available) on.run(p.itemId)
           else off.run(p.itemId)
