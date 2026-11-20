@@ -70,6 +70,33 @@ describe('createAuthAdmin', () => {
     expect((err as Error).message).toBe('Auth invite failed (422)')
   })
 
+  it('bounds every call with a timeout and turns it into a plain error', async () => {
+    const signals: (AbortSignal | null | undefined)[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit = {}) =>
+          new Promise<Response>((_resolve, reject) => {
+            signals.push(init.signal)
+            init.signal?.addEventListener('abort', () => reject(init.signal!.reason))
+          }),
+      ),
+    )
+    const slow = createAuthAdmin('https://ref.supabase.co', 'service-key', 20)
+    await expect(slow.getUser(ID)).rejects.toThrow('Auth getUser failed (timeout)')
+    await expect(slow.invite('new@x.test')).rejects.toThrow('Auth invite failed (timeout)')
+    await expect(slow.deleteUser(ID)).rejects.toThrow('Auth deleteUser failed (timeout)')
+    expect(signals.every((s) => s instanceof AbortSignal)).toBe(true)
+  })
+
+  it('turns a network failure into a plain error without the email', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('fetch failed for new@x.test')
+    }))
+    const err = await admin().invite('new@x.test').catch((e: Error) => e)
+    expect((err as Error).message).toBe('Auth invite failed (network)')
+  })
+
   it('deleteUser deletes the admin user and throws on 500', async () => {
     const calls = mockFetch([new Response('{}', { status: 200 }), new Response('', { status: 500 })])
     await admin().deleteUser(ID)

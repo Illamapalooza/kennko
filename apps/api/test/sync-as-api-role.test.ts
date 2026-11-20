@@ -442,7 +442,7 @@ describe('every route as kennko_api', () => {
     const page = await ok('GET', '/v1/orders/by-code/knk-read1')
     expect(page).toMatchObject({ orderCode: 'KNK-READ1', ticket: 'W950', lines: [{ name: 'Latte' }] })
     const receipt = await ok('GET', '/v1/orders/by-code/KNK-READ1/receipt')
-    expect(receipt.order).toMatchObject({ payment: { reference: 'GC-READ1' }, lines: [{ options: [{ name: 'Oat milk' }] }] })
+    expect(receipt.order).toMatchObject({ payment: { referenceMasked: '••••EAD1' }, lines: [{ options: [{ name: 'Oat milk' }] }] })
     expect(receipt.shop).toMatchObject({ displayName: expect.any(String) })
     const history = await ok('GET', '/v1/me/orders', customerJwt)
     expect((history.orders as { orderCode: string }[]).map((o) => o.orderCode).sort()).toEqual(['KNK-READ1', 'KNK-READ2'])

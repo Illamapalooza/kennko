@@ -31,14 +31,19 @@ export type ShopView = {
   receiptFooter: string
 }
 
-/** `GET /v1/orders/by-code/:code/receipt`. `payment` is the live one; `shop` is null when its row is missing. */
-export type ReceiptView = {
+/**
+ * `GET /v1/orders/by-code/:code/receipt`: the PUBLIC receipt (Ruling P6-4). The order code is the only
+ * key, so it shows no more than the order page: the first name only, the delivery barangay (never the
+ * street), and the GCash reference masked to its last 4, only once the payment is confirmed (`paid` or
+ * `refunded`; otherwise `payment` is null). The full name, address and reference are for the emailed
+ * receipt only, which a staff route provides. `shop` is null when its row is missing.
+ */
+export type PublicReceiptView = {
   order: {
     orderCode: string
     ticket: string
-    customerName: string
+    customerFirstName: string
     fulfilment: 'pickup' | 'delivery'
-    deliveryAddress: string | null
     deliveryBarangay: string | null
     prepStatus: PrepStatus
     paymentStatus: PaymentStatus
@@ -47,7 +52,8 @@ export type ReceiptView = {
     discountCentavos: number
     deliveryFeeCentavos: number
     totalCentavos: number
-    payment: { reference: string | null; verifiedAt: string | null } | null
+    /** `'••••' + last 4`, or `'••••'` when the reference is shorter than 5 characters. */
+    payment: { referenceMasked: string | null; verifiedAt: string | null } | null
     lines: {
       itemName: string
       variantLabel: string

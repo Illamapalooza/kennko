@@ -55,7 +55,7 @@ export function fakeAuthAdmin(users: Record<string, FakeAuthUser> = {}): FakeAut
     deleted: [],
     async getUser(id) {
       admin.lookups.push(id)
-      if (admin.failGetUser) throw new Error('Auth getUser failed (503)')
+      if (admin.failGetUser) throw new Error('Auth getUser failed (timeout)')
       return admin.users[id] ?? null
     },
     async invite(email) {

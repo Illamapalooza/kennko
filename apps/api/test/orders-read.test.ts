@@ -27,7 +27,7 @@ const PUBLIC_KEYS = [
 ]
 const PUBLIC_LINE_KEYS = ['iceLevel', 'iceServe', 'name', 'quantity', 'variantLabel']
 const RECEIPT_ORDER_KEYS = [
-  'cancelledAt', 'customerName', 'deliveryAddress', 'deliveryBarangay', 'deliveryFeeCentavos',
+  'cancelledAt', 'customerFirstName', 'deliveryBarangay', 'deliveryFeeCentavos',
   'discountCentavos', 'fulfilment', 'lines', 'orderCode', 'payment', 'paymentStatus', 'prepStatus',
   'subtotalCentavos', 'ticket', 'totalCentavos',
 ]
@@ -195,6 +195,19 @@ describe('order page, receipt and customer history reads', () => {
       expect((await get(`/v1/orders/by-code/${o!.id as string}`)).status).toBe(404)
       expect((await get(`/v1/orders/by-code/${o!.id as string}/receipt`)).status).toBe(404)
     })
+
+    it('never reaches a counter order even when it carries an order code', async () => {
+      // The schema allows a code on a counter row; only channel = 'online' keeps it off both routes.
+      seq += 1
+      await db.sql`
+        insert into orders (channel, order_code, fulfilment, customer_name, prep_status, payment_status, business_day,
+          ticket_series, ticket_number, subtotal_centavos, total_centavos, device_id)
+        values ('counter', 'KNK-CNTR01', 'dine_in', 'Walk-in', 'preparing', 'paid', '2026-11-21', 'C', ${seq}, 5000, 5000, ${DEVICE})`
+      const [row] = await db.sql`select channel from orders where order_code = 'KNK-CNTR01'`
+      expect(row!.channel).toBe('counter')
+      expect((await get('/v1/orders/by-code/KNK-CNTR01')).status).toBe(404)
+      expect((await get('/v1/orders/by-code/KNK-CNTR01/receipt')).status).toBe(404)
+    })
   })
 
   describe('GET /v1/orders/by-code/:code/receipt', () => {
@@ -209,17 +222,17 @@ describe('order page, receipt and customer history reads', () => {
       const lines = order.lines as Lines
       expect(sortedKeys(lines[0])).toEqual(RECEIPT_LINE_KEYS)
       expect(sortedKeys((lines[0]!.options as Lines)[0])).toEqual(['name', 'priceCentavos'])
-      expect(sortedKeys(order.payment)).toEqual(['reference', 'verifiedAt'])
+      expect(sortedKeys(order.payment)).toEqual(['referenceMasked', 'verifiedAt'])
       expect(order).toMatchObject({
         orderCode: code,
-        customerName: 'Ana Cruz',
+        customerFirstName: 'Ana',
         deliveryBarangay: 'Libertad',
         subtotalCentavos: 12000,
         discountCentavos: 0,
         deliveryFeeCentavos: 3000,
         totalCentavos: 15000,
         cancelledAt: null,
-        payment: { reference: GCASH_REF },
+        payment: { referenceMasked: '••••-777' },
         lines: [{ itemName: 'Latte', unitPriceCentavos: 10000, lineTotalCentavos: 12000, options: [{ name: 'Oat milk', priceCentavos: 2000 }] }],
       })
 
@@ -229,10 +242,38 @@ describe('order page, receipt and customer history reads', () => {
       expect(shop).toMatchObject({ displayName: row!.display_name, address: row!.address, receiptFooter: row!.receipt_footer })
     })
 
-    it('never carries the email, phone, proof path, staff note or verifier', async () => {
-      const { code } = await seedOnline()
+    it('never carries the email, phone, proof path, staff note, verifier, full name, street or full reference', async () => {
+      const { code } = await seedOnline({ delivery: true })
       const r = await get(`/v1/orders/by-code/${code}/receipt`)
-      for (const secret of [EMAIL, PHONE, PROOF, STAFF_NOTE, STAFF]) expect(r.text).not.toContain(secret)
+      expect(r.status).toBe(200)
+      for (const secret of [EMAIL, PHONE, PROOF, STAFF_NOTE, STAFF, 'Ana Cruz', 'Cruz', '1 Gate St', GCASH_REF]) {
+        expect(r.text).not.toContain(secret)
+      }
+    })
+
+    it('shows nothing of the payment until it is confirmed', async () => {
+      for (const status of ['pending_verification', 'rejected', 'unpaid']) {
+        const { id, code } = await seedOnline({ payment: status })
+        await db.sql`update payments set status = 'pending_verification', verified_at = null, verified_by = null where order_id = ${id}`
+        const r = await get(`/v1/orders/by-code/${code}/receipt`)
+        expect(r.status).toBe(200)
+        expect((r.body.order as Json).paymentStatus).toBe(status)
+        expect((r.body.order as Json).payment).toBeNull()
+        for (const secret of [GCASH_REF, '-777', EMAIL, PHONE, PROOF]) expect(r.text).not.toContain(secret)
+      }
+    })
+
+    it('shows a refunded order\'s confirmed payment, masked', async () => {
+      const { code } = await seedOnline({ payment: 'refunded' })
+      const payment = ((await get(`/v1/orders/by-code/${code}/receipt`)).body.order as Json).payment as Json
+      expect(payment.referenceMasked).toBe('••••-777')
+    })
+
+    it('masks a short reference completely', async () => {
+      const { id, code } = await seedOnline()
+      await db.sql`update payments set reference = 'AB12' where order_id = ${id}`
+      const payment = ((await get(`/v1/orders/by-code/${code}/receipt`)).body.order as Json).payment as Json
+      expect(payment.referenceMasked).toBe('••••')
     })
 
     it('shows the verified payment when an earlier one was rejected', async () => {
@@ -243,17 +284,22 @@ describe('order page, receipt and customer history reads', () => {
         values (${id}, 'gcash', 12000, 'VERIFIED-REF', 'verified', '2026-11-21T03:00:00Z', '2026-11-21T02:00:00Z')`
       const r = await get(`/v1/orders/by-code/${code}/receipt`)
       const payment = (r.body.order as Json).payment as Json
-      expect(payment.reference).toBe('VERIFIED-REF')
+      expect(payment.referenceMasked).toBe('••••-REF')
+      expect(r.text).not.toContain('VERIFIED-REF')
+      expect(r.text).not.toContain('REJECTED-REF')
       expect(new Date(payment.verifiedAt as string).toISOString()).toBe('2026-11-21T03:00:00.000Z')
     })
 
-    it('falls back to the newest non-rejected payment, and is null with none', async () => {
-      const { id, code } = await seedOnline({ payment: 'pending_verification' })
-      await db.sql`update payments set status = 'pending_verification', verified_at = null, verified_by = null where order_id = ${id}`
+    it('on a paid order, falls back to the newest non-rejected payment, and is null with none', async () => {
+      const { id, code } = await seedOnline()
+      await db.sql`update payments set status = 'rejected', reference = 'OLDREJ-1111', verified_at = null, verified_by = null,
+        recorded_at = '2026-11-21T01:00:00Z' where order_id = ${id}`
+      await db.sql`insert into payments (order_id, method, amount_centavos, reference, status, recorded_at)
+        values (${id}, 'cash', 12000, 'LIVE-2222', 'recorded', '2026-11-21T00:30:00Z')`
       let payment = ((await get(`/v1/orders/by-code/${code}/receipt`)).body.order as Json).payment as Json
-      expect(payment).toEqual({ reference: GCASH_REF, verifiedAt: null })
+      expect(payment).toEqual({ referenceMasked: '••••2222', verifiedAt: null })
 
-      const other = await seedOnline({ payment: 'unpaid' })
+      const other = await seedOnline()
       await db.sql`delete from payments where order_id = ${other.id}`
       payment = ((await get(`/v1/orders/by-code/${other.code}/receipt`)).body.order as Json).payment as Json
       expect(payment).toBeNull()
@@ -310,12 +356,16 @@ describe('order page, receipt and customer history reads', () => {
       for (const secret of [PHONE, PROOF, STAFF_NOTE, GCASH_REF, STAFF]) expect(r.text).not.toContain(secret)
     })
 
-    it('returns only her own order while the address is unconfirmed', async () => {
+    it('returns only her own orders while the address is unconfirmed', async () => {
+      const own = await seedOnline({ userId: ANA, email: 'ana@x.test' })
+      const guest = await seedOnline({ userId: null, email: 'ana@x.test' })
       auth.users[ANA] = { email: 'ana@x.test', emailConfirmed: false }
       try {
         const r = await get('/v1/me/orders', tokens.ana)
         const orders = r.body.orders as Json[]
-        expect(orders.length).toBeGreaterThan(0)
+        const ids = orders.map((o) => o.id)
+        expect(ids).toContain(own.id)
+        expect(ids).not.toContain(guest.id)
         expect(orders.every((o) => o.claimedByEmail === false)).toBe(true)
       } finally {
         auth.users[ANA] = { email: 'ana@x.test', emailConfirmed: true }

@@ -6,7 +6,7 @@ import {
   type PaymentStatus,
   type PrepStatus,
   type PublicOrderView,
-  type ReceiptView,
+  type PublicReceiptView,
 } from '@kennko/core'
 import type postgres from 'postgres'
 
@@ -79,18 +79,28 @@ function livePayment(payments: PaymentRow[]): PaymentRow | null {
   return newestFirst.find((p) => p.verified_at != null) ?? newestFirst.find((p) => p.status !== 'rejected') ?? newestFirst[0] ?? null
 }
 
-/** `GET /v1/orders/by-code/:code/receipt`: everything a receipt shows. The website decides what to display. */
-export async function readReceipt(sql: postgres.Sql, code: string): Promise<ReceiptView | null> {
+/** The public receipt's masking, as the website's `buildReceipt('public')` does it. */
+export function maskReference(reference: string): string {
+  return reference.length < 5 ? '••••' : `••••${reference.slice(-4)}`
+}
+
+const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? ''
+
+/**
+ * `GET /v1/orders/by-code/:code/receipt`: the public receipt (Ruling P6-4). Masked here, not in the
+ * website, so the unmasked values never leave the API on this unauthenticated route.
+ */
+export async function readReceipt(sql: postgres.Sql, code: string): Promise<PublicReceiptView | null> {
   const orderCode = normalise(code)
   if (!orderCode) return null
   type Row = Ticket & {
     id: string; order_code: string; customer_name: string; fulfilment: Fulfilment
-    delivery_address: string | null; delivery_barangay: string | null
+    delivery_barangay: string | null
     prep_status: PrepStatus; payment_status: PaymentStatus; cancelled_at: Date | null
     subtotal_centavos: number; discount_centavos: number; delivery_fee_centavos: number; total_centavos: number
   }
   const [o] = await sql<Row[]>`
-    select id, order_code, ticket_series, ticket_number, customer_name, fulfilment, delivery_address,
+    select id, order_code, ticket_series, ticket_number, customer_name, fulfilment,
       delivery_barangay, prep_status, payment_status, cancelled_at,
       subtotal_centavos, discount_centavos, delivery_fee_centavos, total_centavos
     from orders where order_code = ${orderCode} and channel = 'online'`
@@ -117,14 +127,15 @@ export async function readReceipt(sql: postgres.Sql, code: string): Promise<Rece
     select display_name, registered_name, tin, address, phone, facebook_url, receipt_footer
     from shop_settings where id = 1`
 
-  const payment = livePayment(payments)
+  // Like buildReceipt: nothing about the payment until it is confirmed.
+  const confirmed = o.payment_status === 'paid' || o.payment_status === 'refunded'
+  const payment = confirmed ? livePayment(payments) : null
   return {
     order: {
       orderCode: o.order_code,
       ticket: ticketLabel(o.ticket_series, o.ticket_number),
-      customerName: o.customer_name,
+      customerFirstName: firstName(o.customer_name),
       fulfilment: o.fulfilment,
-      deliveryAddress: o.delivery_address,
       deliveryBarangay: o.delivery_barangay,
       prepStatus: o.prep_status,
       paymentStatus: o.payment_status,
@@ -133,7 +144,12 @@ export async function readReceipt(sql: postgres.Sql, code: string): Promise<Rece
       discountCentavos: o.discount_centavos,
       deliveryFeeCentavos: o.delivery_fee_centavos,
       totalCentavos: o.total_centavos,
-      payment: payment ? { reference: payment.reference, verifiedAt: isoOrNull(payment.verified_at) } : null,
+      payment: payment
+        ? {
+            referenceMasked: payment.reference ? maskReference(payment.reference) : null,
+            verifiedAt: isoOrNull(payment.verified_at),
+          }
+        : null,
       lines: lines.map((l) => ({
         itemName: l.item_name,
         variantLabel: l.variant_label,

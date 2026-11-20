@@ -12,7 +12,10 @@ export type AuthAdmin = {
 
 type GoTrueUser = { id?: string; email?: string | null; email_confirmed_at?: string | null }
 
-export function createAuthAdmin(supabaseUrl: string, serviceKey: string): AuthAdmin {
+/** Long enough for a slow Auth, short enough that the customer sees "try again" rather than a hang. */
+const TIMEOUT_MS = 8000
+
+export function createAuthAdmin(supabaseUrl: string, serviceKey: string, timeoutMs = TIMEOUT_MS): AuthAdmin {
   const base = `${supabaseUrl.replace(/\/+$/, '')}/auth/v1`
   const auth = { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey }
   const userUrl = (id: string) => `${base}/admin/users/${encodeURIComponent(id)}`
@@ -21,9 +24,19 @@ export function createAuthAdmin(supabaseUrl: string, serviceKey: string): AuthAd
     return new Error(`Auth ${what} failed (${res.status})`)
   }
 
+  /** Every call is bounded; a timeout or network error becomes a plain, email-free error. */
+  async function call(what: string, url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+    } catch (err) {
+      const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
+      throw new Error(`Auth ${what} failed (${timedOut ? 'timeout' : 'network'})`)
+    }
+  }
+
   return {
     async getUser(id) {
-      const res = await fetch(userUrl(id), { method: 'GET', headers: auth })
+      const res = await call('getUser', userUrl(id), { method: 'GET', headers: auth })
       if (res.status === 404) return null
       if (!res.ok) throw failed('getUser', res)
       const user = (await res.json()) as GoTrueUser
@@ -31,7 +44,7 @@ export function createAuthAdmin(supabaseUrl: string, serviceKey: string): AuthAd
     },
 
     async invite(email) {
-      const res = await fetch(`${base}/invite`, {
+      const res = await call('invite', `${base}/invite`, {
         method: 'POST',
         headers: { ...auth, 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -43,7 +56,7 @@ export function createAuthAdmin(supabaseUrl: string, serviceKey: string): AuthAd
     },
 
     async deleteUser(id) {
-      const res = await fetch(userUrl(id), { method: 'DELETE', headers: auth })
+      const res = await call('deleteUser', userUrl(id), { method: 'DELETE', headers: auth })
       if (!res.ok) throw failed('deleteUser', res)
     },
   }
