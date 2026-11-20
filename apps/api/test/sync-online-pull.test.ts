@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { OnlineQueueOrder, PullState } from '@kennko/core'
+import { isOnlineQueueOrder, type OnlineQueueOrder, type PullState } from '@kennko/core'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { ONLINE_LINE_COLUMNS, ONLINE_OPTION_COLUMNS, ONLINE_ORDER_COLUMNS } from '../src/sync/online-orders.js'
 import { startTestDb, type TestDb } from './pg.js'
@@ -91,6 +91,8 @@ beforeAll(async () => {
   ids.F = await seedOrder({ prep: 'completed', createdAt: hoursAgo(30), updatedAt: hoursAgo(25) })
   // G: counter
   ids.G = await seedOrder({ channel: 'counter', fulfilment: 'dine_in', prep: 'preparing' })
+  // H: a delivery handed over 1 h ago: still pulled, but without its address and phone
+  ids.H = await seedOrder({ fulfilment: 'delivery', prep: 'completed', phone: '09173334444', createdAt: hoursAgo(4), updatedAt: hoursAgo(1) })
 })
 afterAll(async () => {
   await db.stop()
@@ -117,7 +119,13 @@ const keysDeep = (v: unknown, out: string[] = []): string[] => {
 describe('online orders in the pull', () => {
   test('exactly the paid online orders, unfinished first', async () => {
     const { state } = await getState()
-    expect(state.onlineOrders!.map((o) => o.id)).toEqual([ids.A, ids.B, ids.E])
+    expect(state.onlineOrders!.map((o) => o.id)).toEqual([ids.A, ids.B, ids.H, ids.E])
+  })
+
+  test('contract: every pulled order passes the core shape check the till applies', async () => {
+    const { state } = await getState()
+    expect(state.onlineOrders!.length).toBeGreaterThan(0)
+    for (const o of state.onlineOrders!) expect(isOnlineQueueOrder(o), o.id).toBe(true)
   })
 
   test('allowlist: only the planned keys, and no private value anywhere', async () => {
@@ -146,6 +154,8 @@ describe('online orders in the pull', () => {
     expect(Object.keys(a.delivery!).sort()).toEqual(['address', 'barangay', 'phone'])
     expect(a.delivery).toEqual({ address: '1 Gate St', barangay: 'Libertad', phone: '09171112222' })
     expect(orders.find((o) => o.id === ids.B)!.delivery).toBeNull()
+    // Completed: the till only needs the address and phone until hand-off.
+    expect(orders.find((o) => o.id === ids.H)!.delivery).toBeNull()
 
     for (const secret of [
       'ana.secret@x.test',
@@ -154,6 +164,7 @@ describe('online orders in the pull', () => {
       'KNK-SECRET',
       'internal-note',
       '09170000001',
+      '09173334444',
       userId,
       '8.947',
     ]) {

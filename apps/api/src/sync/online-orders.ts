@@ -5,7 +5,7 @@ import type postgres from 'postgres'
  * The only columns the pull may read from `orders`, `order_lines` and `order_line_options`. Each query selects
  * exactly its list (as identifiers), so a column added to the table later never reaches a till by accident.
  * No email, GCash reference, proof path, order code, staff note, map pin, user id or money. The phone and
- * address are read for every order but only delivery orders carry them out of this file.
+ * address are read for every order but only unfinished delivery orders carry them out of this file.
  */
 export const ONLINE_ORDER_COLUMNS = [
   'id',
@@ -117,8 +117,9 @@ export async function readOnlineQueue(sql: postgres.Sql, now: Date): Promise<Onl
     createdAt: new Date(o.created_at).toISOString(),
     updatedAt: new Date(o.updated_at).toISOString(),
     lines: linesByOrder.get(o.id) ?? [],
+    // The address and phone stay on the till only until hand-off: a completed delivery carries none.
     delivery:
-      o.fulfilment === 'delivery'
+      o.fulfilment === 'delivery' && o.prep_status !== 'completed'
         ? { address: o.delivery_address ?? '', barangay: o.delivery_barangay ?? '', phone: o.customer_phone ?? '' }
         : null,
   }))
