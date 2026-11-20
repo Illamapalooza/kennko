@@ -27,6 +27,8 @@ export type AppDeps = {
   now: () => Date
   /** Order code generator; defaults to `KNK-` + 6 characters. Tests inject collisions. */
   orderCode?: () => string
+  /** Kennko card code generator (9 bare symbols); defaults to `makePublicCode(crypto.randomInt)`. Tests inject clashes. */
+  publicCode?: () => string
   /** Web Push sender; null when VAPID keys are not configured. */
   push: PushSender | null
   /** Shared with browsers by GET /v1/push/public-key. */

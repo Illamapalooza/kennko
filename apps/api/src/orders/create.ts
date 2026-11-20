@@ -249,7 +249,7 @@ export async function createOnlineOrder(deps: CreateOrderDeps, input: CreateOrde
           insert into orders (
             channel, order_code, fulfilment, prep_status, payment_status,
             business_day, ticket_series, ticket_number, menu_version,
-            customer_name, customer_phone, customer_email, customer_user_id, customer_note,
+            customer_name, customer_phone, customer_email, customer_user_id, customer_id, customer_note,
             delivery_address, delivery_barangay, delivery_zone_id,
             delivery_lat, delivery_lng, delivery_accuracy_m, delivery_distance_km,
             fulfil_at, subtotal_centavos, delivery_fee_centavos, total_centavos
@@ -257,7 +257,8 @@ export async function createOnlineOrder(deps: CreateOrderDeps, input: CreateOrde
             'online', ${orderCode}, ${order.fulfilment}, 'placed', 'pending_verification',
             ${businessDay}, 'W', ${ticketNumber}, ${snapshot.version},
             ${order.name.trim()}, ${order.phone.replace(/[\s-]/g, '')}, ${order.email.trim().toLowerCase()},
-            ${userId}, ${order.note.trim() || null},
+            -- The signed-in customer's Kennko card, when they have one (Plan 7 Ruling 9); a guest has none.
+            ${userId}, (select id from customers where id = ${userId}), ${order.note.trim() || null},
             ${isDelivery ? order.address.trim() : null}, ${isDelivery ? order.barangay.trim() : null},
             ${delivery.zoneId},
             ${delivery.pin?.lat ?? null}, ${delivery.pin?.lng ?? null}, ${delivery.pin?.accuracyM ?? null},

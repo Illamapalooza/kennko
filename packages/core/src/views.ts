@@ -1,4 +1,5 @@
 import type { IceLevel, IceServe } from './ice.ts'
+import type { StampMode } from './loyalty.ts'
 import type { PaymentStatus, PrepStatus } from './order-status.ts'
 
 /**
@@ -113,4 +114,21 @@ export type HistoryOrderView = {
     note: string | null
     options: string[]
   }[]
+}
+
+/**
+ * `GET /v1/me` (and join, rename): the signed-in person's Kennko card, or null before they join. The email is never
+ * echoed (the website already has it).
+ */
+export type MeView = {
+  customer: {
+    /** Formatted: `KC-XXX-XXX-XXX`. */
+    publicCode: string
+    displayName: string
+    joinedAt: string
+    stampMode: StampMode
+    /** Null while the customer is on a paper card. */
+    card: { stamps: { stampedAt: string }[]; fullCards: number } | null
+    points: number
+  } | null
 }

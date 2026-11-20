@@ -33,7 +33,8 @@ export const inlineDefer = async (task: () => Promise<void>): Promise<void> => {
   await task()
 }
 
-export type FakeAuthUser = { email: string | null; emailConfirmed: boolean }
+/** `createdAt` and `name` default to null (no guest-order matching, no Google name). */
+export type FakeAuthUser = { email: string | null; emailConfirmed: boolean; createdAt?: string | null; name?: string | null }
 
 export type FakeAuthAdmin = AuthAdmin & {
   /** Keyed by user id; a missing id answers null, as GoTrue's 404 does. */
@@ -49,6 +50,8 @@ export type FakeAuthAdmin = AuthAdmin & {
   inviteAs: string | null
   /** Runs after a successful invite, e.g. to create the auth.users row GoTrue would have made. */
   onInvite: ((email: string, userId: string) => Promise<void>) | null
+  /** Set to make deleteUser throw a 503, as when Supabase Auth is down. */
+  failDelete: boolean
   lookups: string[]
   invited: string[]
   deleted: string[]
@@ -62,13 +65,15 @@ export function fakeAuthAdmin(users: Record<string, FakeAuthUser> = {}): FakeAut
     failInvite: false,
     inviteAs: null,
     onInvite: null,
+    failDelete: false,
     lookups: [],
     invited: [],
     deleted: [],
     async getUser(id) {
       admin.lookups.push(id)
       if (admin.failGetUser) throw new Error('Auth getUser failed (timeout)')
-      return admin.users[id] ?? null
+      const u = admin.users[id]
+      return u ? { email: u.email, emailConfirmed: u.emailConfirmed, createdAt: u.createdAt ?? null, name: u.name ?? null } : null
     },
     async invite(email) {
       admin.invited.push(email)
@@ -81,6 +86,7 @@ export function fakeAuthAdmin(users: Record<string, FakeAuthUser> = {}): FakeAut
     },
     async deleteUser(id) {
       admin.deleted.push(id)
+      if (admin.failDelete) throw new AuthAdminError('deleteUser', 503)
     },
   }
   return admin

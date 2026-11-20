@@ -13,6 +13,7 @@ const BO = '00000000-0000-4000-8000-0000000000c2'
 const MANY = '00000000-0000-4000-8000-0000000000c3'
 const GHOST = '00000000-0000-4000-8000-0000000000c4'
 const DEVICE = '00000000-0000-4000-8000-0000000000f1'
+const SIGNED_UP = '2026-09-01T00:00:00Z'
 
 // Seeded on every order: none of these may ever appear in a public response.
 const EMAIL = 'secret.customer@x.test'
@@ -78,8 +79,9 @@ describe('order page, receipt and customer history reads', () => {
         .sign(pair.privateKey)
     tokens = { ana: await sign(ANA), many: await sign(MANY), ghost: await sign(GHOST) }
     auth = fakeAuthAdmin({
-      [ANA]: { email: 'ana@x.test', emailConfirmed: true },
-      [MANY]: { email: 'many@x.test', emailConfirmed: true },
+      // Created before every seeded guest order, so they all match (Ruling 1).
+      [ANA]: { email: 'ana@x.test', emailConfirmed: true, createdAt: SIGNED_UP },
+      [MANY]: { email: 'many@x.test', emailConfirmed: true, createdAt: SIGNED_UP },
     })
     app = createApp({
       sql: db.sql,
@@ -360,7 +362,7 @@ describe('order page, receipt and customer history reads', () => {
     it('returns only her own orders while the address is unconfirmed', async () => {
       const own = await seedOnline({ userId: ANA, email: 'ana@x.test' })
       const guest = await seedOnline({ userId: null, email: 'ana@x.test' })
-      auth.users[ANA] = { email: 'ana@x.test', emailConfirmed: false }
+      auth.users[ANA] = { email: 'ana@x.test', emailConfirmed: false, createdAt: SIGNED_UP }
       try {
         const r = await get('/v1/me/orders', tokens.ana)
         const orders = r.body.orders as Json[]
@@ -369,7 +371,7 @@ describe('order page, receipt and customer history reads', () => {
         expect(ids).not.toContain(guest.id)
         expect(orders.every((o) => o.claimedByEmail === false)).toBe(true)
       } finally {
-        auth.users[ANA] = { email: 'ana@x.test', emailConfirmed: true }
+        auth.users[ANA] = { email: 'ana@x.test', emailConfirmed: true, createdAt: SIGNED_UP }
       }
     })
 

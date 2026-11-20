@@ -3,10 +3,16 @@
  * module that uses the service-role key (Ruling 12). Errors carry the status only: GoTrue's bodies
  * can echo an email, and these messages reach the logs.
  */
+export type AuthUser = { email: string | null; emailConfirmed: boolean; createdAt: string | null; name: string | null }
+
 export type AuthAdmin = {
-  /** Null when no such user exists. */
-  getUser(id: string): Promise<{ email: string | null; emailConfirmed: boolean } | null>
+  /**
+   * Null when no such user exists. `createdAt` bounds guest-order matching (Plan 7 Ruling 1); `name` is the Google
+   * name (`user_metadata.full_name`, else `name`), used as the default display name at join.
+   */
+  getUser(id: string): Promise<AuthUser | null>
   invite(email: string): Promise<{ userId: string }>
+  /** A user that is already gone (404) counts as deleted, so a retry is safe. */
   deleteUser(id: string): Promise<void>
 }
 
@@ -24,7 +30,15 @@ export class AuthAdminError extends Error {
   }
 }
 
-type GoTrueUser = { id?: string; email?: string | null; email_confirmed_at?: string | null }
+type GoTrueUser = {
+  id?: string
+  email?: string | null
+  email_confirmed_at?: string | null
+  created_at?: string | null
+  user_metadata?: Record<string, unknown> | null
+}
+
+const text = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null)
 
 /** Long enough for a slow Auth, short enough that the customer sees "try again" rather than a hang. */
 const TIMEOUT_MS = 8000
@@ -54,7 +68,13 @@ export function createAuthAdmin(supabaseUrl: string, serviceKey: string, timeout
       if (res.status === 404) return null
       if (!res.ok) throw failed('getUser', res)
       const user = (await res.json()) as GoTrueUser
-      return { email: user.email || null, emailConfirmed: Boolean(user.email_confirmed_at) }
+      const meta = user.user_metadata ?? {}
+      return {
+        email: user.email || null,
+        emailConfirmed: Boolean(user.email_confirmed_at),
+        createdAt: text(user.created_at),
+        name: text(meta.full_name) ?? text(meta.name),
+      }
     },
 
     async invite(email) {
@@ -71,6 +91,7 @@ export function createAuthAdmin(supabaseUrl: string, serviceKey: string, timeout
 
     async deleteUser(id) {
       const res = await call('deleteUser', userUrl(id), { method: 'DELETE', headers: auth })
+      if (res.status === 404) return
       if (!res.ok) throw failed('deleteUser', res)
     },
   }

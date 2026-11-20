@@ -31,13 +31,24 @@ describe('createAuthAdmin', () => {
 
   it('getUser reads the admin user and whether the email is confirmed', async () => {
     const calls = mockFetch([
-      Response.json({ id: ID, email: 'ana@x.test', email_confirmed_at: '2026-11-01T00:00:00Z' }),
-      Response.json({ id: ID, email: 'ana@x.test', email_confirmed_at: null }),
-      Response.json({ id: ID, phone: '0917' }),
+      Response.json({
+        id: ID,
+        email: 'ana@x.test',
+        email_confirmed_at: '2026-11-01T00:00:00Z',
+        created_at: '2026-10-01T00:00:00Z',
+        user_metadata: { full_name: 'Ana Cruz', name: 'Ana' },
+      }),
+      Response.json({ id: ID, email: 'ana@x.test', email_confirmed_at: null, user_metadata: { name: 'Ana' } }),
+      Response.json({ id: ID, phone: '0917', user_metadata: { full_name: 42 } }),
     ])
-    expect(await admin().getUser(ID)).toEqual({ email: 'ana@x.test', emailConfirmed: true })
-    expect(await admin().getUser(ID)).toEqual({ email: 'ana@x.test', emailConfirmed: false })
-    expect(await admin().getUser(ID)).toEqual({ email: null, emailConfirmed: false })
+    expect(await admin().getUser(ID)).toEqual({
+      email: 'ana@x.test',
+      emailConfirmed: true,
+      createdAt: '2026-10-01T00:00:00Z',
+      name: 'Ana Cruz',
+    })
+    expect(await admin().getUser(ID)).toEqual({ email: 'ana@x.test', emailConfirmed: false, createdAt: null, name: 'Ana' })
+    expect(await admin().getUser(ID)).toEqual({ email: null, emailConfirmed: false, createdAt: null, name: null })
     expect(calls[0]!.url).toBe(`https://ref.supabase.co/auth/v1/admin/users/${ID}`)
     expect(calls[0]!.init.method ?? 'GET').toBe('GET')
     expectKeyHeaders(calls[0]!)
@@ -101,6 +112,11 @@ describe('createAuthAdmin', () => {
     expect((err as Error).message).toBe('Auth invite failed (network)')
     expect(err).toBeInstanceOf(AuthAdminError)
     expect(err).toMatchObject({ status: 'network' })
+  })
+
+  it('deleteUser treats 404 as already deleted, so a retry is safe', async () => {
+    mockFetch([new Response('{"msg":"User not found"}', { status: 404 })])
+    await expect(admin().deleteUser(ID)).resolves.toBeUndefined()
   })
 
   it('deleteUser deletes the admin user and throws on 500', async () => {

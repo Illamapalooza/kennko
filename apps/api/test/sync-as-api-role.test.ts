@@ -42,13 +42,14 @@ describe('every route as kennko_api', () => {
   let ownerJwt: string
   let baristaJwt: string
   let customerJwt: string
+  let signFor: (sub: string) => Promise<string>
   let latteId: string
   let oatId: string
   let version: number
   let deviceToken: string
   let deviceId: string
   let readPaymentId: string
-  const auth = fakeAuthAdmin({ [CUSTOMER]: { email: 'cy@x.test', emailConfirmed: true } })
+  const auth = fakeAuthAdmin({ [CUSTOMER]: { email: 'cy@x.test', emailConfirmed: true, createdAt: '2026-11-01T00:00:00Z' } })
   const pushed: string[] = []
   const sender: PushSender = async (_sub, payload) => {
     pushed.push(payload.title)
@@ -100,6 +101,7 @@ describe('every route as kennko_api', () => {
     ownerJwt = await sign(OWNER)
     baristaJwt = await sign(BARISTA)
     customerJwt = await sign(CUSTOMER)
+    signFor = sign
     app = createApp({
       sql: db.sql,
       verifyUser: verifierFromJwks(createLocalJWKSet({ keys: [jwk] }), ISSUER),
@@ -525,6 +527,53 @@ describe('every route as kennko_api', () => {
     expect(await run((tx) => dropOrderPoints(tx, orders[3]!, member))).toBe(1)
     expect(await run((tx) => balance(tx, member))).toBe(3)
     expect(await run((tx) => cardSummary(tx, member))).toMatchObject({ fullCards: 0 })
+  })
+
+  it('Kennko card: view, join, rename, and delete a second customer as kennko_api', async () => {
+    expect(await ok('GET', '/v1/me', customerJwt)).toEqual({ customer: null })
+    const joined = await ok('POST', '/v1/me/join', customerJwt, { ageConfirmed: true, privacyVersion: '2026-11' })
+    expect(joined.customer).toMatchObject({ displayName: 'cy', stampMode: 'none', points: 0 })
+    await ok('PATCH', '/v1/me', customerJwt, { displayName: 'Cy' })
+    expect((await ok('GET', '/v1/me', customerJwt)).customer).toMatchObject({ displayName: 'Cy' })
+
+    // The second customer has a card with a stamp, points, a linked order and a push subscription.
+    const leaver = '00000000-0000-4000-8000-0000000000a5'
+    const orderId = await asSuper(async () => {
+      await db.sql`insert into auth.users (id, email) values (${leaver}, 'leaver@x.test')`
+      const [o] = await db.sql`
+        insert into orders (channel, order_code, fulfilment, prep_status, payment_status, business_day,
+          ticket_series, ticket_number, customer_name, customer_phone, customer_email, customer_user_id, fulfil_at,
+          subtotal_centavos, total_centavos, created_at, updated_at)
+        values ('online', 'KNK-LEAVE', 'pickup', 'completed', 'paid', '2026-11-21', 'W', 990, 'L', '09170000000',
+          'leaver@x.test', ${leaver}, ${NOW}, 12000, 12000, ${NOW}, ${NOW})
+        returning id`
+      await db.sql`insert into push_subscriptions (endpoint, p256dh, auth, kind, customer_user_id)
+        values ('https://push.test/leaver', 'p', 'a', 'customer', ${leaver})`
+      return o!.id as string
+    })
+    auth.users[leaver] = { email: 'leaver@x.test', emailConfirmed: true, createdAt: '2026-11-01T00:00:00Z' }
+    const leaverJwt = await signFor(leaver)
+    await ok('POST', '/v1/me/join', leaverJwt, { ageConfirmed: true, privacyVersion: '2026-11', displayName: 'Leaver' })
+    await asSuper(async () => {
+      await db.sql`update orders set customer_id = ${leaver} where id = ${orderId}`
+      const [card] = await db.sql`insert into stamp_cards (customer_id, started_at) values (${leaver}, ${NOW}) returning id`
+      await db.sql`insert into stamps (id, customer_id, card_id, order_id, stamped_at, received_at)
+        values (${randomUUID()}, ${leaver}, ${card!.id}, ${orderId}, ${NOW}, ${NOW})`
+      await db.sql`insert into points_ledger (customer_id, delta, reason, order_id, created_at)
+        values (${leaver}, 12, 'order', ${orderId}, ${NOW})`
+    })
+    expect(await ok('DELETE', '/v1/me', leaverJwt, { confirm: 'DELETE' })).toEqual({ deleted: true })
+    const [left] = await asSuper(
+      () => db.sql`select
+        (select count(*)::int from customers where id = ${leaver}) +
+        (select count(*)::int from stamp_cards where customer_id = ${leaver}) +
+        (select count(*)::int from stamps where customer_id = ${leaver}) +
+        (select count(*)::int from points_ledger where customer_id = ${leaver}) +
+        (select count(*)::int from orders where customer_id = ${leaver} or customer_user_id = ${leaver}) +
+        (select count(*)::int from push_subscriptions where customer_user_id = ${leaver}) as n`,
+    )
+    expect(left!.n).toBe(0)
+    expect(auth.deleted).toContain(leaver)
   })
 
   it('publishMenu from the deploy helper also works as kennko_api', async () => {

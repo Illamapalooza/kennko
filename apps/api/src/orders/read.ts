@@ -177,14 +177,16 @@ export async function readReceipt(sql: postgres.Sql, code: string): Promise<Publ
 
 /**
  * A customer's orders: the ones placed while signed in, plus guest orders under the same address only
- * once that address is confirmed. The confirmation check is the security boundary: without it, signing
- * up as someone else's address would expose their history.
+ * once that address is confirmed, and only those placed after the login was created (Plan 7 Ruling 1).
+ * The confirmation check is the security boundary: without it, signing up as someone else's address
+ * would expose their history. The creation time stops a deleted and re-created account from getting
+ * the old guest orders back; without one, no guest order matches.
  */
 export async function readHistory(
   sql: postgres.Sql,
-  user: { id: string; email: string | null; emailConfirmed: boolean },
+  user: { id: string; email: string | null; emailConfirmed: boolean; createdAt: string | null },
 ): Promise<HistoryOrderView[]> {
-  const email = user.emailConfirmed && user.email ? user.email : null
+  const email = user.emailConfirmed && user.email && user.createdAt ? user.email : null
   type Row = Ticket & {
     id: string; order_code: string; prep_status: PrepStatus; payment_status: PaymentStatus
     cancelled_at: Date | null; fulfilment: Fulfilment; fulfil_at: Date; created_at: Date
@@ -197,7 +199,7 @@ export async function readHistory(
       total_centavos, customer_user_id
     from orders
     where customer_user_id = ${user.id}
-      ${email ? sql`or lower(customer_email) = lower(${email})` : sql``}
+      ${email ? sql`or (lower(customer_email) = lower(${email}) and created_at >= ${user.createdAt})` : sql``}
     order by created_at desc, id desc
     limit ${HISTORY_LIMIT}`
   if (orders.length === 0) return []
