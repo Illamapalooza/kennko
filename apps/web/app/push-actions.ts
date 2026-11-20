@@ -7,6 +7,7 @@ import { getServerClient } from '@/lib/supabase/server'
 type Result = { ok: boolean; message?: string }
 
 const PATH = '/v1/push/subscriptions'
+const TURN_OFF_FAILED = "Couldn't turn off notifications. Try again."
 const FAILED = "Couldn't turn on notifications. Try again."
 
 /** Only what the API needs: the endpoint and its two keys. */
@@ -63,6 +64,25 @@ export async function subscribeStaffAlerts(subscription: PushSubscriptionJSON): 
   }
 }
 
+/** Stops following one order on this device; the browser subscription and other watches stay. */
+export async function unwatchOrder(orderCode: string, endpoint: string): Promise<Result> {
+  const base = apiBase()
+  if (!base || !endpoint || !orderCode) return { ok: false, message: TURN_OFF_FAILED }
+  try {
+    const res = await fetch(`${base}${PATH}/watch`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, orderCode }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
+    })
+    return res.ok ? { ok: true } : { ok: false, message: TURN_OFF_FAILED }
+  } catch (cause) {
+    console.error('[push] unwatch failed', cause)
+    return { ok: false, message: TURN_OFF_FAILED }
+  }
+}
+
 /** The endpoint is the secret that identifies the subscription, so the API needs nothing else to remove it. */
 export async function unsubscribePush(endpoint: string): Promise<Result> {
   const base = apiBase()
@@ -75,9 +95,9 @@ export async function unsubscribePush(endpoint: string): Promise<Result> {
       cache: 'no-store',
       signal: AbortSignal.timeout(15000),
     })
-    return res.ok ? { ok: true } : { ok: false, message: FAILED }
+    return res.ok ? { ok: true } : { ok: false, message: TURN_OFF_FAILED }
   } catch (cause) {
     console.error('[push] unsubscribe failed', cause)
-    return { ok: false, message: FAILED }
+    return { ok: false, message: TURN_OFF_FAILED }
   }
 }

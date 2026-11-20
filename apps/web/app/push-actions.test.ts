@@ -14,7 +14,7 @@ vi.mock('@/lib/supabase/server', () => ({
   getServerClient: async () => ({ auth: { getSession: async () => ({ data: { session: token ? { access_token: token } : null } }) } }),
 }))
 
-import { subscribeToOrder, subscribeStaffAlerts, unsubscribePush } from './push-actions'
+import { subscribeToOrder, subscribeStaffAlerts, unsubscribePush, unwatchOrder } from './push-actions'
 
 const sub = { endpoint: 'https://push.test/e1', keys: { p256dh: 'p', auth: 'a' }, expirationTime: null }
 const fetchMock = vi.fn()
@@ -84,5 +84,22 @@ describe('unsubscribePush', () => {
     expect(url).toBe('https://api.test/v1/push/subscriptions')
     expect(init.method).toBe('DELETE')
     expect(JSON.parse(init.body)).toEqual({ endpoint: sub.endpoint })
+  })
+})
+
+describe('unwatchOrder', () => {
+  it('deletes only that order watch', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }))
+    expect(await unwatchOrder('KNK-7F3Q', sub.endpoint)).toEqual({ ok: true })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.test/v1/push/subscriptions/watch')
+    expect(init.method).toBe('DELETE')
+    expect(JSON.parse(init.body)).toEqual({ endpoint: sub.endpoint, orderCode: 'KNK-7F3Q' })
+  })
+  it('reports failure', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 500 }))
+    expect((await unwatchOrder('KNK-7F3Q', sub.endpoint)).ok).toBe(false)
+    fetchMock.mockRejectedValue(new Error('down'))
+    expect((await unwatchOrder('KNK-7F3Q', sub.endpoint)).ok).toBe(false)
   })
 })

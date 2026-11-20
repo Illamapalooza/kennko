@@ -12,6 +12,7 @@ const subscribeSchema = z.object({
   }),
   orderCode: z.string().trim().min(1).max(40).optional(),
 })
+const unwatchSchema = z.object({ endpoint: z.string().min(1).max(2048), orderCode: z.string().trim().min(1).max(40) })
 const unsubscribeSchema = z.object({ endpoint: z.string().min(1).max(2048) })
 
 const notFound = () =>
@@ -54,13 +55,14 @@ export function pushRoutes(deps: AppDeps): Hono<AppEnv> {
       insert into push_subscriptions (endpoint, p256dh, auth, kind, customer_user_id)
       values (${subscription.endpoint}, ${subscription.keys.p256dh}, ${subscription.keys.auth}, 'customer', ${userId})
       on conflict (endpoint) do update set
-        p256dh = excluded.p256dh, auth = excluded.auth,
-        customer_user_id = coalesce(excluded.customer_user_id, push_subscriptions.customer_user_id)
-        where push_subscriptions.kind = 'customer'
+        p256dh = case when push_subscriptions.kind = 'customer' then excluded.p256dh else push_subscriptions.p256dh end,
+        auth = case when push_subscriptions.kind = 'customer' then excluded.auth else push_subscriptions.auth end,
+        customer_user_id = case when push_subscriptions.kind = 'customer'
+          then coalesce(excluded.customer_user_id, push_subscriptions.customer_user_id)
+          else push_subscriptions.customer_user_id end
       returning id`
-    // A staff device's endpoint cannot be taken over by an order code.
-    if (!row) return invalid('This device is already registered for staff alerts.')
-    await watchOrder(sql, row.id, order.id)
+    // One browser subscription per device: a staff device keeps its kind, keys and owner, and just gains the watch.
+    await watchOrder(sql, row!.id, order.id)
     return c.json({ ok: true }, 201)
   })
 
@@ -68,6 +70,17 @@ export function pushRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = unsubscribeSchema.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return invalid('Send the endpoint to remove.')
     await sql`delete from push_subscriptions where endpoint = ${body.data.endpoint}`
+    return c.body(null, 204)
+  })
+
+  // Stop following one order on this device; the subscription itself stays.
+  app.delete('/subscriptions/watch', async (c) => {
+    const body = unwatchSchema.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return invalid('Send the endpoint and the order code.')
+    await sql`
+      delete from push_order_watch
+      where subscription_id in (select id from push_subscriptions where endpoint = ${body.data.endpoint})
+        and order_id in (select id from orders where order_code = ${body.data.orderCode})`
     return c.body(null, 204)
   })
 

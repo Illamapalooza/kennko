@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { browserPushEnv, getRegistration, pushSupport, urlBase64ToUint8Array } from '@/lib/push/client'
-import { unsubscribePush } from '@/app/push-actions'
 
 type Result = { ok: boolean; message?: string }
 
@@ -13,8 +12,12 @@ type Props = {
   labelOn: string
   className?: string
   hintClassName?: string
-  /** Remembers on this device that this particular toggle was turned on (a device can follow several orders). */
-  storageKey?: string
+  /** Server side of "Turn off". Failure keeps the toggle on and shows the message. */
+  turnOffOnServer: (endpoint: string) => Promise<Result>
+  /** Also drop the browser's own subscription (staff). Customers keep it: other orders and the staff toggle share it. */
+  dropBrowserSubscription?: boolean
+  /** Remembers on this device that this toggle was turned on; one browser subscription is shared by both buttons. */
+  storageKey: string
 }
 
 type State = 'hidden' | 'ios' | 'off' | 'on' | 'busy' | 'blocked'
@@ -23,17 +26,15 @@ const IOS_COPY = 'On iPhone, add Kennko to your Home Screen first (Share → Add
 const BLOCKED_COPY = 'Notifications are blocked in your browser settings.'
 const PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
-function remembered(key?: string): boolean {
-  if (!key) return true
+function remembered(key: string): boolean {
   try { return localStorage.getItem(key) === '1' } catch { return false }
 }
-function remember(key: string | undefined, on: boolean) {
-  if (!key) return
+function remember(key: string, on: boolean) {
   try { if (on) localStorage.setItem(key, '1'); else localStorage.removeItem(key) } catch { /* private mode */ }
 }
 
 /** The shared mechanics of "notify me" buttons. Renders nothing where push cannot work. */
-export function PushToggle({ subscribe, labelOff, labelOn, className, hintClassName, storageKey }: Props) {
+export function PushToggle({ subscribe, labelOff, labelOn, className, hintClassName, storageKey, turnOffOnServer, dropBrowserSubscription }: Props) {
   // 'hidden' on the server and first paint so the markup matches before the browser is asked.
   const [state, setState] = useState<State>('hidden')
   const [message, setMessage] = useState<string | null>(null)
@@ -86,8 +87,13 @@ export function PushToggle({ subscribe, labelOff, labelOn, className, hintClassN
       const registration = await getRegistration()
       const subscription = await registration?.pushManager.getSubscription()
       if (subscription) {
-        await unsubscribePush(subscription.endpoint)
-        await subscription.unsubscribe()
+        const result = await turnOffOnServer(subscription.endpoint)
+        if (!result.ok) {
+          setMessage(result.message ?? "Couldn't turn off notifications. Try again.")
+          setState('on')
+          return
+        }
+        if (dropBrowserSubscription) await subscription.unsubscribe()
       }
       remember(storageKey, false)
       setState('off')

@@ -232,6 +232,39 @@ describe('web push', () => {
       expect((await call(null, 'DELETE', '/v1/push/subscriptions', { endpoint: s.endpoint })).status).toBe(204)
     })
 
+    it('an order code on a staff device adds the watch and keeps it a staff subscription', async () => {
+      const o = await seedOnline()
+      const s = sub('sw1')
+      await subscribe('barista', { subscription: s })
+      const r = await subscribe(null, { subscription: { ...s, keys: { p256dh: 'hijack', auth: 'hijack' } }, orderCode: o.code })
+      expect(r.status).toBe(201)
+      const row = await subRow(s.endpoint)
+      expect(row).toMatchObject({ kind: 'staff', staff_id: BARISTA, p256dh: 'p-sw1', auth: 'a-sw1' })
+      const watch = await db.sql`select order_id from push_order_watch where subscription_id = ${row!.id}`
+      expect(watch.map((w) => w.order_id)).toEqual([o.orderId])
+    })
+
+    it('DELETE /subscriptions/watch removes only that order watch', async () => {
+      const a = await seedOnline()
+      const b = await seedOnline()
+      const s = sub('uw1')
+      await subscribe(null, { subscription: s, orderCode: a.code })
+      await subscribe(null, { subscription: s, orderCode: b.code })
+      const r = await call(null, 'DELETE', '/v1/push/subscriptions/watch', { endpoint: s.endpoint, orderCode: a.code })
+      expect(r.status).toBe(204)
+      const row = await subRow(s.endpoint)
+      expect(row).toBeDefined()
+      const watch = await db.sql`select order_id from push_order_watch where subscription_id = ${row!.id}`
+      expect(watch.map((w) => w.order_id)).toEqual([b.orderId])
+    })
+
+    it('DELETE /subscriptions/watch answers 204 for unknown order or endpoint, 400 for a bad body', async () => {
+      const o = await seedOnline()
+      expect((await call(null, 'DELETE', '/v1/push/subscriptions/watch', { endpoint: 'https://push.test/none', orderCode: o.code })).status).toBe(204)
+      expect((await call(null, 'DELETE', '/v1/push/subscriptions/watch', { endpoint: 'https://push.test/none', orderCode: 'KNK-NOPE' })).status).toBe(204)
+      expect((await call(null, 'DELETE', '/v1/push/subscriptions/watch', { endpoint: 'x' })).status).toBe(400)
+    })
+
     it('GET /v1/push/public-key -> key when enabled, 404 when push is off', async () => {
       const on = await call(null, 'GET', '/v1/push/public-key')
       expect(on.status).toBe(200)
