@@ -1,13 +1,12 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { ticketLabel, type PrepStatus } from '@kennko/core'
-import { getAdminClient } from '@/lib/supabase/admin'
+import type { PaymentNotice, PrepStatus } from '@kennko/core'
 import { requireStaff } from '@/lib/auth/session'
 import { staffFetch } from '@/lib/api/client'
 import { sendEmail } from '@/lib/email/send'
 import { buildReceipt } from '@/lib/receipts/receipt'
-import { loadReceiptOrder, loadShopSettings } from '@/lib/receipts/load'
+import { loadReceipt } from '@/lib/receipts/load'
 import { receiptHtml, receiptText, escapeHtml } from '@/lib/receipts/email'
 import { formatManilaDateTime } from '@/lib/format/time'
 import {
@@ -15,8 +14,6 @@ import {
   customerRejectSubject, customerRejectBody,
   type OrderEmailData,
 } from '@/lib/email/templates'
-
-const PROOF_BUCKET = 'payment-proofs'
 
 type Result = { ok: true } | { ok: false; message: string }
 
@@ -55,45 +52,31 @@ async function callApi(
   return { ok: false, message: 'Something went wrong. Try again.' }
 }
 
-type OrderRow = {
-  order_code: string; ticket_series: 'C' | 'W'; ticket_number: number
-  customer_name: string; customer_email: string | null; fulfilment: 'pickup' | 'delivery'
-  fulfil_at: string | null; total_centavos: number; delivery_address: string | null
-  order_lines: { item_name: string; variant_label: string; quantity: number }[]
-}
+type Mail = { data: OrderEmailData; to: string; reference: string | null }
 
-async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: string } | null> {
-  const db = getAdminClient()
-  const { data: payment } = await db.from('payments').select('order_id').eq('id', paymentId).maybeSingle()
-  if (!payment) return null
-
-  const { data } = await db
-    .from('orders')
-    .select(
-      `order_code, ticket_series, ticket_number, customer_name, customer_email, fulfilment, fulfil_at,
-       total_centavos, delivery_address,
-       order_lines ( item_name, variant_label, quantity )`,
-    )
-    .eq('id', payment.order_id)
-    .maybeSingle()
-  const row = data as OrderRow | null
-  if (!row || !row.customer_email) return null
-
+/**
+ * What the customer emails need, from the staff-only `GET /v1/payments/:id/notice`: the full name,
+ * street address and GCash reference, which only the customer's own inbox may see. 404 (no such
+ * payment, or a counter order with no email) is null: no email. Other failures throw, and the caller
+ * logs them without failing the payment action.
+ */
+async function emailFor(paymentId: string): Promise<Mail | null> {
+  const res = await staffFetch(`/v1/payments/${encodeURIComponent(paymentId)}/notice`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Payment notice failed (${res.status})`)
+  const n = (await res.json()) as PaymentNotice
   return {
-    to: row.customer_email,
+    to: n.to,
+    reference: n.reference,
     data: {
-      orderCode: row.order_code,
-      ticket: ticketLabel(row.ticket_series, row.ticket_number),
-      customerName: row.customer_name,
-      fulfilment: row.fulfilment,
-      fulfilAt: row.fulfil_at ? formatManilaDateTime(row.fulfil_at) : '',
-      totalCentavos: row.total_centavos,
-      deliveryAddress: row.delivery_address,
-      items: (row.order_lines ?? []).map((l) => ({
-        name: l.item_name,
-        variantLabel: l.variant_label,
-        quantity: l.quantity,
-      })),
+      orderCode: n.orderCode,
+      ticket: n.ticket,
+      customerName: n.customerName,
+      fulfilment: n.fulfilment,
+      fulfilAt: n.fulfilAt ? formatManilaDateTime(n.fulfilAt) : '',
+      totalCentavos: n.totalCentavos,
+      deliveryAddress: n.deliveryAddress,
+      items: n.items.map((i) => ({ name: i.name, variantLabel: i.variantLabel, quantity: i.quantity })),
     },
   }
 }
@@ -109,13 +92,21 @@ function whenWhere(d: OrderEmailData, shopAddress: string): string {
 /**
  * Today's confirmation, plus the e-receipt when it can be built. A receipt problem of any kind
  * (load error, unverified payment) falls back to the plain confirmation, never blocks it.
+ * The receipt is the public one with the notice's full name, street address and reference put back.
  */
-async function confirmationWithReceipt(d: OrderEmailData): Promise<EmailContent> {
+async function confirmationWithReceipt(mail: Mail): Promise<EmailContent> {
+  const d = mail.data
   const plain = { subject: customerConfirmSubject(d), text: customerConfirmBody(d) }
   try {
-    const order = await loadReceiptOrder(d.orderCode)
-    if (!order) return plain
-    const settings = await loadShopSettings()
+    const loaded = await loadReceipt(d.orderCode)
+    if (!loaded) return plain
+    const { settings } = loaded
+    const order = {
+      ...loaded.order,
+      customerName: d.customerName,
+      deliveryAddress: d.deliveryAddress ?? null,
+      reference: mail.reference,
+    }
     const receipt = buildReceipt(order, settings, 'email')
     if (!receipt) return plain
     const base = (process.env.NEXT_PUBLIC_SITE_URL || 'https://kennko.vercel.app').replace(/\/+$/, '')
@@ -144,11 +135,11 @@ ${receiptHtml(receipt)}
  */
 async function notifyCustomer(
   paymentId: string,
-  compose: (data: OrderEmailData) => EmailContent | Promise<EmailContent>,
+  compose: (mail: Mail) => EmailContent | Promise<EmailContent>,
 ) {
   try {
     const mail = await emailFor(paymentId)
-    if (mail) await sendEmail({ to: [mail.to], ...(await compose(mail.data)) })
+    if (mail) await sendEmail({ to: [mail.to], ...(await compose(mail)) })
   } catch (cause) {
     console.error('Customer email failed after the payment action succeeded', cause)
   }
@@ -180,8 +171,8 @@ export async function rejectPayment(paymentId: string, reason: string): Promise<
   })
   if (!result.ok) return result
 
-  await notifyCustomer(paymentId, (d) => ({
-    subject: customerRejectSubject(d), text: customerRejectBody(d, why),
+  await notifyCustomer(paymentId, ({ data }) => ({
+    subject: customerRejectSubject(data), text: customerRejectBody(data, why),
   }))
   refresh()
   return result
@@ -209,11 +200,15 @@ export async function cancelOrder(orderId: string, reason: string): Promise<Resu
   return result
 }
 
-/** Short-lived signed URL. The bucket is private; staff never get a raw path. */
-export async function proofUrl(path: string): Promise<string | null> {
+/** A 300-second signed link to the payment's receipt image, from the API. The bucket is private; staff never get a raw path. */
+export async function proofUrl(paymentId: string): Promise<string | null> {
   await requireStaff()
-  const { data } = await getAdminClient()
-    .storage.from(PROOF_BUCKET)
-    .createSignedUrl(path, 300)
-  return data?.signedUrl ?? null
+  try {
+    const res = await staffFetch(`/v1/payments/${encodeURIComponent(paymentId)}/proof`)
+    if (!res.ok) return null
+    const { url } = (await res.json()) as { url?: unknown }
+    return typeof url === 'string' ? url : null
+  } catch {
+    return null
+  }
 }

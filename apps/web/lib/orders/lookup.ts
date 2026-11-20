@@ -1,7 +1,7 @@
 import 'server-only'
-import { getAdminClient } from '@/lib/supabase/admin'
-import { orderStage, ticketLabel, type OrderStage } from '@kennko/core'
-import { iceSummary, type IceLevel, type IceServe } from '@/lib/cart/ice'
+import { orderStage, type OrderStage, type PublicOrderView } from '@kennko/core'
+import { publicFetch } from '@/lib/api/client'
+import { iceSummary } from '@/lib/cart/ice'
 
 export type PublicOrder = {
   orderCode: string
@@ -18,42 +18,31 @@ export type PublicOrder = {
 }
 
 /**
- * Narrow projection by design. Never returns payment_proof_path, staff notes,
- * the customer's phone, or the verifier -- the order code is guessable enough
- * that this response must be safe to hand to anyone holding one.
+ * The order page, from the API's public projection (`GET /v1/orders/by-code/:code`), which never
+ * carries the proof path, staff notes, the customer's phone or email, or the verifier: the order
+ * code is guessable enough that this must be safe to hand to anyone holding one.
+ * 404 is null; any other failure throws, so the page shows its error boundary rather than a 404.
  */
 export async function lookupOrder(code: string): Promise<PublicOrder | null> {
-  const db = getAdminClient()
-
-  const { data } = await db
-    .from('orders')
-    .select(
-      'order_code, prep_status, payment_status, ticket_series, ticket_number, fulfilment, fulfil_at, total_centavos, delivery_address, cancelled_at, order_lines ( item_name, variant_label, quantity, ice_level, ice_serve, note, order_line_options ( option_name ) )',
-    )
-    .eq('order_code', code.toUpperCase())
-    .maybeSingle()
-
-  if (!data) return null
+  const res = await publicFetch(`/v1/orders/by-code/${encodeURIComponent(code)}`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Could not load order ${code} (${res.status})`)
+  const v = (await res.json()) as PublicOrderView
 
   return {
-    orderCode: data.order_code,
-    stage: orderStage(data.prep_status, data.payment_status, data.cancelled_at != null),
-    hasConfirmedPayment: data.payment_status === 'paid' || data.payment_status === 'refunded',
-    ticket: ticketLabel(data.ticket_series, data.ticket_number),
-    fulfilment: data.fulfilment,
-    fulfilAt: data.fulfil_at,
-    totalCentavos: data.total_centavos,
-    deliveryAddress: data.delivery_address,
-    items: (data.order_lines ?? []).map(
-      (i: {
-        item_name: string; variant_label: string; quantity: number
-        ice_level: IceLevel | null; ice_serve: IceServe | null
-      }) => ({
-        name: i.item_name,
-        variantLabel: i.variant_label,
-        quantity: i.quantity,
-        ice: iceSummary(i.ice_level, i.ice_serve),
-      }),
-    ),
+    orderCode: v.orderCode,
+    stage: orderStage(v.prepStatus, v.paymentStatus, v.cancelled),
+    hasConfirmedPayment: v.paymentStatus === 'paid' || v.paymentStatus === 'refunded',
+    ticket: v.ticket,
+    fulfilment: v.fulfilment,
+    fulfilAt: v.fulfilAt,
+    totalCentavos: v.totalCentavos,
+    deliveryAddress: v.deliveryAddress,
+    items: v.lines.map((l) => ({
+      name: l.name,
+      variantLabel: l.variantLabel,
+      quantity: l.quantity,
+      ice: iceSummary(l.iceLevel, l.iceServe),
+    })),
   }
 }

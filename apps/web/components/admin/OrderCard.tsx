@@ -153,7 +153,7 @@ export function OrderCard({
         ) : null}
       </div>
 
-      {order.proofPath === null ? null : proof ? (
+      {order.proofPath === null || order.paymentId === null ? null : proof ? (
         <a href={proof} target="_blank" rel="noreferrer">
           <img src={proof} alt="GCash receipt" style={{ maxWidth: '100%', borderRadius: 12 }} />
         </a>
@@ -162,7 +162,7 @@ export function OrderCard({
           type="button"
           className="btn btn-secondary"
           disabled={pending}
-          onClick={() => run(async () => setProof(await proofUrl(order.proofPath as string)))}
+          onClick={() => run(async () => setProof(await proofUrl(order.paymentId as string)))}
         >
           View receipt
         </button>

@@ -34,9 +34,14 @@ The brand is the electric blue `#0055FF` identity. `../../brand/Kennko Menu.png`
 
 ## Environment
 Copy `.env.local.example` to `.env.local` and fill it in. The app will not build
-without `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. The
-service-role key is needed only to run the seeder, and must never be committed
-or exposed to the browser.
+without `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+
+**The website does not use the Supabase service key.** Every privileged read or write goes through the
+API (`lib/api/client.ts`): `publicFetch` (order page, receipt), `userFetch` (a customer's `/orders`),
+`staffFetch` (admin, proofs, the customer-email data) and `webKeyFetch` (the checkout's staff alert list,
+sent with `KENNKO_WEB_KEY`, which must equal the API's). `SUPABASE_SERVICE_ROLE_KEY` is for the local
+`scripts/` only (seed, seed-zones, create-owner) and is never set on Vercel; `lib/no-service-key.test.ts`
+fails if `app/`, `components/`, `lib/` or `proxy.ts` name it or a service-role client.
 
 ## Commands
 Run these from `apps/web` (the repo root has `npm run dev`, `npm run build` and `npm test` shortcuts).
@@ -63,8 +68,9 @@ public signup).
 A manager has barista-level access on the website; owner-only stays owner-only. Staff are
 managed through the API (`/v1/staff`), not Supabase: the Staff screen adds people, changes roles and
 issues till PINs there. A **barista needs no website login or email** (they use a PIN at the till); an
-owner needs a login, a manager may have one. The website still sends the invite email (Supabase auth
-admin needs its service key), then creates the staff row via the API. A PIN is generated, shown once, and
+owner needs a login, a manager may have one. The Staff screen posts the email to `POST /v1/staff`, and the
+API sends the invite and takes the login back if the staff row fails; the screen shows the API's
+`ALREADY_REGISTERED` and `EMAIL_TAKEN` messages. A PIN is generated, shown once, and
 never stored in the clear.
 
 **Authorisation is enforced in Postgres, not just the UI.** `public.is_owner()`
@@ -109,7 +115,7 @@ confirmation email sends only on that confirmation -- never on submission. The
 admin flags any reference already used by another live order.
 
 **`payment-proofs` is a PRIVATE bucket**, separate from public `menu-images`.
-Staff read receipts through 300-second signed URLs. Never make it public: a
+Staff read receipts through 300-second signed URLs from the API (`GET /v1/payments/:id/proof`). Never make it public: a
 receipt carries the customer's name and GCash details.
 
 Order status flow differs by fulfilment: pickup runs

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { getCurrentCustomer } from '@/lib/auth/customer'
 import { OrderNav } from '@/components/order/OrderNav'
 import { formatPesos } from '@/lib/money'
-import { loadReceiptOrder, loadShopSettings } from '@/lib/receipts/load'
+import { loadReceipt } from '@/lib/receipts/load'
 import { buildReceipt } from '@/lib/receipts/receipt'
 import { PrintButton } from './PrintButton'
 import '../../order.css'
@@ -14,9 +14,9 @@ export const metadata: Metadata = { title: 'Order receipt', robots: { index: fal
 
 export default async function ReceiptPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
-  const order = await loadReceiptOrder(code)
-  if (!order) notFound()
-  const [settings, customer] = await Promise.all([loadShopSettings(), getCurrentCustomer()])
+  const [loaded, customer] = await Promise.all([loadReceipt(code), getCurrentCustomer()])
+  if (!loaded) notFound()
+  const { order, settings } = loaded
   const receipt = buildReceipt(order, settings, 'public')
 
   return (

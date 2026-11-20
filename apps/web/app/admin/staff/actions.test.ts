@@ -1,25 +1,15 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const staffFetch = vi.fn()
 const revalidatePath = vi.fn()
-const inviteUserByEmail = vi.fn()
-const deleteUser = vi.fn()
 const requireOwner = vi.fn(async () => ({ id: 's1', role: 'owner' }))
 const serverFrom = vi.fn()
 
 vi.mock('next/cache', () => ({ revalidatePath: (...a: unknown[]) => revalidatePath(...a) }))
 vi.mock('@/lib/auth/session', () => ({ requireOwner: () => requireOwner() }))
 vi.mock('@/lib/api/client', () => ({ staffFetch: (...a: unknown[]) => staffFetch(...a) }))
-vi.mock('@/lib/supabase/admin', () => ({
-  getAdminClient: () => ({
-    auth: {
-      admin: {
-        inviteUserByEmail: (...a: unknown[]) => inviteUserByEmail(...a),
-        deleteUser: (...a: unknown[]) => deleteUser(...a),
-      },
-    },
-  }),
-}))
 vi.mock('@/lib/supabase/server', () => ({
   getServerClient: async () => ({ from: (...a: unknown[]) => serverFrom(...a) }),
 }))
@@ -48,7 +38,6 @@ describe('addStaff', () => {
     staffFetch.mockResolvedValue(json(201, { id: 'p1' }))
     const result = await addStaff(form({ full_name: ' Ana ', role: 'barista', email: 'ana@example.com' }))
     expect(result).toEqual({ ok: true })
-    expect(inviteUserByEmail).not.toHaveBeenCalled()
     expect(staffFetch).toHaveBeenCalledTimes(1)
     expect(staffFetch.mock.calls[0]![0]).toBe('/v1/staff')
     expect(staffFetch.mock.calls[0]![1].method).toBe('POST')
@@ -63,82 +52,57 @@ describe('addStaff', () => {
     const result = await addStaff(form({ full_name: 'Kenn', role: 'owner', email: '  ' }))
     expect(result.ok).toBe(false)
     expect(staffFetch).not.toHaveBeenCalled()
-    expect(inviteUserByEmail).not.toHaveBeenCalled()
   })
 
-  it('invites a manager with an email, then posts the returned user id', async () => {
-    inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'u-9' } }, error: null })
+  it('posts a manager with an email as { fullName, role, email }, no userId: the API sends the invite', async () => {
     staffFetch.mockResolvedValue(json(201, { id: 'p2' }))
-    const result = await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))
+    const result = await addStaff(form({ full_name: 'Mia', role: 'manager', email: ' mia@example.com ' }))
     expect(result).toEqual({ ok: true })
-    expect(inviteUserByEmail).toHaveBeenCalledWith('mia@example.com')
-    expect(sentBody(0)).toEqual({ fullName: 'Mia', role: 'manager', email: 'mia@example.com', userId: 'u-9' })
+    expect(staffFetch).toHaveBeenCalledTimes(1)
+    expect(sentBody(0)).toEqual({ fullName: 'Mia', role: 'manager', email: 'mia@example.com' })
+    expect(sentBody(0)).not.toHaveProperty('userId')
+  })
+
+  it('posts an owner with an email the same way', async () => {
+    staffFetch.mockResolvedValue(json(201, { id: 'p4' }))
+    expect(await addStaff(form({ full_name: 'Kenn', role: 'owner', email: 'kenn@example.com' }))).toEqual({ ok: true })
+    expect(sentBody(0)).toEqual({ fullName: 'Kenn', role: 'owner', email: 'kenn@example.com' })
   })
 
   it('adds a manager without an email as a till-only person', async () => {
     staffFetch.mockResolvedValue(json(201, { id: 'p3' }))
     const result = await addStaff(form({ full_name: 'Leo', role: 'manager', email: '' }))
     expect(result).toEqual({ ok: true })
-    expect(inviteUserByEmail).not.toHaveBeenCalled()
     expect(sentBody(0)).toEqual({ fullName: 'Leo', role: 'manager' })
   })
 
-  it('returns the API message on a 409', async () => {
-    inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'u-9' } }, error: null })
-    staffFetch.mockResolvedValue(json(409, { code: 'ALREADY_STAFF', message: 'That login already belongs to a staff member.' }))
+  it.each([
+    ['ALREADY_REGISTERED', 'That email already has a website login. Use a different email, or ask them to sign in first.'],
+    ['EMAIL_TAKEN', 'That email already belongs to a staff member.'],
+    ['ALREADY_STAFF', 'That login already belongs to a staff member.'],
+  ])('shows the API message for %s', async (code, message) => {
+    staffFetch.mockResolvedValue(json(409, { code, message }))
     const result = await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))
-    expect(result).toEqual({ ok: false, message: 'That login already belongs to a staff member.' })
+    expect(result).toEqual({ ok: false, message })
+    expect(revalidatePath).not.toHaveBeenCalled()
   })
 
-  it('keeps the login when the API says it already belongs to staff (ALREADY_STAFF, EMAIL_TAKEN)', async () => {
-    // Supabase re-sends an invite to an unconfirmed user and returns the same, older user: not ours to delete.
-    inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'u-9' } }, error: null })
-    staffFetch.mockResolvedValueOnce(json(409, { code: 'ALREADY_STAFF', message: 'That login already belongs to a staff member.' }))
-    expect(await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))).toEqual({
-      ok: false,
-      message: 'That login already belongs to a staff member.',
-    })
-    staffFetch.mockResolvedValueOnce(json(409, { code: 'EMAIL_TAKEN', message: 'That email already belongs to a staff member.' }))
-    expect(await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))).toEqual({
-      ok: false,
-      message: 'That email already belongs to a staff member.',
-    })
-    expect(deleteUser).not.toHaveBeenCalled()
+  it('INVITE_FAILED reads "Could not send the invite. Try again."', async () => {
+    staffFetch.mockResolvedValue(json(502, { code: 'INVITE_FAILED', message: 'upstream said no' }))
+    const result = await addStaff(form({ full_name: 'Mia', role: 'owner', email: 'mia@example.com' }))
+    expect(result).toEqual({ ok: false, message: 'Could not send the invite. Try again.' })
   })
 
-  it('deletes the just-invited login when the API fails with a 500', async () => {
-    inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'u-9' } }, error: null })
-    deleteUser.mockResolvedValue({ data: {}, error: null })
+  it('any other 5xx is the generic message', async () => {
     staffFetch.mockResolvedValue(json(500, { code: 'INTERNAL', message: 'boom' }))
     const result = await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))
     expect(result).toEqual({ ok: false, message: 'Something went wrong. Try again.' })
-    expect(deleteUser).toHaveBeenCalledWith('u-9')
   })
 
-  it('still returns the API error when deleting the invited login fails', async () => {
-    const warn = vi.spyOn(console, 'error').mockImplementation(() => {})
-    inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'u-9' } }, error: null })
-    deleteUser.mockRejectedValue(new Error('auth down'))
-    staffFetch.mockRejectedValue(new Error('network'))
-    const result = await addStaff(form({ full_name: 'Mia', role: 'manager', email: 'mia@example.com' }))
-    expect(result).toEqual({ ok: false, message: "Couldn't reach the server. Try again." })
-    expect(deleteUser).toHaveBeenCalledWith('u-9')
-    expect(warn).toHaveBeenCalled()
-    warn.mockRestore()
-  })
-
-  it('does not delete any login when there was no invite', async () => {
+  it('returns the API message on a 400', async () => {
     staffFetch.mockResolvedValue(json(400, { code: 'BAD_REQUEST', message: 'Name is too long.' }))
     const result = await addStaff(form({ full_name: 'Ana', role: 'barista' }))
     expect(result).toEqual({ ok: false, message: 'Name is too long.' })
-    expect(deleteUser).not.toHaveBeenCalled()
-  })
-
-  it('reports an invite failure without calling the API', async () => {
-    inviteUserByEmail.mockResolvedValue({ data: { user: null }, error: { message: 'rate limited' } })
-    const result = await addStaff(form({ full_name: 'Mia', role: 'owner', email: 'mia@example.com' }))
-    expect(result.ok).toBe(false)
-    expect(staffFetch).not.toHaveBeenCalled()
   })
 
   it('rejects an empty name and an unknown role', async () => {
@@ -202,5 +166,12 @@ describe('no direct staff writes', () => {
     await issuePin('p1')
     await addStaff(form({ full_name: 'Ana', role: 'barista' }))
     expect(serverFrom).not.toHaveBeenCalled()
+  })
+})
+
+describe('no service key', () => {
+  it('the staff actions never import the admin client or invite or delete logins themselves', () => {
+    const src = readFileSync(path.join(__dirname, 'actions.ts'), 'utf8')
+    expect(src).not.toMatch(/getAdminClient|supabase\/admin|inviteUserByEmail|deleteUser/)
   })
 })

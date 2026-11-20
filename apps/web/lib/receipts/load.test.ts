@@ -1,55 +1,124 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PublicReceiptView } from '@kennko/core'
 
 vi.mock('server-only', () => ({}))
 
-type Call = [string, ...unknown[]]
-let calls: Call[] = []
-let result: { data: unknown; error: unknown } = { data: null, error: null }
+const publicFetch = vi.fn()
+vi.mock('@/lib/api/client', () => ({ publicFetch: (...a: unknown[]) => publicFetch(...a) }))
 
-vi.mock('@/lib/supabase/admin', () => ({
-  getAdminClient: () => {
-    const chain: Record<string, unknown> = {}
-    for (const name of ['from', 'select', 'eq', 'order']) {
-      chain[name] = (...args: unknown[]) => { calls.push([name, ...args]); return chain }
-    }
-    chain.maybeSingle = async () => result
-    return chain
-  },
-}))
+const { loadReceipt, loadReceiptOrder, loadShopSettings, FALLBACK_SETTINGS } = await import('./load')
+const { buildReceipt } = await import('./receipt')
 
-const { loadReceiptOrder } = await import('./load')
-
-const row = {
-  order_code: 'KNK-7F3Q', ticket_series: 'W', ticket_number: 3, customer_name: 'Ana', fulfilment: 'pickup',
-  delivery_address: null, delivery_barangay: null, prep_status: 'preparing', payment_status: 'paid',
-  cancelled_at: null, subtotal_centavos: 100, discount_centavos: 0, delivery_fee_centavos: 0, total_centavos: 100,
-  payments: [], order_lines: [],
+const shop = {
+  displayName: 'Kennko Coffee', registeredName: 'Kennko Inc.', tin: '123', address: '7 Settings Rd, Butuan',
+  phone: '0917', facebookUrl: 'fb.com/kennko', receiptFooter: 'Thanks!',
 }
 
-describe('loadReceiptOrder', () => {
-  beforeEach(() => { calls = [] })
-  afterEach(() => { vi.restoreAllMocks() })
+const view: PublicReceiptView = {
+  order: {
+    orderCode: 'KNK-7F3Q', ticket: 'W3', customerFirstName: 'Ana', fulfilment: 'delivery',
+    deliveryBarangay: 'Villa Kananga', prepStatus: 'preparing', paymentStatus: 'paid', cancelledAt: null,
+    subtotalCentavos: 29000, discountCentavos: 0, deliveryFeeCentavos: 2000, totalCentavos: 31000,
+    payment: { referenceMasked: '••••1234', verifiedAt: '2026-11-20T04:30:00.000Z' },
+    lines: [{
+      itemName: 'Spanish Latte', variantLabel: '16oz', quantity: 2, unitPriceCentavos: 14500,
+      lineTotalCentavos: 29000, options: [{ name: 'Oat milk', priceCentavos: 0 }],
+    }],
+  },
+  shop,
+}
 
-  it('a query error is logged and thrown, not treated as not found', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    result = { data: null, error: { message: 'connection reset' } }
-    await expect(loadReceiptOrder('knk-7f3q')).rejects.toThrow()
-    expect(error).toHaveBeenCalled()
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+
+beforeEach(() => {
+  publicFetch.mockReset()
+  publicFetch.mockImplementation(async () => json(200, view))
+})
+afterEach(() => { vi.restoreAllMocks() })
+
+const expectedOrder = {
+  orderCode: 'KNK-7F3Q', ticket: 'W3', customerName: 'Ana', fulfilment: 'delivery',
+  deliveryAddress: null, deliveryBarangay: 'Villa Kananga', paidAt: '2026-11-20T04:30:00.000Z',
+  paymentStatus: 'paid', prepStatus: 'preparing', cancelledAt: null, reference: '••••1234',
+  subtotalCentavos: 29000, discountCentavos: 0, deliveryFeeCentavos: 2000, totalCentavos: 31000,
+  lines: view.order.lines,
+}
+
+describe('loadReceipt', () => {
+  it('reads the public receipt endpoint once, with the encoded code', async () => {
+    await loadReceipt('knk 7f3q')
+    expect(publicFetch).toHaveBeenCalledTimes(1)
+    expect(publicFetch.mock.calls[0]![0]).toBe('/v1/orders/by-code/knk%207f3q/receipt')
   })
 
-  it('a missing order is null', async () => {
-    result = { data: null, error: null }
+  it('maps to the same ReceiptOrder as before and the shop settings', async () => {
+    const r = await loadReceipt('KNK-7F3Q')
+    expect(r).toEqual({ order: expectedOrder, settings: shop })
+    expect(Object.keys(r!.order).sort()).toEqual(Object.keys(expectedOrder).sort())
+  })
+
+  it('renders the public receipt exactly as before', async () => {
+    const r = await loadReceipt('KNK-7F3Q')
+    const receipt = buildReceipt(r!.order, r!.settings, 'public')!
+    expect(receipt.customer).toBe('Ana')
+    expect(receipt.fulfilment).toBe('Delivery to Villa Kananga')
+    expect(receipt.reference).toBe('••••1234')
+  })
+
+  it("an empty first name reads 'Customer'", async () => {
+    publicFetch.mockResolvedValue(json(200, { ...view, order: { ...view.order, customerFirstName: '' } }))
+    const r = await loadReceipt('KNK-7F3Q')
+    expect(r!.order.customerName).toBe('Customer')
+  })
+
+  it('no payment yet: no paidAt, no reference, and no receipt to build', async () => {
+    publicFetch.mockResolvedValue(json(200, {
+      ...view, order: { ...view.order, paymentStatus: 'pending_verification', payment: null },
+    }))
+    const r = await loadReceipt('KNK-7F3Q')
+    expect(r!.order).toMatchObject({ paidAt: null, reference: null })
+    expect(buildReceipt(r!.order, r!.settings, 'public')).toBeNull()
+  })
+
+  it('shop: null uses FALLBACK_SETTINGS', async () => {
+    publicFetch.mockResolvedValue(json(200, { ...view, shop: null }))
+    expect((await loadReceipt('KNK-7F3Q'))!.settings).toEqual(FALLBACK_SETTINGS)
+  })
+
+  it('a 404 is null', async () => {
+    publicFetch.mockResolvedValue(json(404, { code: 'NOT_FOUND' }))
+    expect(await loadReceipt('KNK-NOPE')).toBeNull()
+  })
+
+  it('any other failure is logged and thrown, not treated as not found', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    publicFetch.mockResolvedValue(json(500, { code: 'INTERNAL' }))
+    await expect(loadReceipt('KNK-7F3Q')).rejects.toThrow()
+    publicFetch.mockRejectedValue(new Error('network'))
+    await expect(loadReceipt('KNK-7F3Q')).rejects.toThrow()
+    expect(error).toHaveBeenCalled()
+  })
+})
+
+describe('loadReceiptOrder and loadShopSettings', () => {
+  it('read the same response', async () => {
+    expect(await loadReceiptOrder('KNK-7F3Q')).toEqual(expectedOrder)
+    expect(await loadShopSettings('KNK-7F3Q')).toEqual(shop)
+  })
+
+  it('loadReceiptOrder: 404 is null', async () => {
+    publicFetch.mockResolvedValue(json(404, { code: 'NOT_FOUND' }))
     expect(await loadReceiptOrder('KNK-NOPE')).toBeNull()
   })
 
-  it('orders lines by created_at then id, and options by id', async () => {
-    result = { data: row, error: null }
-    expect(await loadReceiptOrder('knk-7f3q')).toMatchObject({ orderCode: 'KNK-7F3Q' })
-    const orders = calls.filter((c) => c[0] === 'order').map((c) => c.slice(1))
-    expect(orders).toEqual([
-      ['created_at', { ascending: true, referencedTable: 'order_lines' }],
-      ['id', { ascending: true, referencedTable: 'order_lines' }],
-      ['id', { ascending: true, referencedTable: 'order_lines.order_line_options' }],
-    ])
+  it('loadShopSettings falls back on any failure or a missing shop', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    publicFetch.mockResolvedValue(json(200, { ...view, shop: null }))
+    expect(await loadShopSettings('KNK-7F3Q')).toEqual(FALLBACK_SETTINGS)
+    publicFetch.mockResolvedValue(json(500, {}))
+    expect(await loadShopSettings('KNK-7F3Q')).toEqual(FALLBACK_SETTINGS)
+    publicFetch.mockResolvedValue(json(404, {}))
+    expect(await loadShopSettings('KNK-7F3Q')).toEqual(FALLBACK_SETTINGS)
   })
 })

@@ -4,7 +4,7 @@ const staffFetch = vi.fn()
 const sendEmail = vi.fn(async (..._a: unknown[]) => undefined)
 const revalidatePath = vi.fn()
 const update = vi.fn()
-let adminThrows = false
+let noticeThrows = false
 
 vi.mock('next/cache', () => ({ revalidatePath: (...a: unknown[]) => revalidatePath(...a) }))
 vi.mock('@/lib/auth/session', () => ({ requireStaff: vi.fn(async () => ({ id: 's1', role: 'owner' })) }))
@@ -12,64 +12,60 @@ vi.mock('@/lib/api/client', () => ({ staffFetch: (...a: unknown[]) => staffFetch
 vi.mock('@/lib/email/send', () => ({ sendEmail: (...a: unknown[]) => sendEmail(...a) }))
 let receiptThrows = false
 let receiptPaid = true
-vi.mock('@/lib/receipts/load', () => ({
-  loadReceiptOrder: async () => {
-    if (receiptThrows) throw new Error('receipt db down')
-    return {
-      orderCode: 'KNK-7F3Q', ticket: 'W3', customerName: 'Ana Cruz', fulfilment: 'pickup',
-      deliveryAddress: null, deliveryBarangay: null, paidAt: '2026-11-20T04:30:00Z',
-      paymentStatus: receiptPaid ? 'paid' : 'unpaid', prepStatus: 'preparing', cancelledAt: null,
-      reference: '1234567891234', subtotalCentavos: 29000, discountCentavos: 0,
+const loadReceipt = vi.fn(async (_code: string) => {
+  if (receiptThrows) throw new Error('receipt api down')
+  // The PUBLIC receipt: first name, barangay only, masked reference.
+  return {
+    order: {
+      orderCode: notice.orderCode, ticket: 'W3', customerName: 'Ana', fulfilment: notice.fulfilment,
+      deliveryAddress: null, deliveryBarangay: notice.fulfilment === 'delivery' ? 'Villa Kananga' : null,
+      paidAt: '2026-11-20T04:30:00Z', paymentStatus: receiptPaid ? 'paid' : 'unpaid', prepStatus: 'preparing',
+      cancelledAt: null, reference: '••••1234', subtotalCentavos: 29000, discountCentavos: 0,
       deliveryFeeCentavos: 0, totalCentavos: 29000,
       lines: [{ itemName: 'Spanish Latte', variantLabel: '16oz', quantity: 2,
         unitPriceCentavos: 14500, lineTotalCentavos: 29000, options: [] }],
-    }
-  },
-  loadShopSettings: async () => ({
-    displayName: 'Kennko Coffee', registeredName: null, tin: null, address: '7 Settings Rd, Butuan',
-    phone: null, facebookUrl: null, receiptFooter: 'Ask for your official receipt.',
-  }),
-}))
+    },
+    settings: {
+      displayName: 'Kennko Coffee', registeredName: null, tin: null, address: '7 Settings Rd, Butuan',
+      phone: null, facebookUrl: null, receiptFooter: 'Ask for your official receipt.',
+    },
+  }
+})
+vi.mock('@/lib/receipts/load', () => ({ loadReceipt: (code: string) => loadReceipt(code) }))
 vi.mock('@/lib/supabase/server', () => ({
   getServerClient: async () => ({ from: () => ({ update }) }),
 }))
 
-const orderRow = {
-  order_code: 'KNK-7F3Q', ticket_series: 'W', ticket_number: 3, customer_name: 'Ana Cruz',
-  customer_email: 'ana@example.com', fulfilment: 'pickup', fulfil_at: '2026-11-20T08:00:00Z',
-  total_centavos: 29000, delivery_address: null,
-  order_lines: [{
-    item_name: 'Spanish Latte', variant_label: '16oz', quantity: 2,
-    ice_level: null, ice_serve: null, note: null, order_line_options: [],
-  }],
+const baseNotice = {
+  to: 'ana@example.com', orderCode: 'KNK-7F3Q', ticket: 'W3', customerName: 'Ana Cruz',
+  fulfilment: 'pickup' as 'pickup' | 'delivery', fulfilAt: '2026-11-20T08:00:00.000Z' as string | null,
+  totalCentavos: 29000, deliveryAddress: null as string | null, reference: '1234567891234' as string | null,
+  items: [{ name: 'Spanish Latte', variantLabel: '16oz', quantity: 2 }],
 }
-vi.mock('@/lib/supabase/admin', () => ({
-  getAdminClient: () => {
-    if (adminThrows) throw new Error('db down')
-    return {
-    from: (table: string) => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({
-            data: table === 'payments' ? { order_id: 'o1' } : orderRow,
-            error: null,
-          }),
-        }),
-      }),
-    }),
-    storage: { from: () => ({ createSignedUrl: async () => ({ data: { signedUrl: 'u' } }) }) },
-  }
-  },
-}))
-
-import { confirmPayment, rejectPayment, advanceStatus, cancelOrder } from './actions'
+let notice = { ...baseNotice }
+let noticeStatus = 200
 
 const reply = (status: number, body: unknown = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
+/** The action's own call answers `status`/`body`; the notice and proof reads answer from the fixtures. */
+function answer(status: number, body: unknown = {}) {
+  staffFetch.mockImplementation(async (path: string) => {
+    if (path.endsWith('/notice')) {
+      if (noticeThrows) throw new Error('api down')
+      return noticeStatus === 200 ? reply(200, notice) : reply(noticeStatus, { code: 'NO_EMAIL' })
+    }
+    return reply(status, body)
+  })
+}
+
+import { confirmPayment, rejectPayment, advanceStatus, cancelOrder, proofUrl } from './actions'
+
 beforeEach(() => {
   vi.clearAllMocks()
-  adminThrows = false
+  noticeThrows = false
+  notice = { ...baseNotice }
+  noticeStatus = 200
   receiptThrows = false
   receiptPaid = true
   vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -77,7 +73,7 @@ beforeEach(() => {
 
 describe('confirmPayment', () => {
   it('verifies through the API, emails the customer once, and revalidates', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     expect(await confirmPayment('p1')).toEqual({ ok: true })
     expect(staffFetch).toHaveBeenCalledWith('/v1/payments/p1/verify', { method: 'POST' })
     expect(sendEmail).toHaveBeenCalledTimes(1)
@@ -87,7 +83,7 @@ describe('confirmPayment', () => {
   })
 
   it('maps 409 to the changed-elsewhere message and sends no email', async () => {
-    staffFetch.mockResolvedValue(reply(409, { code: 'STATUS_CHANGED', message: 'x' }))
+    answer(409, { code: 'STATUS_CHANGED', message: 'x' })
     expect(await confirmPayment('p1')).toEqual({
       ok: false, message: 'This order changed on another screen. Refresh to see it.',
     })
@@ -104,7 +100,7 @@ describe('confirmPayment', () => {
 
 describe('customer email is awaited', () => {
   it('confirm does not resolve until the email send finishes', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     let finish: (v: undefined) => void = () => {}
     sendEmail.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
     let settled = false
@@ -119,16 +115,16 @@ describe('customer email is awaited', () => {
 
 describe('email trouble never reaches the UI', () => {
   it('confirm still returns ok and revalidates when the email lookup throws', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
-    adminThrows = true
+    answer(200, { ok: true })
+    noticeThrows = true
     expect(await confirmPayment('p1')).toEqual({ ok: true })
     expect(sendEmail).not.toHaveBeenCalled()
     expect(revalidatePath).toHaveBeenCalledWith('/admin', 'layout')
   })
 
   it('reject still returns ok when the email lookup throws', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
-    adminThrows = true
+    answer(200, { ok: true })
+    noticeThrows = true
     expect(await rejectPayment('p1', 'No match')).toEqual({ ok: true })
     expect(revalidatePath).toHaveBeenCalledWith('/admin', 'layout')
   })
@@ -136,7 +132,7 @@ describe('email trouble never reaches the UI', () => {
 
 describe('customer email data', () => {
   it('formats the pickup time in Manila time', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     await confirmPayment('p1')
     const mail = sendEmail.mock.calls[0][0] as { subject: string; text: string }
     // 08:00 UTC is 4:00 PM in Manila.
@@ -148,7 +144,7 @@ describe('customer email data', () => {
 describe('confirmation email receipt', () => {
   type Mail = { subject: string; text: string; html?: string }
   it('adds the e-receipt and a receipt link', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     await confirmPayment('p1')
     const mail = sendEmail.mock.calls[0][0] as Mail
     expect(mail.subject).toBe('Your Kennko order KNK-7F3Q is confirmed')
@@ -158,7 +154,7 @@ describe('confirmation email receipt', () => {
     expect(mail.text).toContain('THIS IS NOT AN OFFICIAL RECEIPT')
   })
   it('still sends the plain confirmation when the receipt fails to load', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     receiptThrows = true
     await confirmPayment('p1')
     const mail = sendEmail.mock.calls[0][0] as Mail
@@ -166,7 +162,7 @@ describe('confirmation email receipt', () => {
     expect(mail.text).toContain('is confirmed')
   })
   it('still sends the plain confirmation when no receipt can be built', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     receiptPaid = false
     await confirmPayment('p1')
     const mail = sendEmail.mock.calls[0][0] as Mail
@@ -174,30 +170,27 @@ describe('confirmation email receipt', () => {
     expect(mail.text).toContain('is confirmed')
   })
   it('html has an escaped pickup line, as the text body does', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     await confirmPayment('p1')
     const mail = sendEmail.mock.calls[0][0] as Mail
     expect(mail.html).toContain('Pickup on Nov 20, 2026')
     expect(mail.html).toContain('4:00 PM at 7 Settings Rd, Butuan')
   })
   it('html has an escaped delivery line', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
-    Object.assign(orderRow, { fulfilment: 'delivery', delivery_address: '<i>Rizal</i> St' })
-    try { await confirmPayment('p1') } finally {
-      Object.assign(orderRow, { fulfilment: 'pickup', delivery_address: null })
-    }
+    answer(200, { ok: true })
+    notice = { ...baseNotice, fulfilment: 'delivery', deliveryAddress: '<i>Rizal</i> St' }
+    await confirmPayment('p1')
     const mail = sendEmail.mock.calls[0][0] as Mail
     expect(mail.html).toContain('Delivery on Nov 20, 2026')
     expect(mail.html).toContain('&lt;i&gt;Rizal&lt;/i&gt; St')
     expect(mail.html).not.toContain('<i>Rizal')
   })
   it('escapes the receipt href and url-encodes the code', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     const prev = process.env.NEXT_PUBLIC_SITE_URL
     process.env.NEXT_PUBLIC_SITE_URL = 'https://x.test/a&b'
-    orderRow.order_code = 'KNK A&B'
+    notice = { ...baseNotice, orderCode: 'KNK A&B' }
     try { await confirmPayment('p1') } finally {
-      orderRow.order_code = 'KNK-7F3Q'
       if (prev === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
       else process.env.NEXT_PUBLIC_SITE_URL = prev
     }
@@ -205,7 +198,7 @@ describe('confirmation email receipt', () => {
     expect(mail.html).toContain('href="https://x.test/a&amp;b/order/KNK%20A%26B/receipt"')
   })
   it('reject emails carry no html', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     await rejectPayment('p1', 'No match')
     expect((sendEmail.mock.calls[0][0] as Mail).html).toBeUndefined()
   })
@@ -213,7 +206,7 @@ describe('confirmation email receipt', () => {
 
 describe('rejectPayment', () => {
   it('rejects through the API with the reason and emails once', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     expect(await rejectPayment('p1', '  Wrong amount ')).toEqual({ ok: true })
     const [path, init] = staffFetch.mock.calls[0]
     expect(path).toBe('/v1/payments/p1/reject')
@@ -229,7 +222,7 @@ describe('rejectPayment', () => {
   })
 
   it('maps 409', async () => {
-    staffFetch.mockResolvedValue(reply(409, { code: 'STATUS_CHANGED', message: 'x' }))
+    answer(409, { code: 'STATUS_CHANGED', message: 'x' })
     const result = await rejectPayment('p1', 'No match')
     expect(result).toEqual({ ok: false, message: 'This order changed on another screen. Refresh to see it.' })
     expect(sendEmail).not.toHaveBeenCalled()
@@ -238,7 +231,7 @@ describe('rejectPayment', () => {
 
 describe('advanceStatus', () => {
   it('patches the order through the API', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     expect(await advanceStatus('o1', 'preparing')).toEqual({ ok: true })
     const [path, init] = staffFetch.mock.calls[0]
     expect(path).toBe('/v1/orders/o1')
@@ -248,35 +241,35 @@ describe('advanceStatus', () => {
   })
 
   it('maps STATUS_CHANGED to the changed-elsewhere message', async () => {
-    staffFetch.mockResolvedValue(reply(409, { code: 'STATUS_CHANGED', message: 'x' }))
+    answer(409, { code: 'STATUS_CHANGED', message: 'x' })
     expect(await advanceStatus('o1', 'ready')).toEqual({
       ok: false, message: 'This order changed on another screen. Refresh to see it.',
     })
   })
 
   it('maps BAD_TRANSITION to the step-not-allowed message', async () => {
-    staffFetch.mockResolvedValue(reply(409, { code: 'BAD_TRANSITION', message: 'x' }))
+    answer(409, { code: 'BAD_TRANSITION', message: 'x' })
     expect(await advanceStatus('o1', 'ready')).toEqual({
       ok: false, message: "That step isn't allowed for this order. Refresh to see where it is.",
     })
   })
 
   it('maps FORBIDDEN outside cancel to the ask-the-owner message', async () => {
-    staffFetch.mockResolvedValue(reply(403, { code: 'FORBIDDEN', message: 'x' }))
+    answer(403, { code: 'FORBIDDEN', message: 'x' })
     expect(await advanceStatus('o1', 'ready')).toEqual({
       ok: false, message: "Your account can't do that. Ask the owner.",
     })
   })
 
   it('maps 401 to the session-ended message', async () => {
-    staffFetch.mockResolvedValue(reply(401, { code: 'UNAUTHENTICATED', message: 'x' }))
+    answer(401, { code: 'UNAUTHENTICATED', message: 'x' })
     expect(await advanceStatus('o1', 'ready')).toEqual({
       ok: false, message: 'Your session ended. Sign in again.',
     })
   })
 
   it('maps 404 to the no-longer-exists message', async () => {
-    staffFetch.mockResolvedValue(reply(404, { code: 'NOT_FOUND', message: 'x' }))
+    answer(404, { code: 'NOT_FOUND', message: 'x' })
     expect(await advanceStatus('o1', 'ready')).toEqual({ ok: false, message: 'This order no longer exists.' })
   })
 
@@ -286,14 +279,14 @@ describe('advanceStatus', () => {
     [500, { code: 'INTERNAL', message: 'relation "orders" does not exist' }],
     [502, 'not json'],
   ])('never shows the raw API message (%s)', async (status, body) => {
-    staffFetch.mockResolvedValue(reply(status, body))
+    answer(status, body)
     expect(await advanceStatus('o1', 'ready')).toEqual({ ok: false, message: 'Something went wrong. Try again.' })
   })
 })
 
 describe('cancelOrder', () => {
   it('cancels through the API with the reason', async () => {
-    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    answer(200, { ok: true })
     expect(await cancelOrder('o1', 'Out of milk')).toEqual({ ok: true })
     const [path, init] = staffFetch.mock.calls[0]
     expect(path).toBe('/v1/orders/o1/cancel')
@@ -302,7 +295,7 @@ describe('cancelOrder', () => {
   })
 
   it('maps 403 to the owner-only message', async () => {
-    staffFetch.mockResolvedValue(reply(403, { code: 'FORBIDDEN', message: 'x' }))
+    answer(403, { code: 'FORBIDDEN', message: 'x' })
     expect(await cancelOrder('o1', 'Out of milk')).toEqual({
       ok: false, message: 'Only the owner can cancel orders.',
     })
@@ -311,5 +304,63 @@ describe('cancelOrder', () => {
   it('needs a reason', async () => {
     expect((await cancelOrder('o1', ' ')).ok).toBe(false)
     expect(staffFetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('customer email data comes from the payment notice', () => {
+  type Mail = { to: string[]; subject: string; text: string; html?: string }
+
+  it('confirm reads the notice and sends to notice.to with the full-name, full-reference receipt', async () => {
+    answer(200, { ok: true })
+    notice = { ...baseNotice, to: 'ana.cruz@example.com', fulfilment: 'delivery', deliveryAddress: '1 Gate St, Ampayon' }
+    expect(await confirmPayment('p1')).toEqual({ ok: true })
+    expect(staffFetch.mock.calls.map((c) => c[0])).toEqual(['/v1/payments/p1/verify', '/v1/payments/p1/notice'])
+    expect(loadReceipt).toHaveBeenCalledWith('KNK-7F3Q')
+    const mail = sendEmail.mock.calls[0]![0] as Mail
+    expect(mail.to).toEqual(['ana.cruz@example.com'])
+    // The email receipt is the full one: name, street address and GCash reference from the notice.
+    expect(mail.text).toContain('Customer: Ana Cruz')
+    expect(mail.text).toContain('1234567891234')
+    expect(mail.text).not.toContain('••••1234')
+    expect(mail.text).toContain('Delivery to 1 Gate St, Ampayon')
+  })
+
+  it('a notice without a reference leaves the receipt reference empty, never the masked one', async () => {
+    answer(200, { ok: true })
+    notice = { ...baseNotice, reference: null }
+    await confirmPayment('p1')
+    expect((sendEmail.mock.calls[0]![0] as Mail).text).not.toContain('••••')
+  })
+
+  it('a notice 404 sends no email and the action is still ok', async () => {
+    answer(200, { ok: true })
+    noticeStatus = 404
+    expect(await confirmPayment('p1')).toEqual({ ok: true })
+    expect(await rejectPayment('p1', 'No match')).toEqual({ ok: true })
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(revalidatePath).toHaveBeenCalledWith('/admin', 'layout')
+  })
+
+  it('reject reads the notice and sends to notice.to', async () => {
+    answer(200, { ok: true })
+    await rejectPayment('p1', 'No match')
+    expect(staffFetch.mock.calls[1]![0]).toBe('/v1/payments/p1/notice')
+    expect((sendEmail.mock.calls[0]![0] as Mail).to).toEqual(['ana@example.com'])
+    expect(loadReceipt).not.toHaveBeenCalled()
+  })
+})
+
+describe('proofUrl', () => {
+  it('asks the API for a signed link for the payment', async () => {
+    answer(200, { url: 'https://signed.test/x' })
+    expect(await proofUrl('p1')).toBe('https://signed.test/x')
+    expect(staffFetch.mock.calls[0]![0]).toBe('/v1/payments/p1/proof')
+  })
+
+  it('is null on a 404 or a failure', async () => {
+    answer(404, { code: 'NOT_FOUND' })
+    expect(await proofUrl('p1')).toBeNull()
+    staffFetch.mockRejectedValue(new Error('network'))
+    expect(await proofUrl('p1')).toBeNull()
   })
 })

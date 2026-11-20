@@ -1,4 +1,5 @@
 import 'server-only'
+import { webKeyFetch } from '@/lib/api/client'
 
 type SendArgs = { to: string[]; subject: string; text: string; html?: string }
 
@@ -41,12 +42,21 @@ export async function sendEmail({ to, subject, text, html }: SendArgs): Promise<
   }
 }
 
+/**
+ * Who gets the new-order alert: active staff with an email, from the API's web-key route (Ruling 13;
+ * the checkout has no signed-in user). Unset key, an API error or a bad body all give [] with a log
+ * line: the alert is skipped, and the checkout carries on.
+ */
 export async function activeStaffEmails(): Promise<string[]> {
-  const { getAdminClient } = await import('@/lib/supabase/admin')
-  const { data } = await getAdminClient()
-    .from('staff')
-    .select('email')
-    .eq('is_active', true)
-    .not('email', 'is', null)
-  return (data ?? []).map((row: { email: string }) => row.email)
+  try {
+    const res = await webKeyFetch('/v1/staff/alert-emails')
+    if (res?.ok) {
+      const body = (await res.json()) as { emails?: unknown }
+      if (Array.isArray(body.emails) && body.emails.every((e) => typeof e === 'string')) return body.emails
+    }
+  } catch {
+    // Logged below, without the cause: it could carry the request headers.
+  }
+  console.error('[email] staff alert list unavailable')
+  return []
 }
