@@ -101,7 +101,7 @@ export function receiptHtml(r: Receipt): string {
 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;border:1px solid #dddddd;font-family:Arial,Helvetica,sans-serif;background:#ffffff;">
 <tr><td style="background:${BLUE};color:#ffffff;padding:16px 20px;"><div style="font-size:20px;font-weight:bold;">${e(r.seller.registeredName ?? r.seller.name)}</div><div style="font-size:13px;letter-spacing:1px;">${e(r.title)}</div></td></tr>
-<tr><td style="padding:10px 20px;background:#111111;color:#ffffff;text-align:center;font-weight:bold;font-size:14px;letter-spacing:1px;">${e(r.notice)}</td></tr>
+<tr><td style="padding:10px 20px;background:#FFB800;color:#111111;text-align:center;font-weight:bold;font-size:14px;letter-spacing:1px;">${e(r.notice)}</td></tr>
 ${stamp}
 <tr><td style="padding:12px 20px;font-size:12px;color:#666666;line-height:1.5;">${sellerLines}</td></tr>
 <tr><td style="padding:0 20px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">

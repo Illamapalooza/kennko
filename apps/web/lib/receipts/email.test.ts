@@ -51,3 +51,16 @@ describe('receiptText', () => {
     expect(text).toContain('Latte <b>x</b>')
   })
 })
+
+describe('refunded stamp and brand notice', () => {
+  const refunded = buildReceipt({ ...order, paymentStatus: 'refunded' }, settings, 'email')!
+  it('renders REFUNDED in both versions', () => {
+    expect(receiptHtml(refunded)).toContain('REFUNDED')
+    expect(receiptText(refunded)).toContain('*** REFUNDED ***')
+  })
+  it('uses no dark notice bar', () => {
+    const html = receiptHtml(receipt)
+    expect(html).not.toContain('background:#111111')
+    expect(html).toContain('#FFB800')
+  })
+})

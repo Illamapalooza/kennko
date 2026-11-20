@@ -100,6 +100,12 @@ async function emailFor(paymentId: string): Promise<{ data: OrderEmailData; to: 
 
 type EmailContent = { subject: string; text: string; html?: string }
 
+function whenWhere(d: OrderEmailData): string {
+  return d.fulfilment === 'delivery'
+    ? `Delivery on ${d.fulfilAt} to ${d.deliveryAddress}`
+    : `Pickup on ${d.fulfilAt} at CT. Montalban St., Villa Kananga`
+}
+
 /**
  * Today's confirmation, plus the e-receipt when it can be built. A receipt problem of any kind
  * (load error, unverified payment) falls back to the plain confirmation, never blocks it.
@@ -119,6 +125,7 @@ async function confirmationWithReceipt(d: OrderEmailData): Promise<EmailContent>
       html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#111111;">
 <p>Hi ${escapeHtml(d.customerName)},</p>
 <p>We checked your GCash payment and your order ${escapeHtml(d.orderCode)} is confirmed. Thanks for ordering from Kennko Coffee.</p>
+<p>${escapeHtml(whenWhere(d))}</p>
 ${receiptHtml(receipt)}
 <p>View or print your receipt: <a href="${escapeHtml(link)}" style="color:#0055FF;">${escapeHtml(link)}</a></p>
 </div>`,

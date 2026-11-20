@@ -173,6 +173,37 @@ describe('confirmation email receipt', () => {
     expect(mail.html).toBeUndefined()
     expect(mail.text).toContain('is confirmed')
   })
+  it('html has an escaped pickup line, as the text body does', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    await confirmPayment('p1')
+    const mail = sendEmail.mock.calls[0][0] as Mail
+    expect(mail.html).toContain('Pickup on Nov 20, 2026')
+    expect(mail.html).toContain('4:00 PM at CT. Montalban St., Villa Kananga')
+  })
+  it('html has an escaped delivery line', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    Object.assign(orderRow, { fulfilment: 'delivery', delivery_address: '<i>Rizal</i> St' })
+    try { await confirmPayment('p1') } finally {
+      Object.assign(orderRow, { fulfilment: 'pickup', delivery_address: null })
+    }
+    const mail = sendEmail.mock.calls[0][0] as Mail
+    expect(mail.html).toContain('Delivery on Nov 20, 2026')
+    expect(mail.html).toContain('&lt;i&gt;Rizal&lt;/i&gt; St')
+    expect(mail.html).not.toContain('<i>Rizal')
+  })
+  it('escapes the receipt href and url-encodes the code', async () => {
+    staffFetch.mockResolvedValue(reply(200, { ok: true }))
+    const prev = process.env.NEXT_PUBLIC_SITE_URL
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://x.test/a&b'
+    orderRow.order_code = 'KNK A&B'
+    try { await confirmPayment('p1') } finally {
+      orderRow.order_code = 'KNK-7F3Q'
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+      else process.env.NEXT_PUBLIC_SITE_URL = prev
+    }
+    const mail = sendEmail.mock.calls[0][0] as Mail
+    expect(mail.html).toContain('href="https://x.test/a&amp;b/order/KNK%20A%26B/receipt"')
+  })
   it('reject emails carry no html', async () => {
     staffFetch.mockResolvedValue(reply(200, { ok: true }))
     await rejectPayment('p1', 'No match')
