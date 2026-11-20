@@ -99,6 +99,15 @@ test('maps every old status to a prep/payment pair with one payment each', async
   expect(rows[4].fulfilment).toBe('delivery')
 })
 
+test('a legacy cancelled order gets cancelled_at (its created_at); a legacy rejection does not', async () => {
+  const rows = await db.sql`
+    select id, cancelled_at, cancelled_at = created_at as at_created from orders order by id`
+  rows.forEach((r, i) => {
+    if (i + 1 === 8) expect(r.at_created).toBe(true)
+    else expect(r.cancelled_at).toBeNull()
+  })
+})
+
 test('records one created event per old order', async () => {
   const rows = await db.sql`
     select o.prep_status, e.kind, e.to_value, e.occurred_at = o.created_at as at_created, e.result
@@ -216,17 +225,34 @@ test('anon and authenticated hold no privileges on ticket_counters, and only sel
   ])
 })
 
+test('anon and authenticated keep only select on orders, order_lines and order_line_options', async () => {
+  const privs = await db.sql`
+    select r.role, t.tbl, p.priv, has_table_privilege(r.role, t.tbl, p.priv) as has
+    from (values ('anon'), ('authenticated')) r(role),
+         (values ('orders'), ('order_lines'), ('order_line_options')) t(tbl),
+         (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) p(priv)`
+  for (const x of privs) expect(`${x.role}:${x.tbl}:${x.priv}:${x.has}`).toBe(`${x.role}:${x.tbl}:${x.priv}:${x.priv === 'SELECT'}`)
+  expect(privs).toHaveLength(30)
+})
+
+test('the old gcash reference index is gone', async () => {
+  const idx = await db.sql`select 1 from pg_indexes where indexname = 'orders_gcash_reference_idx'`
+  expect(idx).toHaveLength(0)
+})
+
 test('staff read orders and payments but can no longer update orders', async () => {
   const result = await asUser(db.sql, OWNER, async (tx) => ({
     orders: await tx`select id from orders`,
     payments: await tx`select id from payments`,
     events: await tx`select id from order_events`,
-    updated: await tx`update orders set staff_note = 'x' returning id`,
   }))
   expect(result.orders).toHaveLength(8)
   expect(result.payments).toHaveLength(8)
   expect(result.events).toHaveLength(8)
-  expect(result.updated).toHaveLength(0)
+  // No update privilege at all now, not merely no policy.
+  await expect(
+    asUser(db.sql, OWNER, (tx) => tx`update orders set staff_note = 'x' returning id`),
+  ).rejects.toMatchObject({ code: '42501' })
 })
 
 const insertOrder = (fields: Record<string, unknown>) => {

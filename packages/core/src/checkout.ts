@@ -32,6 +32,23 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PH_MOBILE_PATTERN = /^(09\d{9}|\+639\d{9})$/
 const REFERENCE_PATTERN = /^[A-Za-z0-9]{6,20}$/
 
+const NAIVE_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/
+const OFFSET_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/
+
+/**
+ * Kennko is in Manila, so a time without an offset (what a `datetime-local` input gives) is
+ * Manila time, never the server's zone or UTC. A value with `Z` or an offset is taken as is.
+ * Anything else is null.
+ */
+export function parseManilaDateTime(value: string): Date | null {
+  let iso: string
+  if (OFFSET_DATETIME.test(value)) iso = value
+  else if (NAIVE_DATETIME.test(value)) iso = `${value}+08:00`
+  else return null
+  const when = new Date(iso)
+  return Number.isNaN(when.getTime()) ? null : when
+}
+
 /**
  * Returns every problem at once so the customer fixes one form rather than
  * discovering five errors one submit at a time.
@@ -63,8 +80,8 @@ export function validateCheckout(input: CheckoutInput, now = new Date()): string
   if (!input.fulfilAt) {
     errors.push('Choose a time.')
   } else {
-    const when = new Date(input.fulfilAt)
-    if (Number.isNaN(when.getTime())) errors.push('Choose a valid time.')
+    const when = parseManilaDateTime(input.fulfilAt)
+    if (!when) errors.push('Choose a valid time.')
     else if (when.getTime() <= now.getTime()) errors.push('Choose a time in the future.')
   }
 

@@ -36,3 +36,10 @@ test('ticket label', () => {
   expect(ticketLabel('W', 12)).toBe('W12')
   expect(ticketLabel('C', 3)).toBe('C3')
 })
+
+test('orderStage shows a staff-cancelled order as cancelled, even with a rejected payment', () => {
+  expect(orderStage('cancelled', 'rejected', true)).toBe('cancelled')
+  expect(orderStage('cancelled', 'pending_verification', true)).toBe('cancelled')
+  expect(orderStage('cancelled', 'rejected', false)).toBe('rejected')
+  expect(orderStage('cancelled', 'rejected')).toBe('rejected')
+})

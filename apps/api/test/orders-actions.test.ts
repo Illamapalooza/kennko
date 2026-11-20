@@ -206,6 +206,13 @@ describe('staff order and payment actions', () => {
     expect(e).toMatchObject({ from_value: 'pending_verification', to_value: 'rejected', staff_id: BARISTA, reason: 'blurry proof' })
   })
 
+  it('reject keeps an existing staff note and appends the reason on a new line', async () => {
+    const { orderId, paymentId } = await seedOnline()
+    expect((await patch(orderId, { staffNote: 'call before delivery' })).status).toBe(200)
+    expect((await reject(paymentId, 'blurry proof')).status).toBe(200)
+    expect((await orderRow(orderId)).staff_note).toBe('call before delivery\nblurry proof')
+  })
+
   it('reject validates the reason', async () => {
     const { paymentId } = await seedOnline()
     expectError(await reject(paymentId, ''), 400, 'INVALID')

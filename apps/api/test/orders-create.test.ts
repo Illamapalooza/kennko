@@ -250,6 +250,13 @@ describe('POST /v1/orders', () => {
       expect(c!.last_number).toBe(2)
     })
 
+    it('a fulfilAt without an offset is Manila time, stored as the right UTC instant', async () => {
+      const r = await post(pickup({ fulfilAt: '2026-11-21T12:00' }))
+      expect(r.status).toBe(201)
+      const [o] = await db.sql`select fulfil_at from orders where id = ${r.body.orderId!}`
+      expect(new Date(o!.fulfil_at).toISOString()).toBe('2026-11-21T04:00:00.000Z')
+    })
+
     it('delivery -> fee from the zone, delivery columns stored', async () => {
       const r = await post(delivery())
       expect(r.status).toBe(201)

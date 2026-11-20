@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateCheckout, type CheckoutInput } from './checkout.ts'
+import { parseManilaDateTime, validateCheckout, type CheckoutInput } from './checkout.ts'
 
 const NOW = new Date('2026-08-24T10:00:00+08:00')
 const LATER = '2026-08-24T11:00:00+08:00'
@@ -88,5 +88,41 @@ describe('validateCheckout', () => {
     expect(validateCheckout(pickup({ gcashReference: 'abc' }), NOW)).toContain(
       'A GCash reference is 6 to 20 letters and numbers.',
     )
+  })
+})
+
+describe('parseManilaDateTime', () => {
+  const NOON_MANILA = '2026-11-21T04:00:00.000Z'
+
+  it('reads an offset-less datetime-local value as Manila time', () => {
+    expect(parseManilaDateTime('2026-11-21T12:00')?.toISOString()).toBe(NOON_MANILA)
+    expect(parseManilaDateTime('2026-11-21T12:00:00')?.toISOString()).toBe(NOON_MANILA)
+  })
+
+  it('keeps an explicit offset or Z as given', () => {
+    expect(parseManilaDateTime('2026-11-21T12:00:00+08:00')?.toISOString()).toBe(NOON_MANILA)
+    expect(parseManilaDateTime('2026-11-21T04:00:00Z')?.toISOString()).toBe(NOON_MANILA)
+  })
+
+  it('returns null for anything else', () => {
+    expect(parseManilaDateTime('garbage')).toBeNull()
+    expect(parseManilaDateTime('')).toBeNull()
+    expect(parseManilaDateTime('2026-11-21')).toBeNull()
+    expect(parseManilaDateTime('2026-13-45T99:99')).toBeNull()
+  })
+})
+
+describe('validateCheckout fulfilment time', () => {
+  it('reads a naive time as Manila when deciding whether it is in the future', () => {
+    // 10:30 Manila is after NOW (10:00 Manila); read as UTC it would be 18:30 Manila and pass too,
+    // so check the other side: 09:30 Manila is in the past.
+    expect(validateCheckout(pickup({ fulfilAt: '2026-08-24T10:30' }), NOW)).toEqual([])
+    expect(validateCheckout(pickup({ fulfilAt: '2026-08-24T09:30' }), NOW)).toContain(
+      'Choose a time in the future.',
+    )
+  })
+
+  it('rejects an unparseable time', () => {
+    expect(validateCheckout(pickup({ fulfilAt: 'soon' }), NOW)).toContain('Choose a valid time.')
   })
 })

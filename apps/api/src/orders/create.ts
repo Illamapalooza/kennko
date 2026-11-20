@@ -2,6 +2,7 @@ import {
   deliveryFeeCentavos,
   iceSummary,
   manilaDay,
+  parseManilaDateTime,
   priceOnlineOrder,
   ridingDistanceKm,
   ticketLabel,
@@ -221,6 +222,8 @@ export async function createOnlineOrder(deps: CreateOrderDeps, input: CreateOrde
 
   // ---- Store the proof, then the order in one transaction. ----
   const businessDay = manilaDay(now.getTime())
+  // validateCheckout already refused an unparseable time; a datetime-local value has no offset and is Manila time.
+  const fulfilAt = parseManilaDateTime(order.fulfilAt)!.toISOString()
   const makeCode = deps.orderCode ?? generateOrderCode
   const isDelivery = order.fulfilment === 'delivery'
 
@@ -257,7 +260,7 @@ export async function createOnlineOrder(deps: CreateOrderDeps, input: CreateOrde
             ${delivery.zoneId},
             ${delivery.pin?.lat ?? null}, ${delivery.pin?.lng ?? null}, ${delivery.pin?.accuracyM ?? null},
             ${delivery.distanceKm !== null ? Number(delivery.distanceKm.toFixed(2)) : null},
-            ${order.fulfilAt}, ${subtotal}, ${delivery.feeCentavos}, ${total}
+            ${fulfilAt}, ${subtotal}, ${delivery.feeCentavos}, ${total}
           ) returning id`
         const orderId = row!.id
 

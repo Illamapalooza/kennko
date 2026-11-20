@@ -31,8 +31,19 @@ export type OrderStage =
   | 'rejected'
   | 'cancelled'
 
-export function orderStage(prep: PrepStatus, payment: PaymentStatus): OrderStage {
-  if (prep === 'cancelled') return payment === 'rejected' ? 'rejected' : 'cancelled'
+/**
+ * `cancelledByStaff` (the order has a `cancelled_at`) wins over a rejected payment: an order the owner
+ * cancelled must never tell the customer their GCash payment could not be matched.
+ */
+export function orderStage(
+  prep: PrepStatus,
+  payment: PaymentStatus,
+  cancelledByStaff = false,
+): OrderStage {
+  if (prep === 'cancelled') {
+    if (cancelledByStaff) return 'cancelled'
+    return payment === 'rejected' ? 'rejected' : 'cancelled'
+  }
   if (prep === 'placed') return payment === 'pending_verification' ? 'awaiting_verification' : 'confirmed'
   return prep
 }

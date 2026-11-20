@@ -159,6 +159,7 @@ export function decidePayment(
     if (!existing) return notFound()
     const orderId = existing.id
     const verifying = input.decision === 'verify'
+    const rejectReason = input.decision === 'reject' ? input.reason : null
 
     const [pay] = verifying
       ? await tx<{ id: string }[]>`
@@ -175,7 +176,9 @@ export function decidePayment(
           where id = ${orderId} and payment_status = 'pending_verification' returning prep_status`
       : await tx<{ prep_status: PrepStatus }[]>`
           update orders set payment_status = 'rejected', prep_status = 'cancelled',
-            staff_note = ${input.decision === 'reject' ? input.reason : null}, updated_at = now()
+            staff_note = case when staff_note is null or staff_note = '' then ${rejectReason}::text
+                              else staff_note || E'\n' || ${rejectReason}::text end,
+            updated_at = now()
           where id = ${orderId} and payment_status = 'pending_verification' returning prep_status`
     if (!order) throw new Abort(await statusChanged(tx, orderId))
 

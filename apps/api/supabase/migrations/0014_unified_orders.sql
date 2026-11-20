@@ -53,7 +53,10 @@ update orders set
                      when 'rejected'              then 'rejected'
                      when 'cancelled'             then case when verified_at is not null then 'refunded' else 'rejected' end
                      else 'paid'
-                   end;
+                   end,
+  -- A legacy cancellation was staff's doing; created_at is the best time we have. Without it the
+  -- website would show an owner-cancelled unverified order as a payment that could not be matched.
+  cancelled_at   = case when status::text = 'cancelled' then created_at end;
 
 update orders o set ticket_number = n.rn
 from (
@@ -207,7 +210,7 @@ select id, 'created', prep_status, created_at, created_at
 from orders;
 
 -- 8. Drop what moved. Dropping `status` drops orders_status_created_idx.
-drop index orders_gcash_reference_idx;
+drop index if exists orders_gcash_reference_idx;
 alter table orders
   drop column status,
   drop column gcash_reference,
@@ -252,6 +255,8 @@ alter table order_events    enable row level security;
 -- policies below need.
 revoke all on payments, order_events, ticket_counters from anon, authenticated;
 grant select on payments, order_events to authenticated;
+-- Orders and lines are written only by the API now. Keep select: the RLS read policies need it.
+revoke insert, update, delete, truncate on orders, order_lines, order_line_options from anon, authenticated;
 
 -- Customers get no policy on payments or events: proof paths and references stay staff-only.
 create policy "staff read payments" on payments for select using (public.is_active_staff());
