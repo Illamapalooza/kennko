@@ -61,3 +61,6 @@ next-env.d.ts
 /apps/pos/data/
 /apps/pos/config.json
 /apps/pos/dist/
+
+# Built API bundle (apps/api npm run build)
+/apps/api/server.js

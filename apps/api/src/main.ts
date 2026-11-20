@@ -1,5 +1,5 @@
-// Vercel entry: zero-config Hono deploys this file's default export. Vercel only treats a file as
-// the entry if it imports hono, hence the explicit type below.
+// Source entry, bundled by `npm run build` into server.js (the file Vercel deploys) together with
+// @kennko/core, which Node cannot run from node_modules as TypeScript.
 import type { Hono } from 'hono'
 import { createApp } from './create-app.js'
 import { createUserVerifier, type AppEnv } from './auth.js'

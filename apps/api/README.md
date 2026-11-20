@@ -87,7 +87,7 @@ Build `DATABASE_URL` from the dashboard's **transaction pooler** string (Connect
 
 Then in Vercel:
 
-1. Create the project from the repo with **root directory `apps/api`**, on the Pro team. Zero config: `src/index.ts` default-exports the app.
+1. Create the project from the repo with **root directory `apps/api`**, on the Pro team. `npm run build` (set in `apps/api/vercel.json`) bundles `src/main.ts` and `@kennko/core` into `server.js`, which Vercel deploys; hono, postgres, jose and zod stay external. Core ships TypeScript source, which Node will not run from `node_modules`, so the bundle is required.
 2. Set the function region to the Supabase project's region (see the project's dashboard).
 3. Set `DATABASE_URL` and `SUPABASE_URL` for Production (and Preview if you use it).
 4. Deploy, then check:
