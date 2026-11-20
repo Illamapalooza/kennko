@@ -168,7 +168,7 @@ describe('pushing the outbox', () => {
     t.store.startShift(0, T, null)
     t.store.createOrder(menu, sale, T, null)
     t.store.createOrder(menu, sale, T, null)
-    t.api.onPush(() => json(503, { code: 'UNAVAILABLE', message: 'down' }))
+    t.api.onPush(() => new Response('down', { status: 503 }))
     t.sync.start()
     await settle()
     expect(t.store.pending()).toEqual({ sales: 2, events: 3 })
@@ -209,10 +209,14 @@ describe('pushing the outbox', () => {
     expect(t.sync.status().offline).toBe(false)
   })
 
-  it('counts a timeout, a 5xx and a non-API 401 as offline', async () => {
+  it('counts a timeout, a plain or HTML 5xx, a 408, a 429 and a non-API 401 as offline', async () => {
     for (const answer of [
       () => { throw new DOMException('timed out', 'TimeoutError') },
-      () => json(502, { code: 'BAD_GATEWAY', message: 'bad' }),
+      () => new Response('<html>Bad gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+      () => new Response('An error occurred with your deployment\n\nFUNCTION_INVOCATION_FAILED', { status: 500 }),
+      () => json(504, { error: 'timeout' }),
+      () => json(408, { code: 'TIMEOUT', message: 'Request timed out' }),
+      () => json(429, { code: 'TOO_MANY', message: 'Slow down' }),
       () => json(401, { code: 'SOMETHING_ELSE' }),
       () => new Response('<html>protected</html>', { status: 401 }),
     ]) {
@@ -223,6 +227,17 @@ describe('pushing the outbox', () => {
       expect(t.store.pending().events).toBe(1)
       expect(t.sync.status()).toMatchObject({ offline: true, revoked: false })
       expect(loadDevice(t.dataDir)!.revokedAt).toBeNull()
+    }
+  })
+
+  it("a 5xx with the API's { code, message } body is a sync problem, not offline; the batch is kept", async () => {
+    for (const status of [500, 503]) {
+      const t = till()
+      t.store.setAvailable('x', false, T, null, { outbox: true })
+      t.api.onPush(() => json(status, { code: 'INTERNAL', message: 'Something went wrong' }))
+      await t.sync.runOnce()
+      expect(t.store.pending().events).toBe(1)
+      expect(t.sync.status()).toMatchObject({ offline: false, revoked: false, problem: 'Something went wrong' })
     }
   })
 
@@ -351,7 +366,7 @@ describe('pulling', () => {
   it('Review Focus 6: an unsent sold-out mark survives a pull, stays after it is sent, and a server mark lands', async () => {
     const t = till()
     t.store.setAvailable('X', false, T, null, { outbox: true })
-    t.api.onPush(() => json(503, { code: 'UNAVAILABLE', message: 'down' }))
+    t.api.onPush(() => new Response('down', { status: 503 }))
     t.api.onPull(() => json(200, { menu: null, soldOut: [], staff: [], shop: SHOP }))
     await t.sync.runOnce()
     expect(t.api.pulls()).toHaveLength(1)
@@ -505,7 +520,7 @@ describe('scheduling', () => {
   it('while failing, a kick never shortens the backoff wait', async () => {
     const t = till()
     t.store.setAvailable('x', false, T, null, { outbox: true })
-    t.api.onPush(() => json(503, { code: 'UNAVAILABLE', message: 'down' }))
+    t.api.onPush(() => new Response('down', { status: 503 }))
     t.sync.start()
     await settle()
     expect(t.timers.delays()).toEqual([15_000])
@@ -524,7 +539,7 @@ describe('scheduling', () => {
     let release!: () => void
     t.api.onPush(async () => {
       await new Promise<void>((r) => { release = r })
-      return json(503, { code: 'UNAVAILABLE', message: 'down' })
+      return new Response('down', { status: 503 })
     })
     t.sync.start()
     await settle()

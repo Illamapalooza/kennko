@@ -281,7 +281,7 @@ describe('the import inside the sync loop', () => {
       calls.push({ path: p, body })
       if (p === '/v1/sync/import') {
         imports++
-        if (fails.has(imports)) return json(503, { code: 'UNAVAILABLE', message: 'down' })
+        if (fails.has(imports)) return new Response('down', { status: 503 })
         const out = { inserted: 0, existing: 0, rejected: 0 }
         for (const r of [...body.shifts, ...body.orders, ...body.cashMoves]) {
           if (stored.has(r.id)) out.existing++
@@ -289,7 +289,7 @@ describe('the import inside the sync loop', () => {
           else out.inserted++
           stored.add(r.id)
         }
-        if (losses.has(imports)) return json(503, { code: 'UNAVAILABLE', message: 'down' })
+        if (losses.has(imports)) return new Response('down', { status: 503 })
         return json(200, answer ? answer(body.shifts.length + body.orders.length + body.cashMoves.length) : out)
       }
       if (p === '/v1/sync/push') return json(200, { results: body.events.map((e: SyncEvent) => ({ id: e.id, result: 'applied', reason: null, flags: [] })), held: 0 })

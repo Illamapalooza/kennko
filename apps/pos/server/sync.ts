@@ -139,9 +139,18 @@ export function createSync(opts: {
     if (loadDevice(dataDir)?.token !== device.token) return { kind: 'stale' }
     // Only the API's own codes mean revoked; any other 401 (a hosting protection page, say) is just offline.
     if (res.status === 401 && REVOKED_CODES.has(body?.code)) return { kind: 'revoked' }
+    const message = typeof body?.message === 'string' && body.message.trim() ? body.message.trim().slice(0, 300) : null
+    // 408 and 429 are transient: offline, like a timeout.
+    if (res.status === 408 || res.status === 429) {
+      return { kind: 'failed', problem: `The website is busy (${res.status}).`, offline: true }
+    }
     if (res.status >= 400 && res.status < 500 && res.status !== 401) {
-      const message = typeof body?.message === 'string' && body.message.trim() ? body.message.trim().slice(0, 300) : null
       return { kind: 'failed', problem: message ?? `The website refused the request (${res.status}).`, offline: false }
+    }
+    // A 5xx carrying the API's own { code, message } means the API is up and failed on this request: a sync
+    // problem staff should report, not the Wi-Fi. A plain or HTML 5xx (hosting, gateway) stays offline.
+    if (res.status >= 500 && message !== null && typeof body?.code === 'string') {
+      return { kind: 'failed', problem: message, offline: false }
     }
     if (!res.ok) return { kind: 'failed', problem: `The website refused the request (${res.status}).`, offline: true }
     if (body === undefined) return { kind: 'failed', problem: GARBLED, offline: true }
