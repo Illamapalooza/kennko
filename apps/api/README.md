@@ -404,7 +404,7 @@ No change in this plan (admin already lists online orders only).
 select kind, reason, count(*) from sync_events where result = 'held' group by 1, 2;
 ```
 
-  An admin view for them comes in Plan 6.
+  Since Plan 6, admin › Needs a look lists them (see the Plan 6 section below); the query stays as a cross-check.
 
 ### 6. Live checks
 
@@ -430,7 +430,9 @@ These need the live API, so they were not done during the build. Check them at 7
 
 **Never replace or restore `data/pos.db` on a paired till without closing its shift first** (Till › Close, so the close reaches Kennko). The server allows one open shift per till. A restored `pos.db` has forgotten the shift that is open on the server, so the next `shift.opened` from that till is held behind it and the till's new sales wait too (they stay safe on the till and send once the old shift is closed). The same applies to copying `pos.db` from another computer.
 
-If it happens anyway, Julius runs this in the Supabase SQL editor; an admin button comes in Plan 6.
+If it happens anyway (since Plan 6), in admin open **Needs a look**, find the shift under **Open shifts**, press **Close this shift**, enter the cash counted (0 if unknown) and a note saying why, then **Close shift** and confirm with **Yes, close it**. The till's held events retry on its next push (within 15 s); **Try again now** on the till's row retries them sooner. If the till's own close arrives later, it replaces the admin close.
+
+Last resort only (admin not reachable): Julius runs this in the Supabase SQL editor.
 
 Find the stuck shift (read-only):
 
@@ -508,3 +510,97 @@ These need a live API and a running wall, so they were not done during the build
 
 - Till Orders board with online tickets (pickup and delivery) at 768 px and 1024 px wide, including a long delivery address.
 - The wall running against the till (`npm run wall:pos`) with a counter order and an online order at once. W labels must show on the banner ("Order W3 for Ana is ready!"), the board, the queue chips, the rail tickets, the cat tags and the barista bubbles.
+
+## Plan 6: reports, Needs a look, and the website without the service key
+
+Plans 3, 4 and 5 must be deployed first. Plan 6 adds admin › Reports and admin › Needs a look, moves the website's remaining reads onto the API, and removes the Supabase service-role key from the website. Migration 0018 is additive (columns, a check value and indexes). Deploy in this order: the website needs the new API (with its key) first.
+
+### 1. Migration 0018 (Julius)
+
+First, in the Supabase SQL editor, run this read-only pre-flight:
+
+```sql
+select conname from pg_constraint where conrelid = 'sync_events'::regclass and contype = 'c';
+```
+
+Expect `sync_events_result_check` (and the kind check). If `sync_events_result_check` is missing, stop and ask.
+
+From `apps/api`, dry run first. It must list only 0018:
+
+```sh
+npx supabase db push --dry-run
+```
+
+Then apply it as one whole file:
+
+```sh
+npx supabase db push
+```
+
+### 2. API deploy
+
+1. Generate the website key. Do not paste it in chat, tickets or commits:
+
+```sh
+openssl rand -hex 32
+```
+
+2. Add it as `KENNKO_WEB_KEY` to the API's Vercel project (Production). It must be at least 32 characters after trimming, or the API stops at boot. The API keeps `SUPABASE_SERVICE_ROLE_KEY` (storage and the staff invite).
+3. Deploy. Smoke checks:
+   - `GET /health` returns 200.
+   - `GET /v1/orders/by-code/KNK-XXXXXX` returns 404 JSON.
+   - `GET /v1/staff/alert-emails` without the key header returns 401.
+   - `GET /v1/reports/day/<today>` without a token returns 401.
+4. The old website keeps working: it still has its own key.
+
+### 3. Website deploy
+
+1. Add the same `KENNKO_WEB_KEY` value to the website's Vercel project (`kennko`), Production. Deploy.
+2. Only once that deploy works, delete `SUPABASE_SERVICE_ROLE_KEY` from the `kennko` project (Production, Preview and Development) and redeploy.
+3. Check the fresh deployment's build log and runtime show no "Missing … SERVICE_ROLE_KEY" error.
+4. Recommended: rotate the Supabase secret key, because the old one lived on the website. Create a new secret key in Supabase, set it as `SUPABASE_SERVICE_ROLE_KEY` on **kennko-api only**, redeploy the API, then revoke the old key.
+5. `apps/web/.env.local` keeps `SUPABASE_SERVICE_ROLE_KEY` for the local scripts only (`seed`, `seed-zones`, `create-owner`); update it there after rotating.
+
+### 4. Till (shop computer)
+
+As in Plan 3 step 4: `git pull`, then `deploy\windows\setup.cmd` (builds and restarts). Reload the tablets. The till's feed now carries the drink names for the wall.
+
+### 5. Wall
+
+`git pull`, then stop and restart `npm run wall:pos` from the repo root. Reload the wall page: its service worker cache moved to v3, so the first load may still come from the old copy (reload twice if needed). `wall/data/menu.json` appears after the first feed from the till.
+
+### 6. Live checks
+
+Website, against the live API:
+
+- Place a ₱ test order. The order page (`/order/<code>`) and its receipt load.
+- Signed in with Google, `/orders` lists the history.
+- Admin › Orders: on an order with a payment, press **View receipt** to open the GCash proof image.
+- Press **Confirm payment** on the test order: the customer gets the email receipt, and staff still get the new-order alert. On another test order press **Reject**: the customer gets the rejection email.
+- At checkout, the staff alert email arrives (the list comes from the API).
+- Admin › Staff › **Add someone**, role Manager, with an email, then **Send invite**: the invite arrives. Try an email that already has a login: the form shows "That email already has a website login. Use a different email, or ask them to sign in first."
+
+Admin › Reports, for today:
+
+- the counter total equals the till's day summary;
+- online equals the verified online orders;
+- each shift's counted cash matches the till's close;
+- on the history days, the legacy line reads "Includes N orders imported from the till's history."
+
+Admin › Needs a look (owner only):
+
+- It lists the held rows the Plan 4 query showed (`select kind, reason, count(*) from sync_events where result = 'held' group by 1, 2;`).
+- **Discard** one test row with a note: it moves to **Resolved** (Open and Resolved tabs). **Mark seen** is the same for flagged receipts and orders.
+- A stuck open shift shows under Open shifts with **Close this shift** (see the Plan 4 runbook above).
+
+Wall with the till:
+
+- The wall shows the till's drink names. Rename a drink and publish: the wall follows.
+- Restart the wall with the till off: it keeps the names (from `wall/data/menu.json`).
+
+### 7. Visual checks not yet done
+
+These need a live API, so they were not done during the build. Check them at 375 px and 1024 px wide:
+
+- Admin › Reports (tables scroll inside their cards, not the page).
+- Admin › Needs a look, including the close-shift confirm.
