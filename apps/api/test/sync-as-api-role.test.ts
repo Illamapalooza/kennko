@@ -361,6 +361,37 @@ describe('every route as kennko_api', () => {
     await ok('POST', `/v1/payments/${pay2!.id as string}/reject`, baristaJwt, { reason: 'wrong amount' })
   })
 
+  it('needs a look: list, count, discard, close a stuck shift, retry, order seen as kennko_api', async () => {
+    const s1 = shiftOpened({}, { staffId: BARISTA })
+    expect((await push([s1])).results[0]!.result).toBe('applied')
+    // A second shift on the same till waits behind the first, and so does its sale.
+    const s2 = shiftOpened()
+    const waiting = orderCreated({ shiftId: s2.payload.shiftId, ticketNumber: 40, menuVersion: null })
+    const typo = prepStatus({ orderId: waiting.payload.orderId, to: 'brewing' as 'ready' })
+    const held = await push([s2, waiting, typo])
+    expect(held.results.map((r) => r.result)).toEqual(['held', 'held', 'held'])
+
+    const view = await ok('GET', '/v1/attention', ownerJwt)
+    expect((view.shifts as { id: string; blocking: number }[])[0]).toMatchObject({ id: s1.payload.shiftId, blocking: 1 })
+    await ok('GET', '/v1/attention?show=resolved', ownerJwt)
+    expect((await ok('GET', '/v1/attention/count', ownerJwt)).count).toBeGreaterThan(0)
+
+    await ok('POST', `/v1/attention/events/${deviceId}/${typo.id}`, ownerJwt, { action: 'discard', note: 'Typo on the till' })
+    await ok('POST', `/v1/attention/shifts/${s1.payload.shiftId}/close`, ownerJwt, { countedCentavos: 0, note: 'pos.db replaced' })
+    expect(await ok('POST', `/v1/attention/devices/${deviceId}/retry`, ownerJwt)).toEqual({ held: 0 })
+
+    const rows = await asSuper(
+      () => db.sql`select id, result from sync_events where device_id = ${deviceId} and id in ${db.sql([s2.id, waiting.id, typo.id])}`,
+    )
+    expect(Object.fromEntries(rows.map((r) => [r.id, r.result]))).toEqual({ [s2.id]: 'applied', [waiting.id]: 'flagged', [typo.id]: 'discarded' })
+
+    // The sale was rung with no menu version: a flagged order the owner marks seen.
+    await ok('POST', `/v1/attention/orders/${waiting.payload.orderId}/seen`, ownerJwt)
+    const [order] = await asSuper(() => db.sql`select flags, flags_seen_by from orders where id = ${waiting.payload.orderId}`)
+    expect(order).toMatchObject({ flags: ['unknown_version'], flags_seen_by: OWNER })
+    expect((await call('GET', '/v1/attention', baristaJwt)).status).toBe(403)
+  })
+
   it('publishMenu from the deploy helper also works as kennko_api', async () => {
     await asSuper(() => db.sql`update menu_variants set price_centavos = 13000 where item_id = ${latteId}`)
     const r = await publishMenu(db.sql, OWNER)

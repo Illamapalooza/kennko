@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception'
 import type postgres from 'postgres'
 import type { AppEnv } from './auth.js'
 import { apiError } from './http.js'
+import { attentionRoutes } from './routes/attention.js'
 import { deviceRoutes } from './routes/devices.js'
 import { menuRoutes } from './routes/menu.js'
 import { ordersRoutes } from './routes/orders.js'
@@ -50,6 +51,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     return c.json({ ok: true })
   })
 
+  app.route('/v1/attention', attentionRoutes(deps))
   app.route('/v1/devices', deviceRoutes(deps))
   app.route('/v1/menu', menuRoutes(deps))
   app.route('/v1/orders', ordersRoutes(deps))

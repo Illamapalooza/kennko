@@ -71,6 +71,7 @@ describe('staff auth', () => {
     app = createApp(deps)
     app.get('/owner-only', requireStaff(deps, 'owner'), (c) => c.json(c.get('staff')))
     app.get('/any-staff', requireStaff(deps), (c) => c.json(c.get('staff')))
+    app.get('/manager-up', requireStaff(deps, 'manager'), (c) => c.json(c.get('staff')))
 
   })
   afterAll(async () => {
@@ -189,6 +190,14 @@ describe('staff auth', () => {
 
   it('a manager on an owner route -> 403', async () => {
     expect((await get('/owner-only', await sign(MANAGER))).status).toBe(403)
+  })
+
+  it("'manager' admits owners and managers, not baristas or the deactivated", async () => {
+    expect((await get('/manager-up', await sign(OWNER))).status).toBe(200)
+    expect(await (await get('/manager-up', await sign(MANAGER))).json()).toEqual({ id: MANAGER, role: 'manager' })
+    expect((await get('/manager-up', await sign(BARISTA))).status).toBe(403)
+    expect((await get('/manager-up', await sign(FIRED))).status).toBe(403)
+    expect((await get('/manager-up')).status).toBe(401)
   })
 
   it('staff is found by login: sub = user_id yields staff.id', async () => {

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import type { PricedLine } from './cart.ts'
 import type { MenuSnapshot, SnapshotBody } from './snapshot.ts'
-import { TILL_TO_PREP, repriceCounterOrder, MAX_PUSH_EVENTS, BACKOFF_MS, isOnlineQueueOrder, onlinePrepDecision, ONLINE_PULL_MAX, ONLINE_RECENT_MS, type OnlineQueueOrder } from './sync.ts'
+import { TILL_TO_PREP, eventSummary, repriceCounterOrder, MAX_PUSH_EVENTS, BACKOFF_MS, isOnlineQueueOrder, onlinePrepDecision, ONLINE_PULL_MAX, ONLINE_RECENT_MS, type OnlineQueueOrder } from './sync.ts'
 
 const variant = (id: string, code: string, priceCentavos: number, isAvailable = true) => ({
   id, code, label: code, priceCentavos, temperature: 'none' as const, isAvailable,
@@ -148,4 +148,46 @@ test('isOnlineQueueOrder', () => {
   expect(isOnlineQueueOrder({ ...pickupFixture, lines: [{ ...pickupFixture.lines[0], iceLevel: 'lots' }] })).toBe(false)
   expect(isOnlineQueueOrder(null)).toBe(false)
   expect(isOnlineQueueOrder('x')).toBe(false)
+})
+
+test('eventSummary names each kind of receipt, with its money as sent', () => {
+  const line = { name: 'Latte' }
+  expect(eventSummary('order.created', { ticketNumber: 12, lines: [line, line], totalCentavos: 28000 })).toEqual({
+    label: 'Sale C12, 2 lines',
+    amountCentavos: 28000,
+  })
+  expect(eventSummary('order.created', { ticketNumber: 3, lines: [line], totalCentavos: -1 })).toEqual({
+    label: 'Sale C3, 1 line',
+    amountCentavos: -1,
+  })
+  expect(eventSummary('shift.opened', { shiftId: 's', openingFloatCentavos: 100000 })).toEqual({ label: 'Shift opened', amountCentavos: 100000 })
+  expect(eventSummary('shift.closed', { shiftId: 's', countedCentavos: 150000 })).toEqual({ label: 'Shift closed', amountCentavos: 150000 })
+  expect(eventSummary('cash.moved', { kind: 'out', reason: 'Ice', amountCentavos: 5000 })).toEqual({ label: 'Cash out: Ice', amountCentavos: 5000 })
+  expect(eventSummary('cash.moved', { kind: 'in', reason: 'Change', amountCentavos: 2000 })).toEqual({ label: 'Cash in: Change', amountCentavos: 2000 })
+  expect(eventSummary('order.prep_status', { orderId: 'x', to: 'ready' })).toEqual({ label: 'Step to ready', amountCentavos: null })
+  expect(eventSummary('order.cancelled', { orderId: 'x', reason: 'Wrong order' })).toEqual({ label: 'Void: Wrong order', amountCentavos: null })
+  expect(eventSummary('menu.availability', { itemId: 'x', available: false })).toEqual({ label: 'Sold out', amountCentavos: null })
+  expect(eventSummary('menu.availability', { itemId: 'x', available: true })).toEqual({ label: 'Back on sale', amountCentavos: null })
+  expect(eventSummary('import.order', { ticketNumber: 4, lines: [line], totalCentavos: 12000 })).toEqual({
+    label: 'Old sale C4 (before sync)',
+    amountCentavos: 12000,
+  })
+  expect(eventSummary('import.shift', { openingFloatCentavos: 50000 })).toEqual({ label: 'Old shift (before sync)', amountCentavos: 50000 })
+  expect(eventSummary('import.cash_move', { kind: 'out', reason: 'Ice', amountCentavos: 900 })).toEqual({
+    label: 'Old cash out: Ice (before sync)',
+    amountCentavos: 900,
+  })
+})
+
+test('eventSummary reads a garbled payload as just its kind', () => {
+  const garbled = { label: 'order.created', amountCentavos: null }
+  expect(eventSummary('order.created', null)).toEqual(garbled)
+  expect(eventSummary('order.created', 'text')).toEqual(garbled)
+  expect(eventSummary('order.created', [1])).toEqual(garbled)
+  expect(eventSummary('order.created', { ticketNumber: 'C1', lines: [] })).toEqual(garbled)
+  expect(eventSummary('cash.moved', { kind: 'sideways', reason: 'x', amountCentavos: 1 })).toEqual({ label: 'cash.moved', amountCentavos: null })
+  expect(eventSummary('order.prep_status', { to: 5 })).toEqual({ label: 'order.prep_status', amountCentavos: null })
+  // A money field that is not a whole number is left out, never guessed.
+  expect(eventSummary('shift.opened', { openingFloatCentavos: '100' })).toEqual({ label: 'Shift opened', amountCentavos: null })
+  expect(eventSummary('mystery.kind', { a: 1 })).toEqual({ label: 'mystery.kind', amountCentavos: null })
 })

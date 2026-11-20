@@ -64,7 +64,8 @@ export function optionalUser(deps: AppDeps): MiddlewareHandler<AppEnv> {
   }
 }
 
-export function requireStaff(deps: AppDeps, role?: 'owner'): MiddlewareHandler<AppEnv> {
+/** `'owner'` admits owners only; `'manager'` admits owners and managers; no role admits any active staff. */
+export function requireStaff(deps: AppDeps, role?: 'owner' | 'manager'): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const token = bearer(c.req.header('Authorization'))
     if (!token) throw apiError(401, 'UNAUTHENTICATED', 'Missing bearer token')
@@ -76,7 +77,8 @@ export function requireStaff(deps: AppDeps, role?: 'owner'): MiddlewareHandler<A
       select id, role, is_active from staff where user_id = ${userId}
     `
     if (!row || !row.is_active) throw apiError(403, 'FORBIDDEN', 'Not an active staff member')
-    if (role && row.role !== role) throw apiError(403, 'FORBIDDEN', 'Insufficient role')
+    const allowed = role === 'owner' ? row.role === 'owner' : role === 'manager' ? row.role !== 'barista' : true
+    if (!allowed) throw apiError(403, 'FORBIDDEN', 'Insufficient role')
 
     c.set('staff', { id: row.id, role: row.role })
     await next()

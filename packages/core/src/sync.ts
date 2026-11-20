@@ -266,3 +266,104 @@ export function onlinePrepDecision(
   if (to === current) return 'same'
   return canMovePrep(current, to, fulfilment) ? 'move' : 'conflict'
 }
+
+/** One receipt in a sentence, with the money it carries as sent (null when it carries none or it cannot be read). */
+export type EventSummary = { label: string; amountCentavos: number | null }
+
+/** A receipt that needs, or had, the owner's eye. `action` is what the owner can still do with it. */
+export type AttentionEvent = {
+  deviceId: string
+  deviceName: string
+  deviceRevoked: boolean
+  id: string
+  seq: number
+  kind: string
+  result: 'held' | 'flagged' | 'discarded'
+  reason: string | null
+  summary: EventSummary
+  staffName: string | null
+  occurredAt: string
+  receivedAt: string
+  resolvedAt: string | null
+  resolvedByName: string | null
+  resolveNote: string | null
+  action: 'discard' | 'seen' | null
+}
+
+/** A stored order with a flag other than `legacy`. */
+export type FlaggedOrder = {
+  id: string
+  ticket: string
+  channel: 'counter' | 'online'
+  businessDay: string
+  flags: string[]
+  totalCentavos: number
+  deviceName: string | null
+  seenAt: string | null
+}
+
+/** An open shift. `blocking` counts that device's events held `another_shift_open`. */
+export type OpenShift = {
+  id: string
+  deviceId: string
+  deviceName: string
+  deviceRevoked: boolean
+  openedAt: string
+  openedByName: string | null
+  openingFloatCentavos: number
+  blocking: number
+}
+
+export type AttentionView = { events: AttentionEvent[]; orders: FlaggedOrder[]; shifts: OpenShift[] }
+
+const money = (x: unknown): number | null => (Number.isInteger(x) ? (x as number) : null)
+const ticketOf = (p: Record<string, unknown>): string | null =>
+  Number.isInteger(p.ticketNumber) && Array.isArray(p.lines) ? `C${p.ticketNumber as number}` : null
+const cashOf = (p: Record<string, unknown>): string | null =>
+  (p.kind === 'in' || p.kind === 'out') && isStr(p.reason) ? `cash ${p.kind}: ${p.reason}` : null
+
+/**
+ * Describes a receipt for Needs a look and the report. The payload is whatever the till sent (it may
+ * have failed validation), so every field is checked; a payload that cannot be read is just its kind.
+ */
+export function eventSummary(kind: string, payload: unknown): EventSummary {
+  const garbled: EventSummary = { label: kind, amountCentavos: null }
+  if (!isObj(payload)) return garbled
+  const p = payload
+  const say = (label: string | null, amount: unknown = null): EventSummary =>
+    label === null ? garbled : { label, amountCentavos: money(amount) }
+  switch (kind) {
+    case 'order.created': {
+      const ticket = ticketOf(p)
+      if (ticket === null) return garbled
+      const n = (p.lines as unknown[]).length
+      return say(`Sale ${ticket}, ${n} ${n === 1 ? 'line' : 'lines'}`, p.totalCentavos)
+    }
+    case 'order.prep_status':
+      return say(isStr(p.to) ? `Step to ${p.to}` : null)
+    case 'order.cancelled':
+      return say(isStr(p.reason) ? `Void: ${p.reason}` : null)
+    case 'shift.opened':
+      return say('Shift opened', p.openingFloatCentavos)
+    case 'shift.closed':
+      return say('Shift closed', p.countedCentavos)
+    case 'cash.moved': {
+      const cash = cashOf(p)
+      return say(cash && `C${cash.slice(1)}`, p.amountCentavos)
+    }
+    case 'menu.availability':
+      return say(typeof p.available === 'boolean' ? (p.available ? 'Back on sale' : 'Sold out') : null)
+    case 'import.order': {
+      const ticket = ticketOf(p)
+      return say(ticket && `Old sale ${ticket} (before sync)`, p.totalCentavos)
+    }
+    case 'import.shift':
+      return say('Old shift (before sync)', p.openingFloatCentavos)
+    case 'import.cash_move': {
+      const cash = cashOf(p)
+      return say(cash && `Old ${cash} (before sync)`, p.amountCentavos)
+    }
+    default:
+      return garbled
+  }
+}

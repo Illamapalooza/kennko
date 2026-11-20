@@ -53,14 +53,23 @@ export async function publishTwoVersions(sql: postgres.Sql): Promise<TwoVersions
   return { latteId: latte!.id, latteMId: m!.id, oatId: oat!.id, groupId: group!.id, v1, v2 }
 }
 
-/** The till's view of time for a test file; `setNow` moves it. `push` records customer notifications. */
-export function syncApp(sql: postgres.Sql, start = new Date('2026-11-21T02:00:00Z'), opts: { push?: PushSender } = {}) {
+/**
+ * The till's view of time for a test file; `setNow` moves it. `push` records customer notifications.
+ * `verifyUser` admits staff tokens (by default there are none).
+ */
+export function syncApp(
+  sql: postgres.Sql,
+  start = new Date('2026-11-21T02:00:00Z'),
+  opts: { push?: PushSender; verifyUser?: (token: string) => Promise<{ userId: string }> } = {},
+) {
   let now = start
   const app = createApp({
     sql,
-    verifyUser: async () => {
-      throw new Error('no staff tokens in sync tests')
-    },
+    verifyUser:
+      opts.verifyUser ??
+      (async () => {
+        throw new Error('no staff tokens in sync tests')
+      }),
     proofs: fakeProofs(),
     push: opts.push ?? null,
     defer: inlineDefer,

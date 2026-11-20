@@ -8,8 +8,8 @@ import { clip, findNul, parseEvent, scrubSurrogates, storableTime, type Envelope
 
 type Tx = postgres.TransactionSql
 type Result = PushResponse['results'][number]
-/** Customer pushes owed by events whose effects and receipt were written; sent once the push commits. */
-type Notes = NonNullable<Applied['notify']>[]
+/** Customer pushes owed by events whose effects and receipt were written; sent once the transaction commits. */
+export type Notes = NonNullable<Applied['notify']>[]
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const held = (reason: string): Applied => ({ result: 'held', reason, flags: [] })
@@ -126,7 +126,7 @@ type HeldRow = {
  * applied again (what was sent cannot change); it only keeps its place in line. Rows held
  * `error: …` are retried like any other.
  */
-async function retryHeld(tx: Tx, deviceId: string, now: Date, notes: Notes): Promise<void> {
+export async function retryHeld(tx: Tx, deviceId: string, now: Date, notes: Notes): Promise<void> {
   // Permanent rows (`invalid: …`, including legacy import receipts) are never retried, so they stay out of
   // the window; the entities they hold (pushed invalid rows) still block later events.
   const permanent = await tx<{ k: string }[]>`
@@ -191,6 +191,25 @@ async function retryOne(
 }
 
 /**
+ * Runs `fn` in one transaction holding the device's sync lock (Ruling 2), the same advisory lock a push
+ * and an import take, so nothing else changes that device's receipts meanwhile. The customer pushes
+ * `fn` collects in `notes` are sent only after the transaction commits; a failed one sends none.
+ */
+export async function withDeviceLock<T>(
+  deps: AppDeps,
+  deviceId: string,
+  fn: (tx: Tx, notes: Notes) => Promise<T>,
+): Promise<T> {
+  const notes: Notes = []
+  const out = (await deps.sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`sync:${deviceId}`}, 0))`
+    return fn(tx, notes)
+  })) as T
+  for (const n of notes) await afterCommit(deps, () => notifyOrder(deps, n.orderId, n.event))
+  return out
+}
+
+/**
  * Applies a push from one till. One transaction holds the device's advisory lock for the whole
  * request (Ruling 2); every event runs in its own savepoint and gets a `sync_events` receipt, so a
  * retried or concurrent push answers `duplicate` instead of applying anything twice. Customer pushes
@@ -199,9 +218,7 @@ async function retryOne(
  */
 export async function pushEvents(deps: AppDeps, deviceId: string, raw: Envelope[]): Promise<PushResponse> {
   const now = deps.now()
-  const notes: Notes = []
-  const response = (await deps.sql.begin(async (tx) => {
-    await tx`select pg_advisory_xact_lock(hashtextextended(${`sync:${deviceId}`}, 0))`
+  return withDeviceLock(deps, deviceId, async (tx, notes) => {
     await retryHeld(tx, deviceId, now, notes)
 
     const results: Result[] = []
@@ -221,13 +238,16 @@ export async function pushEvents(deps: AppDeps, deviceId: string, raw: Envelope[
     // What this push brought (a shift, an order) may free events held earlier.
     if (anyApplied) await retryHeld(tx, deviceId, now, notes)
 
-    const [{ n }] = await tx<{ n: number }[]>`
-      select count(*)::int as n from sync_events
-      where device_id = ${deviceId} and result = 'held' and kind not like 'import.%'`
-    return { results, held: n }
-  })) as PushResponse
-  for (const n of notes) await afterCommit(deps, () => notifyOrder(deps, n.orderId, n.event))
-  return response
+    return { results, held: await heldCount(tx, deviceId) }
+  })
+}
+
+/** The device's held events, as a push answers them (legacy import receipts are not counted). */
+export async function heldCount(tx: Tx, deviceId: string): Promise<number> {
+  const [{ n }] = await tx<{ n: number }[]>`
+    select count(*)::int as n from sync_events
+    where device_id = ${deviceId} and result = 'held' and kind not like 'import.%'`
+  return n
 }
 
 /** Whether an earlier held event of this device blocks one of `keys` (the new event's wait keys). */

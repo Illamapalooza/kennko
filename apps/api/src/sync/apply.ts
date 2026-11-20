@@ -83,6 +83,13 @@ const shiftClosed: Handler<'shift.closed'> = async (tx, _deviceId, event, staffI
     where id = ${shiftId} and closed_at is null
     returning id`
   if (row) return applied()
+  // Closed from admin while the till was stuck (Ruling 3): the till's own count is the better fact.
+  const [replaced] = await tx`
+    update shifts set closed_at = ${event.occurredAt}, closed_by_staff = ${staffId}, counted_centavos = ${countedCentavos},
+      expected_centavos = ${expectedCentavos}, note = ${note}, closed_in_admin = false, updated_at = ${now}
+    where id = ${shiftId} and closed_in_admin
+    returning id`
+  if (replaced) return applied('replaced_admin_close')
   const [exists] = await tx`select 1 from shifts where id = ${shiftId}`
   return exists ? applied('already_closed') : held('shift_unknown')
 }
