@@ -327,8 +327,20 @@ export function createStore(file: string) {
     /** The open database, for the till's sessions (sessions.ts). */
     db,
     close: () => db.close(),
-    /** Writes a complete, consistent copy of the database to a new file. Safe while the till is in use. */
-    snapshot(to: string) { db.prepare('vacuum into ?').run(to) },
+    /**
+     * Writes a complete, consistent copy of the database to a new file. Safe while the till is in use. The copy keeps
+     * no online orders: they carry customer phones and addresses (Ruling P5-3), and the next pull fetches them again.
+     */
+    snapshot(to: string) {
+      db.prepare('vacuum into ?').run(to)
+      const copy = new DatabaseSync(to)
+      try {
+        copy.exec('delete from online_orders')
+        copy.exec('vacuum')
+      } finally {
+        copy.close()
+      }
+    },
     openShift,
     getOrder,
     shiftSummary,

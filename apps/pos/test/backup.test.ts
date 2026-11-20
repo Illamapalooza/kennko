@@ -37,6 +37,33 @@ describe('daily backup', () => {
     store.close()
   })
 
+  it('keeps no online orders (customer phone and address) in the backup or the second copy (Ruling P5-3)', () => {
+    const dir = tempDir()
+    const store = createStore(path.join(dir, 'pos.db'))
+    store.startShift(50000, T, null)
+    store.createOrder(menu, sale, T, null)
+    store.replaceOnlineOrders([{
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', businessDay: '2026-11-17', ticketNumber: 2, customerName: 'Jose Reyes',
+      fulfilment: 'delivery', fulfilAt: '2026-11-17T02:30:00.000Z', customerNote: null, prepStatus: 'preparing',
+      createdAt: '2026-11-17T01:55:00.000Z', updatedAt: '2026-11-17T01:56:00.000Z',
+      lines: [{ name: 'Café Latte', size: 'M', quantity: 1, options: [], iceLevel: 'regular', iceServe: 'mixed', note: '' }],
+      delivery: { address: '12 Montilla Blvd', barangay: 'Libertad', phone: '09171234567' },
+    }])
+
+    const { file, copy } = backupDay((to) => store.snapshot(to), path.join(dir, 'backups'), '2026-11-17', path.join(dir, 'usb'))
+    for (const f of [file, copy!]) {
+      expect(fs.readFileSync(f).includes('09171234567')).toBe(false)
+      expect(fs.readFileSync(f).includes('Montilla')).toBe(false)
+      const restored = createStore(f)
+      expect(restored.onlineOrders()).toEqual([])
+      expect(restored.ordersForDay('2026-11-17')).toHaveLength(1)
+      restored.close()
+    }
+    // The live till keeps its queue.
+    expect(store.onlineOrders()).toHaveLength(1)
+    store.close()
+  })
+
   it('replaces the same day and picks up later sales', () => {
     const dir = tempDir()
     const store = createStore(path.join(dir, 'pos.db'))
