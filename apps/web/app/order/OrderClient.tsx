@@ -84,9 +84,16 @@ export function OrderClient({
   const [notice, setNotice] = useState<string | null>(null)
   // Read by the popstate handler, which is registered once.
   const cartCountRef = useRef(0)
+  // Strict mode runs mount effects twice; the first run rewrites the URL, so a
+  // second read would lose the step (and the empty-cart notice with it).
+  const initialised = useRef(false)
+  // Set once an order is placed, so Back from the done screen is not "empty cart".
+  const justOrdered = useRef(false)
 
   // Cart survives a refresh mid-order.
   useEffect(() => {
+    if (initialised.current) return
+    initialised.current = true
     let restored: CartLine[] = []
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
@@ -163,7 +170,7 @@ export function OrderClient({
       }
       const resolved = resolveStep(raw, cartCountRef.current)
       setStepState(resolved.step)
-      setNotice(resolved.note)
+      setNotice(justOrdered.current ? null : resolved.note)
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
@@ -182,7 +189,10 @@ export function OrderClient({
   }
 
   const subtotal = useMemo(() => cartSubtotal(lines), [lines])
-  cartCountRef.current = lines.length
+  useEffect(() => {
+    cartCountRef.current = lines.length
+    if (lines.length > 0) setNotice(null)
+  }, [lines.length])
   const zone = zones.find((z) => z.barangay === form.barangay)
 
   // Quoted with the same functions the server charges with. When a pin is
@@ -266,6 +276,7 @@ export function OrderClient({
         return
       }
       setOrderCode(result.orderCode)
+      justOrdered.current = true
       setLines([])
       // The order is placed; the saved checkout details are no longer wanted.
       try { localStorage.removeItem(CHECKOUT_KEY) } catch { /* ignore */ }
@@ -645,7 +656,6 @@ function PayStep({
       ) : null}
 
       <div className="order-choice">
-        <button onClick={onBack} disabled={submitting}>Back</button>
         <button aria-pressed onClick={onSubmit} disabled={submitting}>
           {submitting ? 'Submitting…' : 'Submit order'}
         </button>

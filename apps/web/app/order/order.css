@@ -562,7 +562,7 @@
 .order-shell { background: var(--pattern-grid), var(--cream); }
 
 /* Masthead: a blue sticker board with an outlined title */
-.order-masthead { background: none; color: var(--white); border-radius: 0; padding: 8px 16px var(--space-5); margin-bottom: var(--space-5); }
+.order-masthead { background: none; color: var(--white); border-radius: 0; padding: 84px 16px var(--space-5); margin-bottom: var(--space-5); }
 .order-masthead-inner.k-sticker { position: relative; max-width: 1180px; margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-5); }
 .order-masthead h1 { font-weight: 900; letter-spacing: .01em; font-size: clamp(2.2rem, 7vw, 3.8rem); margin: 6px 0 12px; }
 .order-masthead p { font-weight: 600; opacity: 1; }
@@ -692,7 +692,7 @@
 }
 .step > button { cursor: pointer; color: var(--blue); }
 .step-current > span { background: var(--amber); color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
-.step-todo > span { border-style: dashed; opacity: .75; }
+.step-todo > span { border-style: dashed; color: var(--ink-soft); }
 .step-num { font-weight: 900; }
 
 .order-notice {
@@ -701,3 +701,6 @@
 }
 .link-back { min-height: var(--tap); margin-bottom: 8px; display: inline-flex; align-items: center; }
 .link-back:disabled { opacity: .5; cursor: not-allowed; }
+
+.link-back:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+.order-nav-links li:last-child a { display: block; line-height: var(--tap); max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
