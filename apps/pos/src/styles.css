@@ -283,7 +283,8 @@ i { font-style: normal; }
 @media (max-width: 899px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .rail { grid-row: 2; flex-direction: row; justify-content: space-around; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); gap: 2px; overflow: visible; }
-  .rail-logo, .rail-gap, .rail-who { display: none; }
+  .rail-logo, .rail-gap { display: none; }
+  .rail-who { align-self: center; max-width: 64px; font-size: 0.7rem; }
   .rail-btn { width: auto; flex: 1; max-width: 96px; min-height: 58px; border-radius: 16px; font-size: 0.66rem; }
   .sell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .tabs { padding: 12px 14px 10px; }

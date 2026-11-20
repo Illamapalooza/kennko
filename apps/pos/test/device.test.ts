@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { hashStaffPin } from '@kennko/core/staff-pin'
 import { applyDeviceInfo, fetchDeviceInfo, forgetDevice, loadDevice, pairWithApi, saveDevice, type DeviceFile } from '../server/device.ts'
 import { createPinDirectory, type CachedStaff } from '../server/pins.ts'
@@ -12,7 +12,9 @@ const T = Date.UTC(2026, 10, 20, 1, 0)
 const URL_ = 'https://api.kennko.test'
 const TOKEN = 'kd_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG'
 
-const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'kennko-device-'))
+const made: string[] = []
+const tempDir = () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kennko-device-')); made.push(dir); return dir }
+afterAll(() => { for (const dir of made) fs.rmSync(dir, { recursive: true, force: true }) })
 
 type Call = { url: string; init?: RequestInit }
 function fakeFetch(respond: (call: Call) => Response | Promise<Response>) {
@@ -107,9 +109,29 @@ describe('fetching the device info', () => {
     expect(await fetchDeviceInfo(URL_, TOKEN, api.fn)).toEqual({ status: 'ok', staff: [bea] })
   })
 
-  it('is revoked on a 401', async () => {
-    const api = fakeFetch(() => reply(401, { code: 'DEVICE_REVOKED', message: 'gone' }))
-    expect(await fetchDeviceInfo(URL_, TOKEN, api.fn)).toEqual({ status: 'revoked' })
+  it('drops rows whose hash is not in the pinned scrypt format, so they cannot turn per-person on', async () => {
+    const odd = [
+      { ...ana, id: 'm-2', pinHash: 'plain-text' },
+      { ...ana, id: 'm-3', pinHash: ana.pinHash.replace('scrypt$16384$', 'scrypt$1024$') },
+      { ...ana, id: 'm-4', pinHash: ana.pinHash.replace('$8$1$', '$8$2$') },
+      { ...ana, id: 'm-5', pinHash: `${ana.pinHash}$extra` },
+      { ...ana, id: 'm-6', pinHash: ana.pinHash.replace(/\$[^$]+$/, '$not+base64url') },
+    ]
+    const result = await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => reply(200, { staff: [bea, ...odd] })).fn)
+    expect(result).toEqual({ status: 'ok', staff: [bea] })
+    const t = till([])
+    applyDeviceInfo(t.store, t.sessions, t.pins, result, tempDir(), T)
+    expect(t.pins.mode()).toBe('shared')
+  })
+
+  it('is revoked on a 401 from the API (DEVICE_REVOKED or UNAUTHENTICATED)', async () => {
+    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => reply(401, { code: 'DEVICE_REVOKED', message: 'gone' })).fn)).toEqual({ status: 'revoked' })
+    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => reply(401, { code: 'UNAUTHENTICATED', message: 'bad token' })).fn)).toEqual({ status: 'revoked' })
+  })
+
+  it('is offline on any other 401, such as a hosting protection page', async () => {
+    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => new Response('<html>Authentication required</html>', { status: 401 })).fn)).toEqual({ status: 'offline' })
+    expect(await fetchDeviceInfo(URL_, TOKEN, fakeFetch(() => reply(401, { code: 'SOMETHING_ELSE' })).fn)).toEqual({ status: 'offline' })
   })
 
   it('is offline when fetch throws, on a 503, or with a body it cannot read', async () => {

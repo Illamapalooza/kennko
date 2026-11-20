@@ -123,7 +123,7 @@ export function App() {
       </div>
     )
   }
-  if (!unlocked) return <Gate onUnlock={(session) => { setWho(session); setUnlocked(true) }} secureUrl={boot.secureUrl} pinMode={boot.pinMode} />
+  if (!unlocked) return <Gate onUnlock={(session) => { setWho(session); setUnlocked(true) }} secureUrl={boot.secureUrl} pinMode={boot.pinMode} onRefresh={refreshBoot} />
 
   return (
     <div className="app">

@@ -16,6 +16,11 @@ export type DeviceInfo = { status: 'ok'; staff: CachedStaff[] } | { status: 'rev
 const FILE = 'device.json'
 const TIMEOUT_MS = 15_000
 const ROLES = new Set(['owner', 'manager', 'barista'])
+// The format @kennko/core/staff-pin writes (global constraints). A row with any other hash could never match a PIN,
+// yet would still count towards per-person mode, so it is dropped.
+const PIN_HASH = /^scrypt\$16384\$8\$1\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/
+// The API's own 401 codes for a device token. Any other 401 (a hosting protection page, say) is not the API speaking.
+const REVOKED_CODES = new Set(['DEVICE_REVOKED', 'UNAUTHENTICATED'])
 const UNREACHABLE = 'Could not reach the website. Check the internet and try again.'
 const base = (apiUrl: string) => apiUrl.trim().replace(/\/+$/, '')
 
@@ -67,9 +72,12 @@ export async function pairWithApi(apiUrl: string, code: string, now: number, fet
 }
 
 const isCachedStaff = (s: any): s is CachedStaff =>
-  Boolean(s) && typeof s.id === 'string' && s.id !== '' && typeof s.fullName === 'string' && ROLES.has(s.role) && typeof s.pinHash === 'string' && s.pinHash !== ''
+  Boolean(s) && typeof s.id === 'string' && s.id !== '' && typeof s.fullName === 'string' && ROLES.has(s.role) && typeof s.pinHash === 'string' && PIN_HASH.test(s.pinHash)
 
-/** Asks the API who may use this till. Never throws: anything but a clear answer counts as offline. */
+/**
+ * Asks the API who may use this till. Never throws: anything but a clear answer counts as offline, including a 401
+ * that does not carry the API's DEVICE_REVOKED or UNAUTHENTICATED code.
+ */
 export async function fetchDeviceInfo(apiUrl: string, token: string, fetchFn: typeof fetch = fetch): Promise<DeviceInfo> {
   if (!apiUrl.trim()) return { status: 'offline' }
   try {
@@ -77,7 +85,10 @@ export async function fetchDeviceInfo(apiUrl: string, token: string, fetchFn: ty
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
-    if (res.status === 401) return { status: 'revoked' }
+    if (res.status === 401) {
+      const body: any = await res.json().catch(() => null)
+      return REVOKED_CODES.has(body?.code) ? { status: 'revoked' } : { status: 'offline' }
+    }
     if (!res.ok) return { status: 'offline' }
     const body: any = await res.json()
     if (!body || !Array.isArray(body.staff)) return { status: 'offline' }

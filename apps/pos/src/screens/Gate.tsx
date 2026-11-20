@@ -1,24 +1,40 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, type Bootstrap, type Session } from '../api.ts'
 import { InstallNote } from '../components/InstallNote.tsx'
 import { Keypad } from '../components/Keypad.tsx'
 import { CatToon } from '@kennko/cats'
 
-type Props = { onUnlock: (who: Session) => void; secureUrl: string | null; pinMode: Bootstrap['pinMode'] }
+type Props = {
+  onUnlock: (who: Session) => void
+  secureUrl: string | null
+  pinMode: Bootstrap['pinMode']
+  /** Re-reads the till's PIN mode; called on mount and every 30 s while the Gate is shown. */
+  onRefresh: () => void
+}
+
+const REFRESH_MS = 30_000
 
 /**
  * The first thing a device sees: the PIN, typed once and swapped for a session the till remembers.
- * Per-person mode takes each person's own 6 digits; shared mode the PIN from config.json (up to 8 digits).
+ * Per-person mode asks for each person's own 6 digits; shared mode for the PIN from config.json. Either way up to
+ * 8 digits can be typed (sent from 4 in per-person): the shown mode may be a moment old, and the till decides.
  */
-export function Gate({ onUnlock, secureUrl, pinMode }: Props) {
+export function Gate({ onUnlock, secureUrl, pinMode, onRefresh }: Props) {
   const own = pinMode === 'per-person'
-  const max = own ? 6 : 8
+
+  useEffect(() => {
+    onRefresh()
+    const timer = setInterval(onRefresh, REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [onRefresh])
   const [entry, setEntry] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // Shared mode keeps taking any length, as before; per-person sends from 4 digits so a 4-digit shared PIN still works.
+  const ready = own ? entry.length >= 4 : entry.length > 0
 
   const submit = async () => {
-    if (!entry || busy) return
+    if (!ready || busy) return
     setBusy(true)
     try {
       onUnlock(await api.startSession(entry))
@@ -37,11 +53,11 @@ export function Gate({ onUnlock, secureUrl, pinMode }: Props) {
         <CatToon coat="tuxedo" pose="wave" className="perch perch-sit perch-right" />
         <h1>{own ? 'Enter your own 6-digit PIN' : 'Enter your PIN'}</h1>
         <div className="pin-dots" aria-label={`${entry.length} digits entered`}>
-          {Array.from({ length: own ? 6 : Math.max(4, entry.length) }, (_, i) => <i key={i} className={i < entry.length ? 'on' : ''} />)}
+          {Array.from({ length: Math.max(own ? 6 : 4, entry.length) }, (_, i) => <i key={i} className={i < entry.length ? 'on' : ''} />)}
         </div>
         <p className="error center" role="alert">{error}</p>
-        <Keypad onKey={(k) => { setError(''); setEntry((p) => (p + k).slice(0, max)) }} onBackspace={() => setEntry((p) => p.slice(0, -1))} />
-        <button type="button" className="btn btn-primary btn-block" disabled={(own ? entry.length !== 6 : !entry) || busy} onClick={submit}>
+        <Keypad onKey={(k) => { setError(''); setEntry((p) => (p + k).slice(0, 8)) }} onBackspace={() => setEntry((p) => p.slice(0, -1))} />
+        <button type="button" className="btn btn-primary btn-block" disabled={!ready || busy} onClick={submit}>
           {busy ? 'Checking…' : 'Open the till'}
         </button>
       </div>
