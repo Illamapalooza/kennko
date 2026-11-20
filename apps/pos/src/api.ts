@@ -1,4 +1,4 @@
-import type { CashMove, Discount, Menu, OnlineQueueOrder, Order, Shift, Summary } from '@kennko/core'
+import type { CashMove, Discount, Menu, OnlineQueueOrder, Order, PrepStatus, Shift, Summary } from '@kennko/core'
 
 export type Bootstrap = {
   shop: { name: string; address: string; phone: string; receiptFooter: string }
@@ -81,7 +81,8 @@ export const api = {
   menu: () => call<Menu>('GET', '/api/menu'),
   orders: (day: string) => call<Order[]>('GET', `/api/orders?day=${day}`),
   createOrder: (body: unknown) => call<Order>('POST', '/api/orders', body),
-  advanceOnline: (id: string) => call<OnlineQueueOrder>('POST', `/api/online/${id}/advance`, {}),
+  /** `from` is the step on screen, so a double tap or a second tablet cannot move the order twice. */
+  advanceOnline: (id: string, from: PrepStatus) => call<OnlineQueueOrder>('POST', `/api/online/${id}/advance`, { from }),
   advance: (id: number) => call<Order>('POST', `/api/orders/${id}/advance`, {}),
   undo: (id: number) => call<Order>('POST', `/api/orders/${id}/undo`, {}),
   voidOrder: (id: number, reason: string, managerPin: string) => call<Order>('POST', `/api/orders/${id}/void`, { reason, managerPin }),

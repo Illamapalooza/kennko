@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { OrderError, formatPesos, manilaDay, type Menu } from '@kennko/core'
+import { OrderError, formatPesos, manilaDay, type Menu, type PrepStatus } from '@kennko/core'
 import { backupDay } from './backup.ts'
 import { ensureCertificate, tillNames, type Certificate } from './secure.ts'
 import { setupPage } from './setup-page.ts'
@@ -343,7 +343,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   // An online order's next prep step (Plan 5): a local write plus an outbox row, credited to the session's person;
   // Kennko hears about it on the next sync. No Back and no Void here: the customer was told, and admin cancels.
   const onlineAction = /^\/api\/online\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/advance$/i.exec(route)
-  if (onlineAction) return done(store.advanceOnline(onlineAction[1]!, now, by))
+  if (onlineAction) {
+    // The step the barista saw: a second tap on the same ticket (or a second tablet) is refused, not a second step.
+    if (typeof body.from !== 'string') throw new OrderError('Reload the till, then try again.')
+    return done(store.advanceOnline(onlineAction[1]!, now, by, body.from as PrepStatus))
+  }
 
   if (route === '/api/menu/availability') {
     if (typeof body.itemId !== 'string' || !onMenu(body.itemId)) throw new OrderError('That drink is not on the menu.')

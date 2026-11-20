@@ -84,6 +84,20 @@ describe('online orders on the till', () => {
     expect((store.db.prepare('select updated_at from online_orders').get() as any).updated_at).toBe(T + 3)
   })
 
+  it('a double tap moves the order one step: the second tap names a step that is gone (final fix 1)', () => {
+    const store = createStore(':memory:')
+    store.replaceOnlineOrders([pickup])
+    // Two tablets both see "placed" and tap Start.
+    expect(store.advanceOnline(PICKUP_ID, T + 1, ANA, 'placed').prepStatus).toBe('preparing')
+    expect(() => store.advanceOnline(PICKUP_ID, T + 2, BEN, 'placed')).toThrow(new OrderError('Someone already moved this order.'))
+    expect(store.onlineOrders()[0].prepStatus).toBe('preparing')
+    expect((store.db.prepare('select updated_at from online_orders').get() as any).updated_at).toBe(T + 1)
+    expect(outboxRows(store)).toHaveLength(1)
+    // The step the barista sees now still works.
+    expect(store.advanceOnline(PICKUP_ID, T + 3, BEN, 'preparing').prepStatus).toBe('ready')
+    expect(outboxRows(store)).toHaveLength(2)
+  })
+
   it('steps a delivery order preparing → out_for_delivery → completed', () => {
     const store = createStore(':memory:')
     store.replaceOnlineOrders([delivery])

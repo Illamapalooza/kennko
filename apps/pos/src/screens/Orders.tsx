@@ -47,7 +47,7 @@ export function Orders({ live, notify }: { live: Live; notify: (message: string)
             {cards.length === 0 ? <p className="empty">Nothing here.</p> : null}
             {cards.map((card) => {
               if (card.kind === 'w') return (
-              <OnlineTicket key={`w:${card.order.id}`} order={card.order} now={now} busy={busy === `w:${card.order.id}`} onAdvance={() => act(`w:${card.order.id}`, () => api.advanceOnline(card.order.id))} />
+              <OnlineTicket key={`w:${card.order.id}`} order={card.order} now={now} busy={busy === `w:${card.order.id}`} onAdvance={() => act(`w:${card.order.id}`, () => api.advanceOnline(card.order.id, card.order.prepStatus))} />
               )
               const order = card.order
               const key = `c:${order.id}`

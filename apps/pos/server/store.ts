@@ -539,13 +539,18 @@ export function createStore(file: string) {
       })
     },
 
-    /** Moves an online order to its next prep step; the step goes to Kennko through the outbox (Plan 5 Ruling 8). */
-    advanceOnline(id: string, now: number, by: By): OnlineQueueOrder {
+    /**
+     * Moves an online order to its next prep step; the step goes to Kennko through the outbox (Plan 5 Ruling 8).
+     * `from` is the step the barista saw: when the order has moved since (a double tap, a second tablet), nothing is
+     * written, so one tap is never two steps. The till's route always passes it.
+     */
+    advanceOnline(id: string, now: number, by: By, from?: PrepStatus): OnlineQueueOrder {
       by = checkBy(by)
       return tx(() => {
         const row = db.prepare('select * from online_orders where id = ?').get(id) as any
         if (!row) throw new OrderError('That online order is no longer on the till.')
         const order = toOnline(row)
+        if (from !== undefined && from !== order.prepStatus) throw new OrderError('Someone already moved this order.')
         const next = nextPrepStatus(order.prepStatus, order.fulfilment)
         if (!next) throw new OrderError('That order is already finished.')
         db.prepare('update online_orders set prep_status = ?, updated_at = ? where id = ?').run(next, now, id)
