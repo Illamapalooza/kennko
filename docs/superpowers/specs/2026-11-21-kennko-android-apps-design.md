@@ -16,7 +16,7 @@ no internet. The wall should run on the projector with nobody typing addresses.
 - **Kennko POS**, an Android app on the Samsung, is the till: selling, shifts and cash, PINs, the order queue,
   stamps, the free drink, online orders, sold-out switches, menu updates — everything the current till does except
   what is listed under non-goals.
-- **Kennko Wall**, an Android TV app on the projector, shows the cafe scene, cats, music, order board, visiting cats
+- **Kennko Wall**, an Android TV app on the projector, shows the cafe scene, cats, sound effects, order board, visiting cats
   and the check-in QR.
 - Selling never needs the internet. The wall never needs the internet (only the shop wifi).
 - No addresses typed, ever, after the first install.
@@ -72,7 +72,7 @@ no internet. The wall should run on the projector with nobody typing addresses.
 ```
  Samsung tablet — Kennko POS (Capacitor)               Projector — Kennko Wall (Capacitor, Android TV)
  ├─ till screens (existing React UI)                   ├─ cafe scene, cats, sprites (existing wall code)
- ├─ in-app "till core": SQLite, outbox, sync,          ├─ music from the projector's storage
+ ├─ in-app "till core": SQLite, outbox, sync,          ├─ sound effects for scene events          
  │  PINs, sessions, check-in, menu, wall feed          └─ finds the POS on the wifi, follows its feed
  ├─ native: wifi feed (HTTP/SSE) + network announce  ── shop wifi ──►
  └─ HTTPS to the Kennko API when online
