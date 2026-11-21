@@ -26,11 +26,19 @@ function send(base: string, path: string, init: FetchInit, extra: Record<string,
   })
 }
 
+/** Thrown when a call needs a signed-in user and there is none (callers can tell it from a network failure). */
+export class NotSignedInError extends Error {
+  constructor() {
+    super('You are not signed in.')
+    this.name = 'NotSignedInError'
+  }
+}
+
 /** The signed-in user's Supabase access token (staff or customer), or a throw when nobody is signed in. */
 async function accessToken(): Promise<string> {
   const db = await getServerClient()
   const token = (await db.auth.getSession()).data.session?.access_token
-  if (!token) throw new Error('You are not signed in.')
+  if (!token) throw new NotSignedInError()
   return token
 }
 

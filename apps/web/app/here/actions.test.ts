@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const userFetch = vi.fn()
-vi.mock('@/lib/api/client', () => ({ userFetch: (...a: unknown[]) => userFetch(...a) }))
+vi.mock('server-only', () => ({}))
+vi.mock('@/lib/supabase/server', () => ({ getServerClient: vi.fn() }))
+vi.mock('@/lib/api/client', async (orig) => ({
+  ...(await orig<typeof import('@/lib/api/client')>()),
+  userFetch: (...a: unknown[]) => userFetch(...a),
+}))
 
+import { NotSignedInError } from '@/lib/api/client'
 import { checkIn } from './actions'
 
 const json = (status: number, body: unknown) =>
@@ -20,7 +26,7 @@ describe('checkIn', () => {
     expect(err).not.toHaveBeenCalled()
   })
   it('maps the signed-out throw to SIGNED_OUT without logging', async () => {
-    userFetch.mockRejectedValue(new Error('You are not signed in.'))
+    userFetch.mockRejectedValue(new NotSignedInError())
     expect(await checkIn('abcd2345')).toEqual({ status: 'error', reason: 'SIGNED_OUT' })
     expect(err).not.toHaveBeenCalled()
   })

@@ -1,6 +1,6 @@
 'use server'
 
-import { userFetch } from '@/lib/api/client'
+import { NotSignedInError, userFetch } from '@/lib/api/client'
 import { parseWallCode, type CheckinResult } from './here'
 
 /**
@@ -18,8 +18,8 @@ export async function checkIn(code: string): Promise<CheckinResult> {
       body: JSON.stringify({ code: clean }),
     })
   } catch (err) {
-    // userFetch throws this exact message when nobody is signed in (lib/api/client.ts): not a failure to log.
-    if ((err as Error).message === 'You are not signed in.') return { status: 'error', reason: 'SIGNED_OUT' }
+    // Nobody is signed in any more: not a failure to log.
+    if (err instanceof NotSignedInError) return { status: 'error', reason: 'SIGNED_OUT' }
     console.error('[here] check-in failed:', (err as Error).message)
     return { status: 'error', reason: 'FAILED' }
   }
