@@ -14,18 +14,20 @@ import { backupDay } from './backup.ts'
 import { ensureCertificate, tillNames, type Certificate } from './secure.ts'
 import { setupPage } from './setup-page.ts'
 import { loadConfig } from './config.ts'
-import { fetchApiMenu, loadMenu, loadSnapshot, saveSnapshot, splitSoldOut, tillDiscounts, tillMenu } from './menu.ts'
-import { createStore } from './store.ts'
-import { chargeWithFreeDrink, lookupCustomer } from './kennko-api.ts'
-import { createPinDirectory } from './pins.ts'
-import { checkPinFresh, createPinRefresh, forgetConnection, loadDevice, pairWithApi, saveDevice } from './device.ts'
-import { currentCheckin, msToNextMinute, storedSkew } from './checkin.ts'
-import { tabletSnapshot } from './tablet-feed.ts'
-import { createSync, syncReady } from './sync.ts'
-import { bounded } from './wait.ts'
-import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
-import { reportCsv } from './report.ts'
-import { wallMenu, wallSnapshot as wallFeed } from './wall-feed.ts'
+import { nodeFiles } from './node-files.ts'
+import { openNodeSqlite } from './node-sqlite.ts'
+import { fetchApiMenu, loadMenu, loadSnapshot, saveSnapshot, splitSoldOut, tillDiscounts, tillMenu } from '../till/menu.ts'
+import { createStore } from '../till/store.ts'
+import { chargeWithFreeDrink, lookupCustomer } from '../till/kennko-api.ts'
+import { createPinDirectory } from '../till/pins.ts'
+import { checkPinFresh, createPinRefresh, forgetConnection, loadDevice, pairWithApi, saveDevice } from '../till/device.ts'
+import { currentCheckin, msToNextMinute, storedSkew } from '../till/checkin.ts'
+import { tabletSnapshot } from '../till/tablet-feed.ts'
+import { createSync, syncReady } from '../till/sync.ts'
+import { bounded } from '../till/wait.ts'
+import { createSessions, readSessionCookie, sessionCookie, type Who } from '../till/sessions.ts'
+import { reportCsv } from '../till/report.ts'
+import { wallMenu, wallSnapshot as wallFeed } from '../till/wall-feed.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
@@ -38,11 +40,12 @@ const config = loadConfig(ROOT)
 const port = portArg >= 0 && Number(args[portArg + 1]) > 0 ? Number(args[portArg + 1]) : config.port
 
 fs.mkdirSync(DATA, { recursive: true })
-const store = createStore(path.join(DATA, 'pos.db'))
+const files = nodeFiles(DATA)
+const store = createStore(path.join(DATA, 'pos.db'), openNodeSqlite)
 // The menu.json from before sync (or the built-in menu): used only until a snapshot has been pulled.
-const baseMenu: Menu = loadMenu(DATA, Date.now())
+const baseMenu: Menu = loadMenu(files, Date.now())
 // The snapshot pulled from the website (data/menu-snapshot.json); reloaded whenever the sync saves a newer one.
-let loadedSnapshot = loadSnapshot(DATA)
+let loadedSnapshot = loadSnapshot(files)
 // The PIN is typed once per browser and swapped for a session cookie; sessions live in pos.db and survive a restart.
 const sessions = createSessions(store.db, () => Date.now())
 // Each person's own PIN, checked against the staff cache in pos.db (filled by the sync's pull below).
@@ -71,18 +74,18 @@ setInterval(backup, 60 * 60 * 1000).unref()
  * stamping go through the outbox.
  */
 const sync = createSync({
-  store, sessions, pins, dataDir: DATA, apiUrl: config.api.url,
+  store, sessions, pins, files, apiUrl: config.api.url,
   onChange: ({ menu: menuChanged }) => {
-    if (menuChanged) loadedSnapshot = loadSnapshot(DATA)
+    if (menuChanged) loadedSnapshot = loadSnapshot(files)
     broadcast()
   },
 })
 // A PIN that matches no one runs one sync (paired, not revoked, at most every 30 s, waiting at most 2.5 s; Ruling P4-1).
-const pinRefresh = createPinRefresh({ dataDir: DATA, refresh: sync.runOnce })
+const pinRefresh = createPinRefresh({ files, refresh: sync.runOnce })
 const PAIR_WAIT_MS = 5_000
 const CHECK_WAIT_MS = 10_000
 /** Paired, not revoked and the website address set: "Check now" is one sync with no PIN. */
-const canSync = () => syncReady(loadDevice(DATA), config.api.url)
+const canSync = () => syncReady(loadDevice(files), config.api.url)
 
 /** The menu the till sells from: the pulled snapshot (else the old menu) with the sold-out marks applied. */
 const menu = (): Menu => tillMenu(loadedSnapshot, baseMenu, new Set(store.soldOut()), Date.now())
@@ -254,7 +257,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const now = Date.now()
 
   if (req.method === 'GET' && route === '/api/bootstrap') {
-    const device = loadDevice(DATA)
+    const device = loadDevice(files)
     return json(res, 200, {
       shop: shopDetails(), discounts: tillDiscounts(loadedSnapshot, config.discounts), pinMode: pins.mode(),
       websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req),
@@ -313,7 +316,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (lookup) {
       let code = ''
       try { code = decodeURIComponent(lookup[1]!) } catch { /* refused as a typo below */ }
-      return json(res, 200, await lookupCustomer(store, DATA, config.api.url, code))
+      return json(res, 200, await lookupCustomer(store, files, config.api.url, code))
     }
     if (route === '/api/orders') {
       const day = url.searchParams.get('day')
@@ -353,7 +356,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (body.reward) {
       const manager = await checkPin(req, body.managerPin, 'manager')
       return done(await chargeWithFreeDrink({
-        store, menu: menu(), dataDir: DATA, apiUrl: config.api.url, input: body, reward: body.reward, now, by, managerStaffId: manager.staffId,
+        store, menu: menu(), files, apiUrl: config.api.url, input: body, reward: body.reward, now, by, managerStaffId: manager.staffId,
         kick: () => sync.kick(),
       }))
     }
@@ -394,7 +397,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     // Per-person mode asks for the person's own PIN (any role) and credits them; otherwise the session (Ruling 14/15).
     const credited = pins.mode() === 'per-person' ? (await personalPin(req, body.pin)).staffId : by
     // Sent to Kennko only while connected and not disconnected in admin (Ruling 14).
-    store.setAvailable(body.itemId, Boolean(body.available), now, credited, { outbox: loadDevice(DATA)?.revokedAt === null })
+    store.setAvailable(body.itemId, Boolean(body.available), now, credited, { outbox: loadDevice(files)?.revokedAt === null })
     return done(menu())
   }
   if (route === '/api/menu/sync') {
@@ -414,7 +417,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     try { pulled = await fetchApiMenu(config.api.url, now) } catch (err: any) { throw new OrderError(err.message) }
     // Sold-out goes into the till's own list, never baked into the saved snapshot (staff can put an item back).
     const { snapshot: clean, soldOut } = splitSoldOut(pulled)
-    saveSnapshot(DATA, clean)
+    saveSnapshot(files, clean)
     for (const id of soldOut) store.setAvailable(id, false, now, null, { outbox: false })
     loadedSnapshot = clean
     return done(menu())
@@ -425,7 +428,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (typeof body.code !== 'string' || !/^\d{6}$/.test(body.code)) throw new OrderError('The code is 6 digits.')
     let device
     try { device = await pairWithApi(config.api.url, body.code, now) } catch (err: any) { throw new OrderError(err.message) }
-    saveDevice(DATA, device)
+    saveDevice(files, device)
     // The first sync (staff, menu, history) gets 5 s; a longer one carries on and lands through onChange (P4-7).
     await bounded(sync.runOnce(), PAIR_WAIT_MS)
     broadcast()
@@ -434,7 +437,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (route === '/api/device/forget') {
     await checkPin(req, body.managerPin, 'manager')
     // The staff cache stays, so the same PINs keep working; customer details and the wall check-in go (device.ts).
-    forgetConnection(store, DATA)
+    forgetConnection(store, files)
     broadcast() // the tablets' sync status now says not connected
     return json(res, 200, { ok: true })
   }
@@ -553,7 +556,7 @@ server.listen(port, '0.0.0.0', () => {
   console.log(`  Menu:            ${loadedSnapshot ? `from the website, version ${loadedSnapshot.version}` : startMenu.source === 'website' ? 'from the website (saved before sync)' : 'built-in'}, ${startMenu.categories.reduce((n, c) => n + c.items.length, 0)} drinks`)
   console.log(`  Till:            ${shift ? `open, expecting ${formatPesos(store.shiftSummary(shift).expectedCashCentavos)} in the drawer` : 'closed'}`)
   console.log(`  Backup:          ${lastBackup}`)
-  const device = loadDevice(DATA)
+  const device = loadDevice(files)
   console.log(`  Kennko account:  ${device ? (device.revokedAt !== null ? `disconnected in admin (was "${device.name}")` : `connected as "${device.name}"`) : 'not connected (Menu › This till)'}`)
   const s = sync.status()
   const waiting = s.pendingEvents ? `, ${s.pendingEvents} change${s.pendingEvents === 1 ? '' : 's'} waiting to send` : ''

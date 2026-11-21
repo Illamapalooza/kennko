@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createPinDirectory } from '../server/pins.ts'
+import { createPinDirectory } from '../till/pins.ts'
 
 const shared = createPinDirectory({ staffPin: '1234', managerPin: '0000', staff: () => [] })
 

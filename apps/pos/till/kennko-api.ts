@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { randomUuid } from '@kennko/core/portable-crypto'
 import { OrderError, formatPublicCode, normalisePublicCode, type Menu, type Order, type TillCustomer } from '@kennko/core'
 import { REVOKED_CODES, loadDevice } from './device.ts'
+import type { TillFiles } from './files.ts'
 import { TYPO_MESSAGE, tillCustomer, type By, type NewOrder, type Store } from './store.ts'
 
 /**
@@ -33,14 +34,14 @@ const base = (apiUrl: string) => apiUrl.trim().replace(/\/+$/, '')
  * with the API's `{ code, message }` when it sent one; the API's own revoked 401 is `revoked`.
  */
 export async function deviceCall(
-  dataDir: string,
+  files: TillFiles,
   apiUrl: string,
   path: string,
   init: RequestInit,
   timeoutMs: number,
   fetchFn: typeof fetch = fetch,
 ): Promise<DeviceAnswer> {
-  const device = loadDevice(dataDir)
+  const device = loadDevice(files)
   if (!device || device.revokedAt !== null || !apiUrl.trim()) return { kind: 'offline' }
   let res: Response
   let body: any
@@ -71,11 +72,11 @@ export type LookupAnswer = { customer: TillCustomer } | { customer: null; code: 
  * fields) is answered and cached. Offline, an API from before the loyalty plan, or the per-till lookup limit: the code
  * with a note; staff can still link it, and the server checks it when the sale syncs.
  */
-export async function lookupCustomer(store: Store, dataDir: string, apiUrl: string, input: string, fetchFn: typeof fetch = fetch): Promise<LookupAnswer> {
+export async function lookupCustomer(store: Store, files: TillFiles, apiUrl: string, input: string, fetchFn: typeof fetch = fetch): Promise<LookupAnswer> {
   const bare = normalisePublicCode(input)
   if (!bare) throw new OrderError(TYPO_MESSAGE)
   const code = formatPublicCode(bare)
-  const a = await deviceCall(dataDir, apiUrl, `/v1/customers/by-code/${bare}`, { method: 'GET' }, LOOKUP_WAIT_MS, fetchFn)
+  const a = await deviceCall(files, apiUrl, `/v1/customers/by-code/${bare}`, { method: 'GET' }, LOOKUP_WAIT_MS, fetchFn)
   if (a.kind === 'ok') {
     const found = tillCustomer(a.body)
     if (found) {
@@ -108,7 +109,7 @@ function claimRefusal(a: Extract<DeviceAnswer, { kind: 'refused' }>): string {
 export async function chargeWithFreeDrink(o: {
   store: Store
   menu: Menu
-  dataDir: string
+  files: TillFiles
   apiUrl: string
   fetchFn?: typeof fetch
   input: NewOrder
@@ -120,7 +121,7 @@ export async function chargeWithFreeDrink(o: {
   kick?: () => void
   claimWaitMs?: number
 }): Promise<Order> {
-  const { store, menu, dataDir, apiUrl, input, reward, now } = o
+  const { store, menu, files, apiUrl, input, reward, now } = o
   const fetchFn = o.fetchFn ?? fetch
   const lines = Array.isArray(input?.lines) ? input.lines : []
   const index = reward?.lineIndex
@@ -133,8 +134,8 @@ export async function chargeWithFreeDrink(o: {
   const sale: NewOrder = { ...input, customerCode: bare, lines: lines.map((l, i) => ({ ...l, reward: i === index })) }
   store.prepareOrder(menu, sale)
 
-  const claimId = randomUUID()
-  const claimed = await deviceCall(dataDir, apiUrl, '/v1/stamp-cards/claim', {
+  const claimId = randomUuid()
+  const claimed = await deviceCall(files, apiUrl, '/v1/stamp-cards/claim', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ claimId, code: bare, staffId: o.managerStaffId }),
   }, o.claimWaitMs ?? CLAIM_WAIT_MS, fetchFn)
   if (claimed.kind === 'refused') throw new OrderError(claimRefusal(claimed))
@@ -154,7 +155,7 @@ export async function chargeWithFreeDrink(o: {
   } catch (err) {
     // Queued first, so the release is never lost; one try now usually settles it before staff charge again.
     store.queueRelease(claimId, now)
-    await releasePending(store, dataDir, apiUrl, now, fetchFn, claimId)
+    await releasePending(store, files, apiUrl, now, fetchFn, claimId)
     o.kick?.()
     throw err
   }
@@ -168,11 +169,11 @@ export async function chargeWithFreeDrink(o: {
  * disconnected till keeps it and stops this round. A claim a sale was written under is dropped without a call.
  * Never throws.
  */
-export async function releasePending(store: Store, dataDir: string, apiUrl: string, now: number, fetchFn: typeof fetch = fetch, only?: string): Promise<void> {
+export async function releasePending(store: Store, files: TillFiles, apiUrl: string, now: number, fetchFn: typeof fetch = fetch, only?: string): Promise<void> {
   for (const { claimId, claimedAt } of store.pendingReleases()) {
     if (only !== undefined && claimId !== only) continue
     if (store.db.prepare('select 1 from orders where reward_claim_id = ?').get(claimId)) { store.dropRelease(claimId); continue }
-    const a = await deviceCall(dataDir, apiUrl, '/v1/stamp-cards/release', {
+    const a = await deviceCall(files, apiUrl, '/v1/stamp-cards/release', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ claimId }),
     }, CLAIM_WAIT_MS, fetchFn)
     if (a.kind === 'ok' && a.body?.released === true) store.dropRelease(claimId)

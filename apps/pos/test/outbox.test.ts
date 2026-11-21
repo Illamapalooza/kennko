@@ -4,8 +4,9 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ADDON_LIMIT_MESSAGE, liveDrinkMenu, makePublicCode, type Menu, type MenuSnapshot } from '@kennko/core'
-import { createStore, type NewOrder } from '../server/store.ts'
-import { builtInMenu } from '../server/menu.ts'
+import { createStore, type NewOrder } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { builtInMenu } from '../till/menu.ts'
 
 const menu = builtInMenu(0)
 const latte = menu.categories[0].items.find((i) => i.name === 'Café Latte')!
@@ -30,7 +31,7 @@ afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true
 
 describe('outbox', () => {
   it('adds exactly one row per write, with who and when', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const shift = store.startShift(100000, T, ANA)
     expect(rows(store)).toEqual([{ kind: 'shift.opened', entity: 'shift', entity_local_id: shift.id, staff_id: ANA, occurred_at: T }])
 
@@ -61,7 +62,7 @@ describe('outbox', () => {
   })
 
   it('stores attribution on the rows themselves', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const shift = store.startShift(0, T, ANA)
     const order = store.createOrder(menu, sale(), T, ANA)
     store.voidOrder(order.id, 'oops', T, BEN)
@@ -76,7 +77,7 @@ describe('outbox', () => {
   })
 
   it('sends events in order with the uuids filled in from the rows', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const shift = store.startShift(100000, T, ANA)
     const order = store.createOrder(menu, sale({ customerName: 'Ana', payment: { method: 'gcash', ref: '99' } }), T + 1, ANA)
     store.advance(order.id, T + 2, ANA)
@@ -129,7 +130,7 @@ describe('outbox', () => {
   })
 
   it('maps every till step to the prep status', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const { id } = store.createOrder(menu, sale(), T, null)
     store.advance(id, T, null); store.advance(id, T, null); store.undo(id, T, null); store.undo(id, T, null)
@@ -148,7 +149,7 @@ describe('outbox', () => {
     }
     const website = liveDrinkMenu(snapshot, T)
     expect(website.version).toBe(3)
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const order = store.createOrder(website, sale({ lines: [{ menuItemId: 'i1', size: 'M', modifierIds: [], quantity: 1, iceLevel: null, iceServe: null, note: '' }] }), T, null)
     expect((store.db.prepare('select menu_version from orders where id = ?').get(order.id) as any).menu_version).toBe(3)
@@ -156,7 +157,7 @@ describe('outbox', () => {
   })
 
   it('a write that fails leaves the outbox as it was (same transaction)', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     expect(() => store.createOrder(menu, sale(), T, ANA)).toThrow(/Open the till/)
     expect(rows(store)).toHaveLength(0)
     store.startShift(0, T, ANA)
@@ -171,7 +172,7 @@ describe('outbox', () => {
   })
 
   it('a sold-out change while unpaired changes the mark and adds nothing', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.setAvailable(latte.id, false, T, ANA, { outbox: false })
     expect(store.soldOut()).toEqual([latte.id])
     store.setAvailable(latte.id, true, T, ANA, { outbox: false })
@@ -180,7 +181,7 @@ describe('outbox', () => {
   })
 
   it('acks only the given ids and counts what is pending', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     expect(store.pending()).toEqual({ sales: 0, events: 0 })
     store.startShift(0, T, null)
     const a = store.createOrder(menu, sale(), T, null)
@@ -197,7 +198,7 @@ describe('outbox', () => {
   })
 
   it('keeps small values in kv', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     expect(store.kvGet('schema')).toBe('4')
     expect(store.kvGet('missing')).toBeNull()
     store.kvSet('last_sync', '123')
@@ -206,7 +207,7 @@ describe('outbox', () => {
   })
 
   it('stops at the first row whose uuids are not known yet, so order is kept', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const legacy = store.createOrder(menu, sale(), T, null)
     const fresh = store.createOrder(menu, sale(), T, null)
@@ -224,7 +225,7 @@ describe('outbox', () => {
   })
 
   it('a sale in a shift with no uid waits too', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const shift = store.startShift(0, T, null)
     store.ackOutbox(store.outboxEvents().map((e) => e.id))
     store.db.prepare('update shifts set uid = null where id = ?').run(shift.id)
@@ -239,7 +240,7 @@ describe('what the till normalises so the API never holds its events as invalid 
   it('records a staff id that is not a uuid as nobody, with a warning, and never refuses', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      const store = createStore(':memory:')
+      const store = createStore(':memory:', openNodeSqlite)
       const shift = store.startShift(0, T, 'ana')
       const order = store.createOrder(menu, sale(), T, 'not-a-uuid')
       store.voidOrder(order.id, 'oops', T, 'x')
@@ -253,7 +254,7 @@ describe('what the till normalises so the API never holds its events as invalid 
   })
 
   it('a fractional percent is rounded to a whole one rather than refused', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const order = store.createOrder(menu, sale({ discount: { label: 'x', kind: 'percent', value: 12.5 } }), T, null)
     expect(order.discountCentavos).toBe(1300) // 13% of 100.00
@@ -261,7 +262,7 @@ describe('what the till normalises so the API never holds its events as invalid 
   })
 
   it('an amount discount bigger than the order is sent as the subtotal and still sells', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const order = store.createOrder(menu, sale({ discount: { label: 'Free', kind: 'amount', value: 3_000_000_000 } }), T, null)
     expect(order.totalCentavos).toBe(0)
@@ -275,7 +276,7 @@ describe('what the till normalises so the API never holds its events as invalid 
     item.name = 'L'.repeat(200)
     const group = long.modifierGroups[0]
     group.modifiers[0].name = 'O'.repeat(200)
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const order = store.createOrder(long, sale({
       lines: [{ menuItemId: latte.id, size: 'M', modifierIds: [group.modifiers[0].id], quantity: 1, iceLevel: null, iceServe: null, note: '' }],
@@ -293,7 +294,7 @@ describe('what the till normalises so the API never holds its events as invalid 
       id: 'extras', name: 'Extras', isMultiSelect: true,
       modifiers: Array.from({ length: 21 }, (_, i) => ({ id: `extra-${i}`, name: `Extra ${i}`, priceCentavos: 0, isAvailable: true })),
     })
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const line = (n: number) => ({ menuItemId: latte.id, size: 'M' as const, modifierIds: Array.from({ length: n }, (_, i) => `extra-${i}`), quantity: 1, iceLevel: null, iceServe: null, note: '' })
     expect(() => store.createOrder(many, sale({ lines: [line(21)] }), T, null)).toThrow(ADDON_LIMIT_MESSAGE)
@@ -301,7 +302,7 @@ describe('what the till normalises so the API never holds its events as invalid 
   })
 
   it('cleans text so nothing sent holds a NUL or a broken character', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const order = store.createOrder(menu, sale({
       customerName: 'Ana\u0000' + 'x'.repeat(19) + '😀😀',
@@ -316,13 +317,13 @@ describe('what the till normalises so the API never holds its events as invalid 
   })
 
   it('refuses an empty item id for a sold-out mark', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     expect(() => store.setAvailable('', false, T, null, { outbox: true })).toThrow()
     expect(rows(store)).toHaveLength(0)
   })
 
   it('keeps notes and reasons within what the API accepts', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const move = store.cashMove('in', 100, 'r'.repeat(300), T, null)
     expect(move.reason).toHaveLength(80)
@@ -400,7 +401,7 @@ const OLD_SCHEMA = `
 
 describe('loyalty events in the outbox (Plan 7)', () => {
   it('link, stamp, unlink and the free drink are order rows; an online stamp keeps the server id and no local id', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, ANA)
     const code = makePublicCode(() => 11)
     const order = store.createOrder(menu, { ...sale(), customerCode: code }, T, ANA)
@@ -419,7 +420,7 @@ describe('loyalty events in the outbox (Plan 7)', () => {
   })
 
   it('a loyalty event waits for its order uuid like the sale itself', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, ANA)
     const order = store.createOrder(menu, sale(), T, ANA)
     store.db.prepare('delete from outbox').run()
@@ -446,7 +447,7 @@ describe('upgrade from the till before Plan 4', () => {
 
   it('marks every row already there for import, once', () => {
     const file = oldFile()
-    const store = createStore(file)
+    const store = createStore(file, openNodeSqlite)
     expect(store.kvGet('schema')).toBe('4')
     expect(store.db.prepare('select uid, needs_import from shifts').all()).toEqual([{ uid: null, needs_import: 1 }])
     expect(store.db.prepare('select uid, payment_uid, needs_import from orders').all())
@@ -458,7 +459,7 @@ describe('upgrade from the till before Plan 4', () => {
     const order = store.createOrder(menu, sale(), T + 2000, null)
     store.close()
 
-    const again = createStore(file)
+    const again = createStore(file, openNodeSqlite)
     expect(again.db.prepare('select needs_import from shifts where id = ?').get(shift.id)).toEqual({ needs_import: 0 })
     expect(again.db.prepare('select needs_import from orders where id = ?').get(order.id)).toEqual({ needs_import: 0 })
     expect(again.db.prepare('select count(*) as n from orders where needs_import = 1').get()).toEqual({ n: 2 })
@@ -471,7 +472,7 @@ describe('upgrade from the till before Plan 4', () => {
     const db = new DatabaseSync(file)
     db.exec('alter table shifts add column uid text; alter table orders add column uid text; alter table orders add column needs_import integer not null default 0')
     db.close()
-    const store = createStore(file)
+    const store = createStore(file, openNodeSqlite)
     expect(store.kvGet('schema')).toBe('4')
     expect(store.db.prepare('select uid, needs_import, opened_by_staff from shifts').all()).toEqual([{ uid: null, needs_import: 1, opened_by_staff: null }])
     expect(store.db.prepare('select needs_import, payment_uid from orders').all())
@@ -479,13 +480,13 @@ describe('upgrade from the till before Plan 4', () => {
     expect(store.db.prepare('select needs_import, staff_id from cash_moves').all()).toEqual([{ needs_import: 1, staff_id: null }])
     store.startShift(0, T + 2000, null)
     store.close()
-    const again = createStore(file)
+    const again = createStore(file, openNodeSqlite)
     expect(again.db.prepare('select needs_import from shifts order by id').all()).toEqual([{ needs_import: 1 }, { needs_import: 0 }])
     again.close()
   })
 
   it('a fresh till just sets the marker', () => {
-    const store = createStore(path.join(tempDir(), 'pos.db'))
+    const store = createStore(path.join(tempDir(), 'pos.db'), openNodeSqlite)
     expect(store.kvGet('schema')).toBe('4')
     store.close()
   })

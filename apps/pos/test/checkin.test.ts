@@ -2,14 +2,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { CHECKIN_URL, checkinLink, wallCode, wallMinute } from '@kennko/core'
-import { currentCheckin, msToNextMinute, storedSkew } from '../server/checkin.ts'
-import { createStore } from '../server/store.ts'
+import { currentCheckin, msToNextMinute, storedSkew } from '../till/checkin.ts'
+import { createStore } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
 
 const SECRET = 'k'.repeat(43) // 32 random bytes as base64url are 43 characters
 const T = Date.UTC(2026, 10, 21, 2, 0, 30) // half a minute in
 
 function withSecret(skew: number | null = 0) {
-  const store = createStore(':memory:')
+  const store = createStore(':memory:', openNodeSqlite)
   store.setCheckin({ secret: SECRET, url: CHECKIN_URL })
   if (skew !== null) store.kvSet('checkin_skew', String(skew))
   return store
@@ -17,7 +18,7 @@ function withSecret(skew: number | null = 0) {
 
 describe('currentCheckin', () => {
   it('is null without a secret', async () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.kvSet('checkin_skew', '0')
     expect(await currentCheckin(store, T)).toBeNull()
   })
@@ -80,7 +81,7 @@ describe('currentCheckin', () => {
 
 describe('storedSkew', () => {
   it('reads the persisted skew, and null for none or a broken value', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     expect(storedSkew(store)).toBeNull()
     store.kvSet('checkin_skew', '-1500')
     expect(storedSkew(store)).toBe(-1500)
@@ -107,12 +108,15 @@ describe('msToNextMinute', () => {
 })
 
 describe('the secret stays in the server process', () => {
+  const till = path.join(import.meta.dirname, '..', 'till')
   const server = path.join(import.meta.dirname, '..', 'server')
   const src = path.join(import.meta.dirname, '..', 'src')
 
   it('only the store and checkin.ts read it; index.ts never touches the config', () => {
-    const readers = fs.readdirSync(server).filter((f) => /checkin_secret|checkinConfig\(/.test(fs.readFileSync(path.join(server, f), 'utf8')))
-    expect(readers.sort()).toEqual(['checkin.ts', 'store.ts'])
+    const tillReaders = fs.readdirSync(till).filter((f) => /checkin_secret|checkinConfig\(/.test(fs.readFileSync(path.join(till, f), 'utf8')))
+    const serverReaders = fs.readdirSync(server).filter((f) => /checkin_secret|checkinConfig\(/.test(fs.readFileSync(path.join(server, f), 'utf8')))
+    expect(tillReaders.sort()).toEqual(['checkin.ts', 'store.ts'])
+    expect(serverReaders).toEqual([])
   })
 
   it('the tablet screens (src) never mention it', () => {

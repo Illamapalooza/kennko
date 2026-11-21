@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { groupsFor, priceLine, type MenuSnapshot } from '@kennko/core'
-import { builtInMenu, fetchApiMenu, loadSnapshot, splitSoldOut, tillDiscounts, tillMenu } from '../server/menu.ts'
+import { builtInMenu, fetchApiMenu, loadSnapshot, splitSoldOut, tillDiscounts, tillMenu } from '../till/menu.ts'
+import { nodeFiles } from '../server/node-files.ts'
 
 const snapshot: MenuSnapshot = {
   version: 3,
@@ -227,7 +228,7 @@ describe('loadSnapshot', () => {
     dirs.push(dir)
     fs.writeFileSync(path.join(dir, 'menu-snapshot.json'), '{"version": 3, "categ')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    expect(loadSnapshot(dir)).toBeNull()
+    expect(loadSnapshot(nodeFiles(dir))).toBeNull()
     warn.mockRestore()
   })
 })

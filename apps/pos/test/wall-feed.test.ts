@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Menu, OnlineQueueOrder, PrepStatus } from '@kennko/core'
 import { makePublicCode } from '@kennko/core'
-import { builtInMenu } from '../server/menu.ts'
-import { createStore } from '../server/store.ts'
-import { ONLINE_TO_WALL, wallMenu, wallOnlineOrders, wallSnapshot } from '../server/wall-feed.ts'
-import { currentCheckin } from '../server/checkin.ts'
-import { tabletSnapshot } from '../server/tablet-feed.ts'
+import { builtInMenu } from '../till/menu.ts'
+import { createStore } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { ONLINE_TO_WALL, wallMenu, wallOnlineOrders, wallSnapshot } from '../till/wall-feed.ts'
+import { currentCheckin } from '../till/checkin.ts'
+import { tabletSnapshot } from '../till/tablet-feed.ts'
 
 const order: OnlineQueueOrder = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -98,7 +99,7 @@ describe('the wall menu', () => {
 
 describe('loyalty never reaches the wall (Review Focus 3)', () => {
   it('a linked, stamped order and a stamped online order carry no code, customerCode or stamp key', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const menu = builtInMenu(0)
     const latte = menu.categories[0]!.items[0]!
     const T = Date.UTC(2026, 10, 21, 2, 0)
@@ -125,7 +126,7 @@ describe('nothing beyond the allowed fields sent to the wall (Plan 8 must-have)'
   const SKEW = 90_000
 
   async function scene() {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const menu = builtInMenu(0)
     const latte = menu.categories[0]!.items[0]!
     store.setCheckin({ secret: SECRET, url: 'https://kennko.vercel.app/here' })
@@ -167,7 +168,7 @@ describe('nothing beyond the allowed fields sent to the wall (Plan 8 must-have)'
   })
 
   it('no secret yet: checkin is null and the wall still runs', async () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const menu = builtInMenu(0)
     const feed = wallSnapshot(store, menu, T, await currentCheckin(store, T))
     expect(feed.checkin).toBeNull()

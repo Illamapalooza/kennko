@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { isOnlineQueueOrder, manilaDay, OrderError, type OnlineQueueOrder } from '@kennko/core'
-import { createStore, type NewOrder } from '../server/store.ts'
-import { builtInMenu } from '../server/menu.ts'
+import { createStore, type NewOrder } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { builtInMenu } from '../till/menu.ts'
 
 const menu = builtInMenu(0)
 const latte = menu.categories[0].items.find((i) => i.name === 'Café Latte')!
@@ -54,7 +55,7 @@ describe('online orders on the till', () => {
   })
 
   it('keeps the pulled orders by createdAt and replaces them on the next pull', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.replaceOnlineOrders([delivery, pickup])
     expect(store.onlineOrders()).toEqual([pickup, delivery])
     const row = store.db.prepare('select prep_status, updated_at from online_orders where id = ?').get(PICKUP_ID) as any
@@ -66,7 +67,7 @@ describe('online orders on the till', () => {
   })
 
   it('stores a completed delivery without its address and phone, whichever shape the pull sent', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const done = { ...delivery, prepStatus: 'completed' as const }
     store.replaceOnlineOrders([done])
     expect(store.onlineOrders()[0].delivery).toBeNull()
@@ -79,7 +80,7 @@ describe('online orders on the till', () => {
   })
 
   it('leaves the table as it was when the list is malformed', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.replaceOnlineOrders([pickup])
     expect(() => store.replaceOnlineOrders([delivery, { ...pickup, id: 'not-a-uuid' } as any])).toThrow()
     expect(() => store.replaceOnlineOrders([pickup, pickup])).toThrow()
@@ -87,7 +88,7 @@ describe('online orders on the till', () => {
   })
 
   it('steps a pickup order placed → preparing → ready → completed, then refuses', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.replaceOnlineOrders([pickup])
     expect(store.advanceOnline(PICKUP_ID, T + 1, ANA)).toEqual({ ...pickup, prepStatus: 'preparing' })
     expect(store.advanceOnline(PICKUP_ID, T + 2, ANA).prepStatus).toBe('ready')
@@ -98,7 +99,7 @@ describe('online orders on the till', () => {
   })
 
   it('a double tap moves the order one step: the second tap names a step that is gone (final fix 1)', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.replaceOnlineOrders([pickup])
     // Two tablets both see "placed" and tap Start.
     expect(store.advanceOnline(PICKUP_ID, T + 1, ANA, 'placed').prepStatus).toBe('preparing')
@@ -112,7 +113,7 @@ describe('online orders on the till', () => {
   })
 
   it('steps a delivery order preparing → out_for_delivery → completed', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.replaceOnlineOrders([delivery])
     expect(store.advanceOnline(DELIVERY_ID, T, ANA).prepStatus).toBe('out_for_delivery')
     expect(store.advanceOnline(DELIVERY_ID, T, ANA).prepStatus).toBe('completed')
@@ -120,7 +121,7 @@ describe('online orders on the till', () => {
   })
 
   it('writes one outbox row per step with the server id, and nothing for a failed step', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.replaceOnlineOrders([pickup, delivery])
     store.advanceOnline(PICKUP_ID, T + 1, ANA)
     store.advanceOnline(DELIVERY_ID, T + 2, BEN)
@@ -147,7 +148,7 @@ describe('online orders on the till', () => {
   })
 
   it('records a staff id that is not a uuid as nobody (P4-4)', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.replaceOnlineOrders([pickup])
     const warn = console.warn
     console.warn = () => {}
@@ -156,7 +157,7 @@ describe('online orders on the till', () => {
   })
 
   it('online steps never wait on a local row without a uid, and are not counted as sales', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     store.createOrder(menu, sale(), T, null)
     store.ackOutbox(store.outboxEvents().map((e) => e.id))
@@ -167,7 +168,7 @@ describe('online orders on the till', () => {
   })
 
   it('keeps counter prep steps mapped through the order uid', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const order = store.createOrder(menu, sale(), T, null)
     store.advance(order.id, T, null)
@@ -177,7 +178,7 @@ describe('online orders on the till', () => {
 
   describe('a pull replays the unsent steps (Review Focus 4)', () => {
     it('an unsent step survives a pull that has not seen it yet', () => {
-      const store = createStore(':memory:')
+      const store = createStore(':memory:', openNodeSqlite)
       store.replaceOnlineOrders([pickup])
       store.advanceOnline(PICKUP_ID, T + 7, ANA)
       store.replaceOnlineOrders([pickup])
@@ -190,7 +191,7 @@ describe('online orders on the till', () => {
     })
 
     it('replays several unsent steps in order', () => {
-      const store = createStore(':memory:')
+      const store = createStore(':memory:', openNodeSqlite)
       store.replaceOnlineOrders([pickup])
       store.advanceOnline(PICKUP_ID, T, ANA)
       store.advanceOnline(PICKUP_ID, T, ANA)
@@ -199,7 +200,7 @@ describe('online orders on the till', () => {
     })
 
     it('a step that is not the next one any more is not replayed', () => {
-      const store = createStore(':memory:')
+      const store = createStore(':memory:', openNodeSqlite)
       store.replaceOnlineOrders([pickup])
       store.advanceOnline(PICKUP_ID, T, ANA)
       store.replaceOnlineOrders([{ ...pickup, prepStatus: 'ready' }])
@@ -207,7 +208,7 @@ describe('online orders on the till', () => {
     })
 
     it('a step for an order no longer pulled inserts nothing', () => {
-      const store = createStore(':memory:')
+      const store = createStore(':memory:', openNodeSqlite)
       store.replaceOnlineOrders([pickup, delivery])
       store.advanceOnline(PICKUP_ID, T, ANA)
       store.replaceOnlineOrders([delivery])
@@ -215,7 +216,7 @@ describe('online orders on the till', () => {
     })
 
     it('a broken outbox row never stops the pull, and counter steps are not replayed', () => {
-      const store = createStore(':memory:')
+      const store = createStore(':memory:', openNodeSqlite)
       store.startShift(0, T, null)
       const order = store.createOrder(menu, sale(), T, null)
       store.advance(order.id, T, null)
@@ -226,7 +227,7 @@ describe('online orders on the till', () => {
   })
 
   it('lists active and recently finished online orders', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const now = T
     store.replaceOnlineOrders([pickup, { ...delivery, prepStatus: 'out_for_delivery' }])
     store.advanceOnline(PICKUP_ID, now - 2, ANA)
@@ -239,7 +240,7 @@ describe('online orders on the till', () => {
 
   it('never touches the counter day, shift, history, queue or C numbers (Review Focus 5)', () => {
     const build = (withOnline: boolean) => {
-      const store = createStore(':memory:')
+      const store = createStore(':memory:', openNodeSqlite)
       store.startShift(100000, T, ANA)
       store.createOrder(menu, sale(), T + 1, ANA)
       if (withOnline) {
@@ -260,7 +261,7 @@ describe('online orders on the till', () => {
   })
 
   it('clearOnlineOrders empties the table and leaves the outbox alone', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.replaceOnlineOrders([pickup])
     store.advanceOnline(PICKUP_ID, T, ANA)
     store.clearOnlineOrders()

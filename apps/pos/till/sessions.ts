@@ -1,5 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto'
-import type { DatabaseSync } from 'node:sqlite'
+import { randomHex, sha256Hex } from '@kennko/core/portable-crypto'
+import type { SqlDb } from './sql.ts'
 
 /** Who opened the till on a device. Shared PINs from config.json carry no person. */
 export type Who = { staffId: string | null; name: string | null; role: 'staff' | 'manager' }
@@ -12,17 +12,17 @@ export const SESSION_MS = 16 * 60 * 60 * 1000
 const COOKIE = 'kennko_pos_session'
 const SECURE_COOKIE = '__Secure-kennko_pos_session'
 const cookieName = (secure: boolean) => (secure ? SECURE_COOKIE : COOKIE)
-const hash = (token: string) => createHash('sha256').update(token).digest('hex')
+const hash = (token: string) => sha256Hex(token)
 
 /**
  * The PIN is typed once per browser and exchanged for a random token in a cookie. Only the token's SHA-256 is kept,
  * in the till's own database (table `sessions`, made by store.ts), so sessions survive a restart of the till.
  */
-export function createSessions(db: DatabaseSync, now: () => number) {
+export function createSessions(db: SqlDb, now: () => number) {
   const toWho = (row: any): Who => ({ staffId: row.staff_id ?? null, name: row.staff_name ?? null, role: row.role === 'manager' ? 'manager' : 'staff' })
   return {
     start(who: Who): string {
-      const token = randomBytes(32).toString('base64url')
+      const token = randomHex(32)
       const at = now()
       db.prepare('delete from sessions where created_at <= ?').run(at - SESSION_MS)
       db.prepare('insert into sessions (token_hash, staff_id, staff_name, role, created_at) values (?, ?, ?, ?, ?)')

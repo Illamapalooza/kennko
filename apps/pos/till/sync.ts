@@ -2,6 +2,7 @@ import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, isOnlineQueueOrder, type P
 import { REVOKED_CODES, applyDeviceInfo, cleanStaff, loadDevice, type DeviceFile } from './device.ts'
 import { ackImportChunk, assignLegacyIds, importRemaining, nextImportChunk, noteImportSend } from './legacy-import.ts'
 import { isMenuSnapshot, loadSnapshot, saveSnapshot } from './menu.ts'
+import type { TillFiles } from './files.ts'
 import { releasePending } from './kennko-api.ts'
 import type { PinDirectory } from './pins.ts'
 import type { Sessions } from './sessions.ts'
@@ -96,14 +97,14 @@ export function createSync(opts: {
   store: Store
   sessions: Sessions
   pins: PinDirectory
-  dataDir: string
+  files: TillFiles
   apiUrl: string
   fetchFn?: typeof fetch
   now?: () => number
   timers?: { set: typeof setTimeout; clear: typeof clearTimeout }
   onChange: (what: SyncChange) => void
 }) {
-  const { store, sessions, pins, dataDir } = opts
+  const { store, sessions, pins, files } = opts
   const fetchFn = opts.fetchFn ?? fetch
   const now = opts.now ?? Date.now
   const timers = opts.timers ?? { set: setTimeout, clear: clearTimeout }
@@ -115,7 +116,7 @@ export function createSync(opts: {
   let lastLogged: string | null = null
   let lastSyncAt: number | null = null
   let clockSkewMs: number | null = null
-  let menuVersion: number | null = loadSnapshot(dataDir)?.version ?? null
+  let menuVersion: number | null = loadSnapshot(files)?.version ?? null
 
   let running: Promise<void> | null = null
   let again = false
@@ -125,7 +126,7 @@ export function createSync(opts: {
   let dueAt = 0
 
   function status(): SyncStatus {
-    const device = loadDevice(dataDir)
+    const device = loadDevice(files)
     const paired = device !== null
     const revoked = device?.revokedAt != null
     const pending = store.pending()
@@ -148,14 +149,14 @@ export function createSync(opts: {
         signal: AbortSignal.timeout(TIMEOUT_MS),
       })
     } catch (err: any) {
-      return loadDevice(dataDir)?.token !== device.token ? { kind: 'stale' }
+      return loadDevice(files)?.token !== device.token ? { kind: 'stale' }
         : { kind: 'failed', problem: err?.name === 'TimeoutError' || err?.name === 'AbortError' ? SLOW : UNREACHABLE, offline: true }
     }
     clockSkewMs = clockSkew(res, sentAt, now())
     // Kept for the wall's minute code, so a restart while offline still knows the server's minute (Ruling 6).
     if (clockSkewMs !== null) store.kvSet('checkin_skew', String(clockSkewMs))
     const body: any = await res.json().catch(() => undefined)
-    if (loadDevice(dataDir)?.token !== device.token) return { kind: 'stale' }
+    if (loadDevice(files)?.token !== device.token) return { kind: 'stale' }
     // Only the API's own codes mean revoked; any other 401 (a hosting protection page, say) is just offline.
     if (res.status === 401 && REVOKED_CODES.has(body?.code)) return { kind: 'revoked' }
     const message = typeof body?.message === 'string' && body.message.trim() ? body.message.trim().slice(0, 300) : null
@@ -179,7 +180,7 @@ export function createSync(opts: {
   /** One run. Returns what changed for the tablets. */
   async function cycle(): Promise<{ menu: boolean; staff: boolean; online: boolean }> {
     const changed = { menu: false, staff: false, online: false }
-    const device = loadDevice(dataDir)
+    const device = loadDevice(files)
     if (!device || device.revokedAt !== null) {
       failures = 0
       problem = null
@@ -189,7 +190,7 @@ export function createSync(opts: {
     let failure: Failure | null = null
 
     const revoke = () => {
-      applyDeviceInfo(store, sessions, pins, { status: 'revoked' }, dataDir, now())
+      applyDeviceInfo(store, sessions, pins, { status: 'revoked' }, files, now())
       failures = 0
       problem = null
       offline = false
@@ -242,10 +243,10 @@ export function createSync(opts: {
 
     // Free-drink claims that made no sale are let go (Ruling P7-3); best effort, never a sync problem. Tried whenever the
     // website answers, even when it refused the push: a stuck outbox must not hold back a release.
-    if (!failure?.offline && store.pendingReleases().length > 0) await releasePending(store, dataDir, opts.apiUrl, now(), fetchFn)
+    if (!failure?.offline && store.pendingReleases().length > 0) await releasePending(store, files, opts.apiUrl, now(), fetchFn)
 
     // Pull, even after a failed push: the sold-out replay keeps the till's own unsent marks on top (Ruling 14).
-    const loaded = loadSnapshot(dataDir)
+    const loaded = loadSnapshot(files)
     menuVersion = loaded?.version ?? null
     const a = await call(device, `/v1/sync/pull${loaded ? `?version=${loaded.version}` : ''}`, { method: 'GET' })
     if (a.kind === 'stale') return changed
@@ -256,13 +257,13 @@ export function createSync(opts: {
       const state = a.body
       const snapshot = state.menu?.snapshot
       if (snapshot && (!loaded || snapshot.version > loaded.version)) {
-        saveSnapshot(dataDir, snapshot)
+        saveSnapshot(files, snapshot)
         menuVersion = snapshot.version
         changed.menu = true
       }
       store.replaceSoldOut(state.soldOut)
       const before = JSON.stringify(store.staffCache())
-      applyDeviceInfo(store, sessions, pins, { status: 'ok', staff: cleanStaff(state.staff) }, dataDir, now())
+      applyDeviceInfo(store, sessions, pins, { status: 'ok', staff: cleanStaff(state.staff) }, files, now())
       changed.staff = JSON.stringify(store.staffCache()) !== before
       store.kvSet('shop', JSON.stringify({ name: state.shop.name, address: state.shop.address, phone: state.shop.phone }))
       // No key = an API from before Plan 5: keep the online orders the till has (Ruling 9).

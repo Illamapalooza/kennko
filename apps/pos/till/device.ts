@@ -1,5 +1,4 @@
-import fs from 'node:fs'
-import path from 'node:path'
+import type { TillFiles } from './files.ts'
 import type { CachedStaff, PinDirectory } from './pins.ts'
 import type { Sessions } from './sessions.ts'
 import type { Store } from './store.ts'
@@ -25,10 +24,14 @@ export const REVOKED_CODES: ReadonlySet<string> = new Set(['DEVICE_REVOKED', 'UN
 const UNREACHABLE = 'Could not reach the website. Check the internet and try again.'
 const base = (apiUrl: string) => apiUrl.trim().replace(/\/+$/, '')
 
-export function loadDevice(dataDir: string): DeviceFile | null {
+export function loadDevice(files: TillFiles): DeviceFile | null {
   let raw: any
-  try { raw = JSON.parse(fs.readFileSync(path.join(dataDir, FILE), 'utf8')) } catch (err: any) {
-    if (err.code !== 'ENOENT') console.warn(`  data/${FILE} could not be read (${err.message}); this till counts as not connected.`)
+  try {
+    const text = files.read(FILE)
+    if (text === null) return null
+    raw = JSON.parse(text)
+  } catch (err: any) {
+    console.warn(`  data/${FILE} could not be read (${err.message}); this till counts as not connected.`)
     return null
   }
   if (!raw || typeof raw.deviceId !== 'string' || typeof raw.name !== 'string' || typeof raw.token !== 'string' || !Number.isFinite(raw.pairedAt)) return null
@@ -36,17 +39,12 @@ export function loadDevice(dataDir: string): DeviceFile | null {
 }
 
 /** Written to a temporary file and renamed over the old one, so a crash never leaves half a file. */
-export function saveDevice(dataDir: string, d: DeviceFile): void {
-  fs.mkdirSync(dataDir, { recursive: true })
-  const file = path.join(dataDir, FILE)
-  const tmp = `${file}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(d, null, 2), { mode: 0o600 })
-  fs.chmodSync(tmp, 0o600) // writeFileSync's mode only applies when it creates the file
-  fs.renameSync(tmp, file)
+export function saveDevice(files: TillFiles, d: DeviceFile): void {
+  files.write(FILE, JSON.stringify(d, null, 2), { secret: true })
 }
 
-export function forgetDevice(dataDir: string): void {
-  fs.rmSync(path.join(dataDir, FILE), { force: true })
+export function forgetDevice(files: TillFiles): void {
+  files.remove(FILE)
 }
 
 /**
@@ -54,8 +52,8 @@ export function forgetDevice(dataDir: string): void {
  * addresses (Plan 5 Ruling 10), cached customers, the wall's check-in secret and visiting cats (Plan 8). The staff cache
  * stays, so the same PINs keep working.
  */
-export function forgetConnection(store: Store, dataDir: string): void {
-  forgetDevice(dataDir)
+export function forgetConnection(store: Store, files: TillFiles): void {
+  forgetDevice(files)
   store.clearOnlineOrders()
   store.clearCustomerCache()
   store.clearCheckin()
@@ -108,7 +106,7 @@ export function cleanStaff(list: unknown[]): CachedStaff[] {
  * the online orders dropped.
  * offline: nothing. Returns true when the caller should tell the tablets.
  */
-export function applyDeviceInfo(store: Store, sessions: Sessions, pins: PinDirectory, result: DeviceInfo, dataDir: string, now: number): boolean {
+export function applyDeviceInfo(store: Store, sessions: Sessions, pins: PinDirectory, result: DeviceInfo, files: TillFiles, now: number): boolean {
   if (result.status === 'ok') {
     store.replaceStaffCache(result.staff)
     const ids = new Set(result.staff.map((s) => s.id))
@@ -121,9 +119,9 @@ export function applyDeviceInfo(store: Store, sessions: Sessions, pins: PinDirec
     store.clearOnlineOrders()
     store.clearCustomerCache()
     store.clearCheckin() // the wall's check-in secret and visiting cats go too (Plan 8)
-    const device = loadDevice(dataDir)
+    const device = loadDevice(files)
     if (!device || device.revokedAt !== null) return false
-    saveDevice(dataDir, { ...device, revokedAt: now })
+    saveDevice(files, { ...device, revokedAt: now })
     return true
   }
   return false
@@ -139,12 +137,12 @@ const SOON_WAIT_MS = 2_500
  * nothing. It waits at most 2.5 seconds; a slower answer still lands in the cache for the next try. It resolves true
  * when it asked the API (whatever the answer, or none yet).
  */
-export function createPinRefresh(opts: { dataDir: string; refresh: () => Promise<void>; now?: () => number }) {
+export function createPinRefresh(opts: { files: TillFiles; refresh: () => Promise<void>; now?: () => number }) {
   const now = opts.now ?? Date.now
   let lastSoon = -Infinity
 
   async function soon(): Promise<boolean> {
-    const device = loadDevice(opts.dataDir)
+    const device = loadDevice(opts.files)
     if (!device || device.revokedAt !== null) return false
     const t = now()
     if (t - lastSoon < SOON_MS) return false

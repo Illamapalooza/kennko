@@ -3,8 +3,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createStore } from '../server/store.ts'
-import { SESSION_MS, createSessions, readSessionCookie, sessionCookie, type Who } from '../server/sessions.ts'
+import { createStore } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { SESSION_MS, createSessions, readSessionCookie, sessionCookie, type Who } from '../till/sessions.ts'
 
 const T = Date.UTC(2026, 10, 20, 1, 0)
 const shared: Who = { staffId: null, name: null, role: 'staff' }
@@ -16,11 +17,11 @@ function clock(start = T) {
 }
 
 describe('till sessions', () => {
-  it('hands out a 43-character token and keeps only its SHA-256', () => {
-    const store = createStore(':memory:')
+  it('hands out a 64-character hex token and keeps only its SHA-256', () => {
+    const store = createStore(':memory:', openNodeSqlite)
     const sessions = createSessions(store.db, clock().now)
     const token = sessions.start(ana)
-    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(token).toMatch(/^[0-9a-f]{64}$/)
     const rows = store.db.prepare('select * from sessions').all() as any[]
     expect(rows).toHaveLength(1)
     expect(rows[0].token_hash).toBe(createHash('sha256').update(token).digest('hex'))
@@ -29,7 +30,7 @@ describe('till sessions', () => {
   })
 
   it('finds who a token belongs to until 16 hours after it started', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const c = clock()
     const sessions = createSessions(store.db, c.now)
     const token = sessions.start(ana)
@@ -42,7 +43,7 @@ describe('till sessions', () => {
   })
 
   it('knows nothing of a missing or unknown token', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const sessions = createSessions(store.db, clock().now)
     sessions.start(shared)
     expect(sessions.get(undefined)).toBeNull()
@@ -51,7 +52,7 @@ describe('till sessions', () => {
   })
 
   it('ends a session', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const sessions = createSessions(store.db, clock().now)
     const token = sessions.start(shared)
     const other = sessions.start(ana)
@@ -65,10 +66,10 @@ describe('till sessions', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kennko-pos-sessions-'))
     try {
       const file = path.join(dir, 'pos.db')
-      const first = createStore(file)
+      const first = createStore(file, openNodeSqlite)
       const token = createSessions(first.db, clock().now).start(ana)
       first.close()
-      const again = createStore(file)
+      const again = createStore(file, openNodeSqlite)
       expect(createSessions(again.db, clock(T + 60_000).now).get(token)).toEqual(ana)
       again.close()
     } finally {
@@ -77,7 +78,7 @@ describe('till sessions', () => {
   })
 
   it('keeps only the sessions it is told to', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const sessions = createSessions(store.db, clock().now)
     const a = sessions.start(shared)
     const b = sessions.start({ ...shared, role: 'manager' })

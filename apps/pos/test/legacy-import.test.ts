@@ -4,14 +4,16 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, describe, expect, it } from 'vitest'
 import { IMPORT_CHUNK_MAX, type ImportChunk, type PullState, type SyncEvent } from '@kennko/core'
-import { saveDevice } from '../server/device.ts'
-import { builtInMenu } from '../server/menu.ts'
-import { createPinDirectory } from '../server/pins.ts'
-import { createSessions } from '../server/sessions.ts'
-import { createStore, type NewOrder, type Store } from '../server/store.ts'
-import { createSync } from '../server/sync.ts'
-import { KENNKO_TILL_NS, ackImportChunk, assignLegacyIds, importRemaining, nextImportChunk } from '../server/legacy-import.ts'
-import { uuid5 } from '../server/uuid5.ts'
+import { saveDevice } from '../till/device.ts'
+import { builtInMenu } from '../till/menu.ts'
+import { createPinDirectory } from '../till/pins.ts'
+import { createSessions } from '../till/sessions.ts'
+import { createStore, type NewOrder, type Store } from '../till/store.ts'
+import { nodeFiles } from '../server/node-files.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { createSync } from '../till/sync.ts'
+import { KENNKO_TILL_NS, ackImportChunk, assignLegacyIds, importRemaining, nextImportChunk } from '../till/legacy-import.ts'
+import { uuid5 } from '../till/uuid5.ts'
 
 const T = Date.UTC(2026, 10, 17, 2, 0)
 const ANA = '11111111-1111-4111-8111-111111111111'
@@ -99,7 +101,7 @@ describe('uuid5', () => {
 describe('assignLegacyIds', () => {
   it('gives each legacy row its UUIDv5 once, and never changes it', () => {
     const file = oldFile()
-    const store = createStore(file)
+    const store = createStore(file, openNodeSqlite)
     expect(assignLegacyIds(store, 'D')).toBe(4)
     expect(assignLegacyIds(store, 'D')).toBe(0)
     expect(uids(store)).toEqual({
@@ -113,14 +115,14 @@ describe('assignLegacyIds', () => {
     const before = uids(store)
     store.close()
 
-    const again = createStore(file)
+    const again = createStore(file, openNodeSqlite)
     expect(assignLegacyIds(again, 'E')).toBe(0) // paired again with another device id
     expect(uids(again)).toEqual(before)
     again.close()
   })
 
   it('gives a payment uid to an order that has a uid but none for its payment, so it is offered', () => {
-    const store = createStore(oldFile())
+    const store = createStore(oldFile(), openNodeSqlite)
     store.db.prepare("update orders set uid = '33333333-3333-4333-8333-333333333333' where id = 1").run()
     expect(assignLegacyIds(store, 'D')).toBe(4)
     expect(store.db.prepare('select uid, payment_uid from orders where id = 1').get())
@@ -131,7 +133,7 @@ describe('assignLegacyIds', () => {
   })
 
   it('never touches a row created after the upgrade', () => {
-    const store = createStore(oldFile())
+    const store = createStore(oldFile(), openNodeSqlite)
     const shift = store.startShift(0, T + 200_000, null)
     const own = (store.db.prepare('select uid from shifts where id = ?').get(shift.id) as any).uid
     expect(assignLegacyIds(store, 'D')).toBe(4)
@@ -142,7 +144,7 @@ describe('assignLegacyIds', () => {
 
 describe('nextImportChunk', () => {
   it('sends shifts first, then orders by id, at most 100 rows a chunk', () => {
-    const store = createStore(oldFile({ orders: 250 }))
+    const store = createStore(oldFile({ orders: 250 }), openNodeSqlite)
     assignLegacyIds(store, 'D')
     const chunks = drain(store)
     expect(chunks.map((c) => [c.shifts.length, c.orders.length, c.cashMoves.length])).toEqual([[1, 99, 0], [0, 100, 0], [0, 51, 1]])
@@ -175,7 +177,7 @@ describe('nextImportChunk', () => {
   })
 
   it('waits for rows with no uid yet', () => {
-    const store = createStore(oldFile())
+    const store = createStore(oldFile(), openNodeSqlite)
     expect(nextImportChunk(store)).toBeNull()
     expect(importRemaining(store)).toBe(4)
     store.close()
@@ -190,7 +192,7 @@ describe('nextImportChunk', () => {
     db.prepare("update cash_moves set reason = '   '").run()
     db.prepare('update shifts set note = ?').run('N'.repeat(300))
     db.close()
-    const store = createStore(file)
+    const store = createStore(file, openNodeSqlite)
     assignLegacyIds(store, 'D')
     const { chunk } = nextImportChunk(store)!
     const o = chunk.orders[0]!
@@ -211,7 +213,7 @@ describe('nextImportChunk', () => {
     db.exec('pragma foreign_keys = off')
     db.prepare("insert into cash_moves (shift_id, kind, amount, reason, at) values (99, 'out', 100, 'lost', ?)").run(T)
     db.close()
-    const store = createStore(file)
+    const store = createStore(file, openNodeSqlite)
     assignLegacyIds(store, 'D')
     const next = nextImportChunk(store)!
     expect(next.chunk.cashMoves).toHaveLength(1)
@@ -224,7 +226,7 @@ describe('nextImportChunk', () => {
 
 describe('ackImportChunk (Review Focus 5)', () => {
   it('drops the outbox events the chunk already carries, and keeps later ones', () => {
-    const store = createStore(oldFile({ orders: 3, open: true, status: 'queued' }))
+    const store = createStore(oldFile({ orders: 3, open: true, status: 'queued' }), openNodeSqlite)
     for (let i = 0; i < 6; i++) store.createOrder(menu, sale, T + 1000 + i, null) // seq 1..6, in the legacy shift
     store.voidOrder(1, 'customer left', T + 2000, ANA) // legacy order 1, seq 7
     assignLegacyIds(store, 'D')
@@ -243,7 +245,7 @@ describe('ackImportChunk (Review Focus 5)', () => {
   })
 
   it('never offers an acked row again, and the same rows always get the same ids', () => {
-    const store = createStore(oldFile({ orders: 150 }))
+    const store = createStore(oldFile({ orders: 150 }), openNodeSqlite)
     assignLegacyIds(store, 'D')
     const first = drain(store)
     expect(nextImportChunk(store)).toBeNull()
@@ -262,8 +264,8 @@ describe('the import inside the sync loop', () => {
    */
   function setup(opts: { orders?: number; open?: boolean; status?: string; newShift?: boolean } = {}) {
     const dataDir = tempDir()
-    saveDevice(dataDir, { deviceId: 'D', name: 'Counter', token: TOKEN, pairedAt: T, revokedAt: null })
-    const store = createStore(oldFile({ orders: opts.orders ?? 250, open: opts.open, status: opts.status }))
+    saveDevice(nodeFiles(dataDir), { deviceId: 'D', name: 'Counter', token: TOKEN, pairedAt: T, revokedAt: null })
+    const store = createStore(oldFile({ orders: opts.orders ?? 250, open: opts.open, status: opts.status }), openNodeSqlite)
     if (opts.newShift !== false) {
       store.startShift(0, T + 200_000, null)
       store.createOrder(menu, sale, T + 200_001, null)
@@ -299,7 +301,7 @@ describe('the import inside the sync loop', () => {
     const sessions = createSessions(store.db, () => T)
     const pins = createPinDirectory({ staffPin: '1234', managerPin: '0000', staff: () => store.staffCache() })
     const timers = { set: (() => 0) as unknown as typeof setTimeout, clear: (() => {}) as unknown as typeof clearTimeout }
-    const sync = createSync({ store, sessions, pins, dataDir, apiUrl: API, fetchFn, now: () => T + 300_000, timers, onChange: () => {} })
+    const sync = createSync({ store, sessions, pins, files: nodeFiles(dataDir), apiUrl: API, fetchFn, now: () => T + 300_000, timers, onChange: () => {} })
     return {
       store, sync, calls,
       fail: (n: number) => fails.add(n), lose: (n: number) => losses.add(n), answerWith: (f: (n: number) => unknown) => { answer = f },

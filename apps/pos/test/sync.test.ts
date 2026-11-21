@@ -4,13 +4,15 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, makePublicCode, type MenuSnapshot, type OnlineQueueOrder, type PullState, type PushResult, type SyncEvent } from '@kennko/core'
 import { hashStaffPin } from '@kennko/core/staff-pin'
-import { forgetConnection, loadDevice, saveDevice } from '../server/device.ts'
-import { builtInMenu, loadSnapshot, saveSnapshot } from '../server/menu.ts'
-import { createPinDirectory, type CachedStaff } from '../server/pins.ts'
-import { createSessions } from '../server/sessions.ts'
-import { createStore, type NewOrder } from '../server/store.ts'
-import { clockSkew, createSync, nextDelay, syncReady, type SyncChange } from '../server/sync.ts'
-import { bounded } from '../server/wait.ts'
+import { forgetConnection, loadDevice, saveDevice } from '../till/device.ts'
+import { builtInMenu, loadSnapshot, saveSnapshot } from '../till/menu.ts'
+import { createPinDirectory, type CachedStaff } from '../till/pins.ts'
+import { createSessions } from '../till/sessions.ts'
+import { createStore, type NewOrder } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { nodeFiles } from '../server/node-files.ts'
+import { clockSkew, createSync, nextDelay, syncReady, type SyncChange } from '../till/sync.ts'
+import { bounded } from '../till/wait.ts'
 
 const T = Date.UTC(2026, 10, 21, 2, 0) // on a whole second, like an HTTP Date header
 const API = 'https://api.kennko.test'
@@ -90,9 +92,10 @@ function fakeTimers() {
 }
 
 function till(opts: { paired?: boolean; staff?: CachedStaff[] } = {}) {
-  const dataDir = tempDir()
+  const dir = tempDir()
+  const dataDir = nodeFiles(dir)
   if (opts.paired !== false) saveDevice(dataDir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T, revokedAt: null })
-  const store = createStore(':memory:')
+  const store = createStore(':memory:', openNodeSqlite)
   store.replaceStaffCache(opts.staff ?? [])
   const sessions = createSessions(store.db, () => T)
   const pins = createPinDirectory({ staffPin: '1234', managerPin: '0000', staff: () => store.staffCache() })
@@ -100,8 +103,8 @@ function till(opts: { paired?: boolean; staff?: CachedStaff[] } = {}) {
   const timers = fakeTimers()
   const changes: SyncChange[] = []
   let clock = T
-  const sync = createSync({ store, sessions, pins, dataDir, apiUrl: `${API}/`, fetchFn: api.fn, now: () => clock, timers, onChange: (w) => changes.push(w) })
-  return { dataDir, store, sessions, pins, api, timers, changes, sync, setClock: (t: number) => { clock = t } }
+  const sync = createSync({ store, sessions, pins, files: dataDir, apiUrl: `${API}/`, fetchFn: api.fn, now: () => clock, timers, onChange: (w) => changes.push(w) })
+  return { dir, dataDir, store, sessions, pins, api, timers, changes, sync, setClock: (t: number) => { clock = t } }
 }
 
 const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)) }
@@ -342,7 +345,7 @@ describe('pulling', () => {
   it('leaves the file alone when the snapshot is null', async () => {
     const t = till()
     saveSnapshot(t.dataDir, snapshot(5))
-    const file = path.join(t.dataDir, 'menu-snapshot.json')
+    const file = path.join(t.dir, 'menu-snapshot.json')
     const before = fs.statSync(file).mtimeMs
     const text = fs.readFileSync(file, 'utf8')
     t.api.onPull(() => json(200, { menu: { version: 5, snapshot: null }, soldOut: [], staff: [], shop: SHOP }))
@@ -694,20 +697,21 @@ describe('scheduling', () => {
 describe('menu snapshot file', () => {
   it('round-trips and refuses a file of the wrong shape', () => {
     const dir = tempDir()
-    expect(loadSnapshot(dir)).toBeNull()
-    saveSnapshot(dir, snapshot(4))
-    expect(loadSnapshot(dir)).toEqual(snapshot(4))
+    const files = nodeFiles(dir)
+    expect(loadSnapshot(files)).toBeNull()
+    saveSnapshot(files, snapshot(4))
+    expect(loadSnapshot(files)).toEqual(snapshot(4))
     expect(fs.existsSync(path.join(dir, 'menu-snapshot.json.tmp'))).toBe(false)
     fs.writeFileSync(path.join(dir, 'menu-snapshot.json'), JSON.stringify({ version: 'x', categories: [] }))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    expect(loadSnapshot(dir)).toBeNull()
+    expect(loadSnapshot(files)).toBeNull()
     warn.mockRestore()
   })
 })
 
 describe('replaceSoldOut', () => {
   it('replaces the marks then replays unsent toggles in seq order', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.setAvailable('A', false, T, null, { outbox: false })
     store.setAvailable('B', false, T, null, { outbox: true })
     store.setAvailable('C', false, T, null, { outbox: true })
@@ -718,7 +722,7 @@ describe('replaceSoldOut', () => {
   })
 
   it('skips an availability row whose payload does not parse', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.setAvailable('B', false, T, null, { outbox: true })
     store.db.prepare("insert into outbox (id, kind, entity, entity_local_id, staff_id, occurred_at, payload) values ('bad-1', 'menu.availability', 'menu', null, null, ?, 'not json')").run(T)
     store.setAvailable('C', false, T, null, { outbox: true })

@@ -4,13 +4,15 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, describe, expect, it } from 'vitest'
 import { makePublicCode, type OnlineQueueOrder, type PullState, type SyncEvent, type TillCustomer } from '@kennko/core'
-import { saveDevice } from '../server/device.ts'
-import { chargeWithFreeDrink, deviceCall, lookupCustomer, FREE_DRINK_OFFLINE, RELEASE_WINDOW_MS } from '../server/kennko-api.ts'
-import { builtInMenu } from '../server/menu.ts'
-import { createPinDirectory } from '../server/pins.ts'
-import { createSessions } from '../server/sessions.ts'
-import { createStore, type NewOrder } from '../server/store.ts'
-import { createSync } from '../server/sync.ts'
+import { saveDevice } from '../till/device.ts'
+import { chargeWithFreeDrink, deviceCall, lookupCustomer, FREE_DRINK_OFFLINE, RELEASE_WINDOW_MS } from '../till/kennko-api.ts'
+import { builtInMenu } from '../till/menu.ts'
+import { createPinDirectory } from '../till/pins.ts'
+import { createSessions } from '../till/sessions.ts'
+import { createStore, type NewOrder } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { nodeFiles } from '../server/node-files.ts'
+import { createSync } from '../till/sync.ts'
 
 const T = Date.UTC(2026, 10, 21, 2, 0)
 const API = 'https://api.kennko.test'
@@ -66,9 +68,9 @@ function fakeApi(answer: (path: string, body: any) => Response | Promise<Respons
 const offlineFetch = (async () => { throw new TypeError('fetch failed') }) as unknown as typeof fetch
 
 function till(opts: { paired?: boolean } = {}) {
-  const dataDir = tempDir()
+  const dataDir = nodeFiles(tempDir())
   if (opts.paired !== false) saveDevice(dataDir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T, revokedAt: null })
-  const store = createStore(':memory:')
+  const store = createStore(':memory:', openNodeSqlite)
   store.startShift(0, T, ANA)
   return { dataDir, store }
 }
@@ -210,7 +212,7 @@ describe('the free drink at charge', () => {
     const code = newCode()
     const api = claimOk(code)
     const order = await chargeWithFreeDrink({
-      store, menu, dataDir, apiUrl: API, fetchFn: api.fn, input: twoLines(), reward: { lineIndex: 1, code: pretty(code) },
+      store, menu, files: dataDir, apiUrl: API, fetchFn: api.fn, input: twoLines(), reward: { lineIndex: 1, code: pretty(code) },
       now: T, by: ANA, managerStaffId: MGR,
     })
     expect(api.calls).toHaveLength(1)
@@ -235,7 +237,7 @@ describe('the free drink at charge', () => {
       const { store, dataDir } = till()
       const api = fakeApi(() => json(409, { code, message: 'server words' }))
       await expect(chargeWithFreeDrink({
-        store, menu, dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code: newCode() }, now: T, by: ANA, managerStaffId: MGR,
+        store, menu, files: dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code: newCode() }, now: T, by: ANA, managerStaffId: MGR,
       })).rejects.toThrow(message)
       expect(outbox(store).map((r) => r.kind)).toEqual(['shift.opened'])
       expect(store.ordersForDay('2026-11-21')).toEqual([])
@@ -246,7 +248,7 @@ describe('the free drink at charge', () => {
     for (const fetchFn of [offlineFetch, fakeApi(() => new Response('<html>bad gateway</html>', { status: 502 })).fn]) {
       const { store, dataDir } = till()
       await expect(chargeWithFreeDrink({
-        store, menu, dataDir, apiUrl: API, fetchFn, input: sale(), reward: { lineIndex: 0, code: newCode() }, now: T, by: ANA, managerStaffId: null,
+        store, menu, files: dataDir, apiUrl: API, fetchFn, input: sale(), reward: { lineIndex: 0, code: newCode() }, now: T, by: ANA, managerStaffId: null,
       })).rejects.toThrow(FREE_DRINK_OFFLINE)
       expect(FREE_DRINK_OFFLINE).toBe('The free drink needs the internet. Charge it normally, or try again when online.')
       expect(store.ordersForDay('2026-11-21')).toEqual([])
@@ -255,7 +257,7 @@ describe('the free drink at charge', () => {
     const { store, dataDir } = till({ paired: false })
     const api = claimOk(newCode())
     await expect(chargeWithFreeDrink({
-      store, menu, dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code: newCode() }, now: T, by: ANA, managerStaffId: null,
+      store, menu, files: dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code: newCode() }, now: T, by: ANA, managerStaffId: null,
     })).rejects.toThrow(FREE_DRINK_OFFLINE)
     expect(api.calls).toEqual([])
   })
@@ -263,7 +265,7 @@ describe('the free drink at charge', () => {
   it('checks the order and the code before claiming: a typo or a short payment never reaches Kennko', async () => {
     const { store, dataDir } = till()
     const api = claimOk(newCode())
-    const args = { store, menu, dataDir, apiUrl: API, fetchFn: api.fn, now: T, by: ANA, managerStaffId: null }
+    const args = { store, menu, files: dataDir, apiUrl: API, fetchFn: api.fn, now: T, by: ANA, managerStaffId: null }
     await expect(chargeWithFreeDrink({ ...args, input: sale(), reward: { lineIndex: 0, code: typo(newCode()) } })).rejects.toThrow(TYPO)
     await expect(chargeWithFreeDrink({ ...args, input: sale({ payment: { method: 'cash', tenderedCentavos: 0 } }), reward: { lineIndex: 0, code: newCode() } }))
       .resolves.toBeTruthy() // a free latte M with no add-ons costs ₱0: cash 0 is enough
@@ -288,7 +290,7 @@ describe('the free drink at charge', () => {
       return json(200, { released: true })
     })
     await expect(chargeWithFreeDrink({
-      store, menu, dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: MGR,
+      store, menu, files: dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: MGR,
     })).rejects.toThrow('Open the till before taking orders.')
     const releases = api.calls.filter((c) => c.path === '/v1/stamp-cards/release')
     expect(releases).toHaveLength(1)
@@ -311,7 +313,7 @@ describe('deviceCall', () => {
       init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))
     })) as unknown as typeof fetch
     expect(await deviceCall(dataDir, API, '/v1/x', { method: 'GET' }, 20, slow)).toEqual({ kind: 'offline' })
-    const unpaired = tempDir()
+    const unpaired = nodeFiles(tempDir())
     const api = fakeApi(() => json(200, {}))
     expect(await deviceCall(unpaired, API, '/v1/x', { method: 'GET' }, 1000, api.fn)).toEqual({ kind: 'offline' })
     expect(await deviceCall(dataDir, '', '/v1/x', { method: 'GET' }, 1000, api.fn)).toEqual({ kind: 'offline' })
@@ -405,7 +407,7 @@ describe('releasing a claim that did not make a sale (Ruling P7-3)', () => {
       if (p === '/v1/sync/push') return json(200, { results: body.events.map((e: any) => ({ id: e.id, result: 'applied', reason: null, flags: [] })), held: 0 })
       return json(200, { menu: null, soldOut: [], staff: [], shop: { name: 'K', address: 'B', phone: null } } satisfies PullState)
     })
-    const sync = createSync({ store: t.store, sessions, pins, dataDir: t.dataDir, apiUrl: API, fetchFn: api.fn, now: () => clock.now, onChange: () => {} })
+    const sync = createSync({ store: t.store, sessions, pins, files: t.dataDir, apiUrl: API, fetchFn: api.fn, now: () => clock.now, onChange: () => {} })
     return { sync, api }
   }
 
@@ -418,7 +420,7 @@ describe('releasing a claim that did not make a sale (Ruling P7-3)', () => {
     })) as unknown as typeof fetch
     let kicked = 0
     await expect(chargeWithFreeDrink({
-      store: t.store, menu, dataDir: t.dataDir, apiUrl: API, fetchFn: timedOut, input: sale(), reward: { lineIndex: 0, code: newCode() },
+      store: t.store, menu, files: t.dataDir, apiUrl: API, fetchFn: timedOut, input: sale(), reward: { lineIndex: 0, code: newCode() },
       now: T, by: ANA, managerStaffId: null, claimWaitMs: 20, kick: () => { kicked++ },
     })).rejects.toThrow(FREE_DRINK_OFFLINE)
     const claimId = slow.calls[0]!.body.claimId
@@ -464,14 +466,14 @@ describe('releasing a claim that did not make a sale (Ruling P7-3)', () => {
       return json(200, { released: false }) // the immediate try is not definitive: it stays queued
     })
     await expect(chargeWithFreeDrink({
-      store: t.store, menu, dataDir: t.dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null,
+      store: t.store, menu, files: t.dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null,
     })).rejects.toThrow('Open the till before taking orders.')
     expect(pending(t.store)).toEqual([api.calls[0]!.body.claimId])
 
     const u = till()
     const ok = fakeApi(() => json(200, { customer: customer(code) }))
     const order = await chargeWithFreeDrink({
-      store: u.store, menu, dataDir: u.dataDir, apiUrl: API, fetchFn: ok.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null,
+      store: u.store, menu, files: u.dataDir, apiUrl: API, fetchFn: ok.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null,
     })
     expect(order.freeDrink).toBe(true)
     expect(pending(u.store)).toEqual([])
@@ -514,7 +516,7 @@ describe('releasing a claim that did not make a sale (Ruling P7-3)', () => {
       if (p === '/v1/sync/push') return push()
       return json(200, { menu: null, soldOut: [], staff: [], shop: { name: 'K', address: 'B', phone: null } } satisfies PullState)
     })
-    const sync = createSync({ store: t.store, sessions, pins, dataDir: t.dataDir, apiUrl: API, fetchFn: api.fn, now: () => T + 1000, onChange: () => {} })
+    const sync = createSync({ store: t.store, sessions, pins, files: t.dataDir, apiUrl: API, fetchFn: api.fn, now: () => T + 1000, onChange: () => {} })
     push = () => new Response('down', { status: 503 })
     await sync.runOnce()
     expect(api.calls.filter((c) => c.path === '/v1/stamp-cards/release')).toEqual([])
@@ -529,7 +531,7 @@ describe('releasing a claim that did not make a sale (Ruling P7-3)', () => {
     const t = till()
     const api = fakeApi(() => json(409, { code: 'NO_FREE_DRINK', message: 'none' }))
     await expect(chargeWithFreeDrink({
-      store: t.store, menu, dataDir: t.dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code: newCode() }, now: T, by: ANA, managerStaffId: null,
+      store: t.store, menu, files: t.dataDir, apiUrl: API, fetchFn: api.fn, input: sale(), reward: { lineIndex: 0, code: newCode() }, now: T, by: ANA, managerStaffId: null,
     })).rejects.toThrow('No free drink waiting on this card.')
     expect(pending(t.store)).toEqual([])
   })
@@ -559,9 +561,9 @@ describe('stamp and unlink rules (Rulings P7-4, P7-5)', () => {
     const { store, dataDir } = till()
     const code = newCode()
     const ok = fakeApi(() => json(200, { customer: customer(code) }))
-    const free = await chargeWithFreeDrink({ store, menu, dataDir, apiUrl: API, fetchFn: ok.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null })
+    const free = await chargeWithFreeDrink({ store, menu, files: dataDir, apiUrl: API, fetchFn: ok.fn, input: sale(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null })
     expect(() => store.stampOrder(free.id, T, ANA)).toThrow('A free drink earns no stamp.')
-    const mixed = await chargeWithFreeDrink({ store, menu, dataDir, apiUrl: API, fetchFn: ok.fn, input: twoLines(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null })
+    const mixed = await chargeWithFreeDrink({ store, menu, files: dataDir, apiUrl: API, fetchFn: ok.fn, input: twoLines(), reward: { lineIndex: 0, code }, now: T, by: ANA, managerStaffId: null })
     expect(store.stampOrder(mixed.id, T, ANA).stamped).toBe(true)
   })
 })
@@ -573,7 +575,7 @@ describe('the customer cache', () => {
     const pins = createPinDirectory({ staffPin: '1234', managerPin: '0000', staff: () => t.store.staffCache() })
     let pull: () => Response = () => json(200, { menu: null, soldOut: [], staff: [], shop: { name: 'K', address: 'B', phone: null } } satisfies PullState)
     const api = fakeApi((p) => p === '/v1/sync/push' ? json(200, { results: [], held: 0 }) : pull())
-    const sync = createSync({ store: t.store, sessions, pins, dataDir: t.dataDir, apiUrl: API, fetchFn: api.fn, now: () => T, onChange: () => {} })
+    const sync = createSync({ store: t.store, sessions, pins, files: t.dataDir, apiUrl: API, fetchFn: api.fn, now: () => T, onChange: () => {} })
     return { ...t, sync, setPull: (f: () => Response) => { pull = f } }
   }
   const state = (extra: Partial<PullState>): PullState =>

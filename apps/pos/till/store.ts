@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { DatabaseSync } from 'node:sqlite'
+import { randomUuid } from '@kennko/core/portable-crypto'
+import type { SqlOpen } from './sql.ts'
 import {
   ADDON_LIMIT_MESSAGE, MAX_MODIFIERS, MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, canMovePrep, cleanDiscount, isOnlineQueueOrder,
   formatPublicCode, hasDrink, manilaDay, nextPrepStatus, nextStatus, normalisePublicCode, prevStatus, priceLines, summarise, totals,
@@ -260,8 +260,8 @@ const money = (value: unknown, what: string, min = 0): number => {
 }
 
 /** Everything the till remembers. One SQLite file; every write is a single transaction, its outbox row included. */
-export function createStore(file: string) {
-  const db = new DatabaseSync(file)
+export function createStore(file: string, open: SqlOpen) {
+  const db = open(file)
   db.exec('pragma journal_mode = wal; pragma synchronous = full; pragma foreign_keys = on;')
   db.exec(SCHEMA)
 
@@ -298,7 +298,7 @@ export function createStore(file: string) {
   /** Adds the outbox row for a change. Called only inside the change's own `tx`. */
   const record = <K extends SyncEventKind>(kind: K, localId: number | null, by: By, now: number, payload: StoredPayload<K>) => {
     db.prepare('insert into outbox (id, kind, entity, entity_local_id, staff_id, occurred_at, payload) values (?, ?, ?, ?, ?, ?, ?)')
-      .run(randomUUID(), kind, ENTITY[kind], localId, by, now, JSON.stringify(payload))
+      .run(randomUuid(), kind, ENTITY[kind], localId, by, now, JSON.stringify(payload))
   }
 
   const openShift = (): Shift | null => {
@@ -455,13 +455,14 @@ export function createStore(file: string) {
      */
     snapshot(to: string) {
       db.prepare('vacuum into ?').run(to)
-      const copy = new DatabaseSync(to)
+      const copy = open(to)
       try {
         copy.exec('delete from online_orders')
         copy.exec('delete from customer_cache')
         // Plan 8: the wall's check-in secret never leaves this computer, and visiting cats are refetched by the pull.
         copy.exec('delete from visitors')
         copy.exec("delete from kv where key = 'checkin_secret'")
+        copy.exec("delete from kv where key like 'file:%'")
         copy.exec('vacuum')
       } finally {
         copy.close()
@@ -591,7 +592,7 @@ export function createStore(file: string) {
           values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(day, number, type, customerName, JSON.stringify(lines), sums.subtotalCentavos, sums.discountCentavos,
           sums.discountCentavos > 0 ? discount!.label : null, sums.totalCentavos, method, tendered, change, ref, shift.id, now, now,
-          randomUUID(), randomUUID(), menuVersion, customerCode, claimId)
+          randomUuid(), randomUuid(), menuVersion, customerCode, claimId)
         const id = Number(result.lastInsertRowid)
         record('order.created', id, by, now, {
           businessDay: day, ticketNumber: number, fulfilment: type, customerName, menuVersion, lines, discount,
@@ -644,7 +645,7 @@ export function createStore(file: string) {
         if (order.stamped) throw new OrderError('That order is already stamped.')
         if (!hasDrink(counterKinds(order.lines))) throw new OrderError(order.freeDrink ? 'A free drink earns no stamp.' : 'A stamp needs a drink.')
         if (cachedCustomer(order.customerCode)?.stampMode === 'paper') throw new OrderError(PAPER_STAMP_MESSAGE)
-        const stampId = randomUUID()
+        const stampId = randomUuid()
         db.prepare('update orders set stamp_uid = ?, updated_at = ? where id = ?').run(stampId, now, id)
         record('stamp.added', id, by, now, { stampId })
         return getOrder(id)
@@ -772,7 +773,7 @@ export function createStore(file: string) {
         if (order.card === 'stamped') throw new OrderError('That order is already stamped.')
         if (order.card === 'paper') throw new OrderError(PAPER_STAMP_MESSAGE)
         if (order.card !== 'stamp') throw new OrderError('That order has no Kennko card to stamp.')
-        const stampId = randomUUID()
+        const stampId = randomUuid()
         db.prepare('insert into online_stamps (order_id, stamp_uid, at) values (?, ?, ?)').run(orderId, stampId, now)
         record('stamp.added', null, by, now, { orderId, stampId })
         return { ...order, card: 'stamped' }
@@ -916,7 +917,7 @@ export function createStore(file: string) {
         if (openShift()) throw new OrderError('The till is already open.')
         const float = money(floatCentavos, 'Starting cash')
         const result = db.prepare('insert into shifts (opened_at, opening_float, uid, opened_by_staff) values (?, ?, ?, ?)')
-          .run(now, float, randomUUID(), by)
+          .run(now, float, randomUuid(), by)
         const id = Number(result.lastInsertRowid)
         record('shift.opened', id, by, now, { openingFloatCentavos: float })
         return toShift(db.prepare('select * from shifts where id = ?').get(id))
@@ -933,7 +934,7 @@ export function createStore(file: string) {
         if (!why) throw new OrderError('Say what the cash is for.')
         const amount = money(amountCentavos, 'Amount', 1)
         const result = db.prepare('insert into cash_moves (shift_id, kind, amount, reason, at, uid, staff_id) values (?, ?, ?, ?, ?, ?, ?)')
-          .run(shift.id, kind, amount, why, now, randomUUID(), by)
+          .run(shift.id, kind, amount, why, now, randomUuid(), by)
         const id = Number(result.lastInsertRowid)
         record('cash.moved', id, by, now, { kind, amountCentavos: amount, reason: why })
         return toMove(db.prepare(`${MOVES} where m.id = ?`).get(id))

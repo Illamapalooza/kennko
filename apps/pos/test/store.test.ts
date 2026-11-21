@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { OrderError } from '@kennko/core'
-import { createStore, type NewOrder } from '../server/store.ts'
-import { builtInMenu } from '../server/menu.ts'
-import { reportCsv } from '../server/report.ts'
-import { wallOrders } from '../server/wall-feed.ts'
+import { createStore, type NewOrder } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { builtInMenu } from '../till/menu.ts'
+import { reportCsv } from '../till/report.ts'
+import { wallOrders } from '../till/wall-feed.ts'
 
 const menu = builtInMenu(0)
 const latte = menu.categories[0].items.find((i) => i.name === 'Café Latte')!
@@ -31,12 +32,12 @@ describe('built-in menu', () => {
 
 describe('till', () => {
   it('refuses orders until the till is open', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     expect(() => store.createOrder(menu, order(), T, null)).toThrow(/Open the till/)
   })
 
   it('takes an order, numbers it, and works out change', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(100000, T, null)
     const first = store.createOrder(menu, order(), T, null)
     expect(first.number).toBe(1)
@@ -55,7 +56,7 @@ describe('till', () => {
   })
 
   it('refuses short cash and unknown payment', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     expect(() => store.createOrder(menu, order({ payment: { method: 'cash', tenderedCentavos: 100 } }), T, null)).toThrow(/less than the total/)
     expect(() => store.createOrder(menu, order({ payment: { method: 'card' as any } }), T, null)).toThrow(OrderError)
@@ -63,7 +64,7 @@ describe('till', () => {
   })
 
   it('moves orders through the flow and back', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const { id } = store.createOrder(menu, order(), T, null)
     expect(store.advance(id, T, null).status).toBe('preparing')
@@ -76,7 +77,7 @@ describe('till', () => {
   })
 
   it('voids, tracks cash, and closes with a count', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(100000, T, null)
     const a = store.createOrder(menu, order(), T, null)
     const b = store.createOrder(menu, order(), T, null)
@@ -98,7 +99,7 @@ describe('till', () => {
   })
 
   it('gives the wall drinks and steps, never money', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const a = store.createOrder(menu, order({
       customerName: 'Ana',
@@ -119,7 +120,7 @@ describe('till', () => {
   })
 
   it('names the person a void or cash move is credited to, while the till knows them', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     const MIA = '55555555-5555-4555-8555-555555555555'
     store.replaceStaffCache([{ id: MIA, fullName: 'Mia Santos', role: 'manager', pinHash: 'x' }])
     store.startShift(0, T, MIA)
@@ -136,7 +137,7 @@ describe('till', () => {
   })
 
   it('honours sold-out marks', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.setAvailable(latte.id, false, T, null, { outbox: false })
     expect(store.soldOut()).toEqual([latte.id])
     store.setAvailable(latte.id, true, T, null, { outbox: false })
@@ -144,7 +145,7 @@ describe('till', () => {
   })
 
   it('exports a spreadsheet-safe CSV', () => {
-    const store = createStore(':memory:')
+    const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     store.createOrder(menu, order({ customerName: '=SUM(A1)' }), T, null)
     const csv = reportCsv(store.ordersForDay('2026-11-17'))
@@ -152,5 +153,27 @@ describe('till', () => {
     expect(rows).toHaveLength(2)
     expect(rows[1]).toContain("'=SUM(A1)")
     expect(rows[1]).toContain('Café Latte,M,Oat Milk,Less ice; less sweet,2,280.00')
+  })
+
+  it('snapshot drops file rows and checkin_secret', async () => {
+    const os = await import('node:os')
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const { openNodeSqlite } = await import('../server/node-sqlite.ts')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kennko-snap-'))
+    try {
+      const store = createStore(path.join(dir, 'src.db'), openNodeSqlite)
+      store.kvSet('file:device.json', '{"token":"t"}')
+      store.kvSet('checkin_secret', 's3cr3t')
+      const copyPath = path.join(dir, 'copy.db')
+      store.snapshot(copyPath)
+      const copy = createStore(copyPath, openNodeSqlite)
+      expect(copy.kvGet('file:device.json')).toBeNull()
+      expect(copy.kvGet('checkin_secret')).toBeNull()
+      copy.close()
+      store.close()
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

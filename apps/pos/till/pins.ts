@@ -1,5 +1,5 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
-import { checkStaffPin, isStaffPin } from '@kennko/core/staff-pin'
+import { sameBytes, sha256Hex } from '@kennko/core/portable-crypto'
+import { checkStaffPin, isStaffPin } from '@kennko/core/staff-pin-check'
 import type { Who } from './sessions.ts'
 
 /**
@@ -12,12 +12,12 @@ export type PinMode = 'off' | 'shared' | 'per-person'
 /** A person the till may let in, as cached from the Kennko API. */
 export type CachedStaff = { id: string; fullName: string; role: 'owner' | 'manager' | 'barista'; pinHash: string }
 
+const enc = new TextEncoder()
+
 /** Compares in constant time, so the time taken says nothing about how much of a PIN was right. */
 function same(given: string, expected: string): boolean {
   if (!given || !expected) return false
-  const a = createHash('sha256').update(given).digest()
-  const b = createHash('sha256').update(expected).digest()
-  return timingSafeEqual(a, b)
+  return sameBytes(enc.encode(sha256Hex(given)), enc.encode(sha256Hex(expected)))
 }
 
 /**

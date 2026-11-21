@@ -1,8 +1,7 @@
-import fs from 'node:fs'
-import path from 'node:path'
 import { SIZE_ORDER, liveDrinkMenu, type Discount, type Menu, type MenuSnapshot } from '@kennko/core'
 // The same list the website's seeder loads, so the till and the website start from one menu.
 import { SEED_CATEGORIES, SEED_MODIFIER_GROUPS } from '@kennko/core/seed-menu'
+import type { TillFiles } from './files.ts'
 
 const slug = (text: string) => text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
@@ -37,13 +36,15 @@ function isMenu(raw: any): raw is Menu {
       && c.items.every((i: any) => typeof i?.id === 'string' && typeof i.name === 'string' && Array.isArray(i.prices)))
 }
 
-export function loadMenu(dataDir: string, now: number): Menu {
+export function loadMenu(files: TillFiles, now: number): Menu {
   try {
-    const raw = JSON.parse(fs.readFileSync(path.join(dataDir, 'menu.json'), 'utf8'))
+    const text = files.read('menu.json')
+    if (text === null) return builtInMenu(now)
+    const raw = JSON.parse(text)
     if (isMenu(raw)) return raw
     console.warn('The saved menu could not be understood; using the built-in menu.')
   } catch (err: any) {
-    if (err.code !== 'ENOENT') console.warn(`Could not read the saved menu (${err.message}); using the built-in menu.`)
+    console.warn(`Could not read the saved menu (${err.message}); using the built-in menu.`)
   }
   return builtInMenu(now)
 }
@@ -53,12 +54,12 @@ export function loadMenu(dataDir: string, now: number): Menu {
  * by `tillMenu`). For an unpaired till's manual pull; a paired till gets the menu with its sync. Needs internet;
  * everything else on the till does not.
  */
-export async function fetchApiMenu(apiUrl: string, now: number): Promise<MenuSnapshot> {
+export async function fetchApiMenu(apiUrl: string, now: number, fetchFn: typeof fetch = fetch): Promise<MenuSnapshot> {
   if (!apiUrl) throw new Error('The website connection is not set up on this computer.')
   const empty = () => new Error('The website menu came back empty, so the current menu was kept.')
   let res: Response
   try {
-    res = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/menu`, { signal: AbortSignal.timeout(15000) })
+    res = await fetchFn(`${apiUrl.replace(/\/$/, '')}/v1/menu`, { signal: AbortSignal.timeout(15000) })
   } catch {
     throw new Error('Could not reach the website. Check the internet and try again.')
   }
@@ -146,18 +147,19 @@ export function isMenuSnapshot(raw: any): raw is MenuSnapshot {
 }
 
 /** The raw snapshot pulled from the website, kept as data/menu-snapshot.json (tmp + rename, so never half a file). */
-export function saveSnapshot(dataDir: string, s: MenuSnapshot): void {
-  fs.mkdirSync(dataDir, { recursive: true })
-  const file = path.join(dataDir, SNAPSHOT_FILE)
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(s, null, 2))
-  fs.renameSync(`${file}.tmp`, file)
+export function saveSnapshot(files: TillFiles, s: MenuSnapshot): void {
+  files.write(SNAPSHOT_FILE, JSON.stringify(s, null, 2))
 }
 
 /** The saved snapshot, or null when there is none or it is not a snapshot. */
-export function loadSnapshot(dataDir: string): MenuSnapshot | null {
+export function loadSnapshot(files: TillFiles): MenuSnapshot | null {
   let raw: unknown
-  try { raw = JSON.parse(fs.readFileSync(path.join(dataDir, SNAPSHOT_FILE), 'utf8')) } catch (err: any) {
-    if (err.code !== 'ENOENT') console.warn(`  data/${SNAPSHOT_FILE} could not be read (${err.message}); ignoring it.`)
+  try {
+    const text = files.read(SNAPSHOT_FILE)
+    if (text === null) return null
+    raw = JSON.parse(text)
+  } catch (err: any) {
+    console.warn(`  data/${SNAPSHOT_FILE} could not be read (${err.message}); ignoring it.`)
     return null
   }
   if (isMenuSnapshot(raw)) return raw

@@ -3,8 +3,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { backupDay } from '../server/backup.ts'
-import { createStore, type NewOrder } from '../server/store.ts'
-import { builtInMenu } from '../server/menu.ts'
+import { createStore, type NewOrder } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { builtInMenu } from '../till/menu.ts'
 
 const menu = builtInMenu(0)
 const latte = menu.categories[0].items.find((i) => i.name === 'Café Latte')!
@@ -22,7 +23,7 @@ afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true
 describe('daily backup', () => {
   it('writes a copy that opens as a till with the same sales', () => {
     const dir = tempDir()
-    const store = createStore(path.join(dir, 'pos.db'))
+    const store = createStore(path.join(dir, 'pos.db'), openNodeSqlite)
     store.startShift(50000, T, null)
     store.createOrder(menu, sale, T, null)
 
@@ -30,7 +31,7 @@ describe('daily backup', () => {
     expect(path.basename(file)).toBe('pos-2026-11-17.db')
     expect(copy).toBeNull()
 
-    const restored = createStore(file)
+    const restored = createStore(file, openNodeSqlite)
     expect(restored.ordersForDay('2026-11-17')).toHaveLength(1)
     expect(restored.ordersForDay('2026-11-17')[0].totalCentavos).toBe(10000)
     restored.close()
@@ -39,7 +40,7 @@ describe('daily backup', () => {
 
   it('keeps no online orders (customer phone and address) in the backup or the second copy (Ruling P5-3)', () => {
     const dir = tempDir()
-    const store = createStore(path.join(dir, 'pos.db'))
+    const store = createStore(path.join(dir, 'pos.db'), openNodeSqlite)
     store.startShift(50000, T, null)
     store.createOrder(menu, sale, T, null)
     store.replaceOnlineOrders([{
@@ -54,7 +55,7 @@ describe('daily backup', () => {
     for (const f of [file, copy!]) {
       expect(fs.readFileSync(f).includes('09171234567')).toBe(false)
       expect(fs.readFileSync(f).includes('Montilla')).toBe(false)
-      const restored = createStore(f)
+      const restored = createStore(f, openNodeSqlite)
       expect(restored.onlineOrders()).toEqual([])
       expect(restored.ordersForDay('2026-11-17')).toHaveLength(1)
       restored.close()
@@ -66,7 +67,7 @@ describe('daily backup', () => {
 
   it('keeps no visiting cats and no check-in secret in the backup copy (Plan 8)', () => {
     const dir = tempDir()
-    const store = createStore(path.join(dir, 'pos.db'))
+    const store = createStore(path.join(dir, 'pos.db'), openNodeSqlite)
     const secret = 'q'.repeat(43)
     store.setCheckin({ secret, url: 'https://kennko.vercel.app/here' })
     store.kvSet('checkin_skew', '1200')
@@ -76,7 +77,7 @@ describe('daily backup', () => {
     for (const f of [file, copy!]) {
       expect(fs.readFileSync(f).includes(secret)).toBe(false)
       expect(fs.readFileSync(f).includes('Mochi')).toBe(false)
-      const restored = createStore(f)
+      const restored = createStore(f, openNodeSqlite)
       expect(restored.checkinConfig()).toBeNull()
       expect(restored.kvGet('checkin_secret')).toBeNull()
       expect(restored.activeVisitors(T)).toEqual([])
@@ -90,7 +91,7 @@ describe('daily backup', () => {
 
   it('replaces the same day and picks up later sales', () => {
     const dir = tempDir()
-    const store = createStore(path.join(dir, 'pos.db'))
+    const store = createStore(path.join(dir, 'pos.db'), openNodeSqlite)
     const backups = path.join(dir, 'backups')
     store.startShift(50000, T, null)
     store.createOrder(menu, sale, T, null)
@@ -99,7 +100,7 @@ describe('daily backup', () => {
     const { file } = backupDay((to) => store.snapshot(to), backups, '2026-11-17')
 
     expect(fs.readdirSync(backups)).toEqual(['pos-2026-11-17.db'])
-    const restored = createStore(file)
+    const restored = createStore(file, openNodeSqlite)
     expect(restored.ordersForDay('2026-11-17')).toHaveLength(2)
     restored.close()
     store.close()

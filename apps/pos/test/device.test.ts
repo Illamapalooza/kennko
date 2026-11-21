@@ -3,11 +3,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { hashStaffPin } from '@kennko/core/staff-pin'
-import { applyDeviceInfo, checkPinFresh, cleanStaff, createPinRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice, type DeviceFile } from '../server/device.ts'
-import { createSync } from '../server/sync.ts'
-import { createPinDirectory, type CachedStaff } from '../server/pins.ts'
-import { createSessions } from '../server/sessions.ts'
-import { createStore } from '../server/store.ts'
+import { applyDeviceInfo, checkPinFresh, cleanStaff, createPinRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice, type DeviceFile } from '../till/device.ts'
+import { createSync } from '../till/sync.ts'
+import { createPinDirectory, type CachedStaff } from '../till/pins.ts'
+import { createSessions } from '../till/sessions.ts'
+import { createStore } from '../till/store.ts'
+import { openNodeSqlite } from '../server/node-sqlite.ts'
+import { nodeFiles } from '../server/node-files.ts'
 
 const T = Date.UTC(2026, 10, 20, 1, 0)
 const URL_ = 'https://api.kennko.test'
@@ -38,7 +40,7 @@ beforeAll(async () => {
 })
 
 function till(cache: CachedStaff[] = []) {
-  const store = createStore(':memory:')
+  const store = createStore(':memory:', openNodeSqlite)
   store.replaceStaffCache(cache)
   const sessions = createSessions(store.db, () => T)
   const pins = createPinDirectory({ staffPin: '1234', managerPin: '0000', staff: () => store.staffCache() })
@@ -78,21 +80,21 @@ describe('pairing with the API', () => {
 describe('the device file', () => {
   it('round-trips through save and load, readable by the owner only', () => {
     const dir = tempDir()
-    expect(loadDevice(dir)).toBeNull()
+    expect(loadDevice(nodeFiles(dir))).toBeNull()
     const device: DeviceFile = { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T, revokedAt: null }
-    saveDevice(dir, device)
-    expect(loadDevice(dir)).toEqual(device)
+    saveDevice(nodeFiles(dir), device)
+    expect(loadDevice(nodeFiles(dir))).toEqual(device)
     if (process.platform !== 'win32') expect(fs.statSync(path.join(dir, 'device.json')).mode & 0o777).toBe(0o600)
     expect(fs.readdirSync(dir)).toEqual(['device.json'])
-    forgetDevice(dir)
-    expect(loadDevice(dir)).toBeNull()
-    forgetDevice(dir) // forgetting twice is fine
+    forgetDevice(nodeFiles(dir))
+    expect(loadDevice(nodeFiles(dir))).toBeNull()
+    forgetDevice(nodeFiles(dir)) // forgetting twice is fine
   })
 
   it('treats a broken file as not paired', () => {
     const dir = tempDir()
     fs.writeFileSync(path.join(dir, 'device.json'), '{not json')
-    expect(loadDevice(dir)).toBeNull()
+    expect(loadDevice(nodeFiles(dir))).toBeNull()
   })
 })
 
@@ -113,7 +115,7 @@ describe('cleaning a staff list from the API', () => {
     const staff = cleanStaff([bea, ...odd])
     expect(staff).toEqual([bea])
     const t = till([])
-    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'ok', staff }, tempDir(), T)
+    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'ok', staff }, nodeFiles(tempDir()), T)
     expect(t.pins.mode()).toBe('shared')
   })
 })
@@ -151,7 +153,7 @@ describe('applying a refresh (Review Focus 4)', () => {
   it('still lets people in when the API is offline', async () => {
     const t = till([bea, ana])
     const dir = tempDir()
-    expect(applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'offline' }, dir, T)).toBe(false)
+    expect(applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'offline' }, nodeFiles(dir), T)).toBe(false)
     expect(t.store.staffCache()).toHaveLength(2)
     expect(await t.pins.checkGate('111111')).toEqual({ staffId: 'b-1', role: 'staff', name: 'Bea' })
   })
@@ -160,7 +162,7 @@ describe('applying a refresh (Review Focus 4)', () => {
     const t = till([bea, ana])
     const beaToken = t.sessions.start({ staffId: 'b-1', name: 'Bea', role: 'staff' })
     const anaToken = t.sessions.start({ staffId: 'm-1', name: 'Ana Cruz', role: 'manager' })
-    expect(applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'ok', staff: [ana] }, tempDir(), T)).toBe(true)
+    expect(applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'ok', staff: [ana] }, nodeFiles(tempDir()), T)).toBe(true)
     expect(t.sessions.get(beaToken)).toBeNull()
     expect(t.sessions.get(anaToken)).toEqual({ staffId: 'm-1', name: 'Ana Cruz', role: 'manager' })
     expect(t.store.staffCache()).toEqual([ana])
@@ -169,9 +171,9 @@ describe('applying a refresh (Review Focus 4)', () => {
   it('ends shared sessions when per-person turns on', () => {
     const t = till([])
     const shared = t.sessions.start({ staffId: null, name: null, role: 'staff' })
-    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'ok', staff: [bea] }, tempDir(), T)
+    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'ok', staff: [bea] }, nodeFiles(tempDir()), T)
     expect(t.sessions.get(shared)).not.toBeNull() // only a barista: still shared
-    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'ok', staff: [bea, ana] }, tempDir(), T)
+    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'ok', staff: [bea, ana] }, nodeFiles(tempDir()), T)
     expect(t.pins.mode()).toBe('per-person')
     expect(t.sessions.get(shared)).toBeNull()
   })
@@ -179,20 +181,20 @@ describe('applying a refresh (Review Focus 4)', () => {
   it('marks the device revoked and keeps the cache', async () => {
     const t = till([bea, ana])
     const dir = tempDir()
-    saveDevice(dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
-    expect(applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'revoked' }, dir, T)).toBe(true)
-    expect(loadDevice(dir)).toMatchObject({ deviceId: 'd-1', revokedAt: T })
+    saveDevice(nodeFiles(dir), { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
+    expect(applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'revoked' }, nodeFiles(dir), T)).toBe(true)
+    expect(loadDevice(nodeFiles(dir))).toMatchObject({ deviceId: 'd-1', revokedAt: T })
     expect(t.store.staffCache()).toHaveLength(2)
     expect(await t.pins.checkGate('111111')).not.toBeNull()
     // A second revoked answer keeps the first time.
-    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'revoked' }, dir, T + 5000)
-    expect(loadDevice(dir)?.revokedAt).toBe(T)
+    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'revoked' }, nodeFiles(dir), T + 5000)
+    expect(loadDevice(nodeFiles(dir))?.revokedAt).toBe(T)
   })
 
   it('Ruling 10: a revoked answer empties the online orders, customer phone and address included', () => {
     const t = till()
     const dir = tempDir()
-    saveDevice(dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
+    saveDevice(nodeFiles(dir), { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
     t.store.replaceOnlineOrders([{
       id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', businessDay: '2026-11-20', ticketNumber: 5, customerName: 'Jose Reyes',
       fulfilment: 'delivery', fulfilAt: '2026-11-20T02:00:00.000Z', customerNote: null, prepStatus: 'placed',
@@ -200,7 +202,7 @@ describe('applying a refresh (Review Focus 4)', () => {
       delivery: { address: '12 Montilla Blvd', barangay: 'Libertad', phone: '09171234567' },
     }])
     expect(t.store.onlineOrders()).toHaveLength(1)
-    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'revoked' }, dir, T)
+    applyDeviceInfo(t.store, t.sessions, t.pins, { status: 'revoked' }, nodeFiles(dir), T)
     expect(t.store.onlineOrders()).toEqual([])
   })
 })
@@ -214,15 +216,15 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
   function paired(respond: () => Response | Promise<Response>) {
     const t = till([bea, ana])
     const dir = tempDir()
-    saveDevice(dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
+    saveDevice(nodeFiles(dir), { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: null })
     let clock = T
     let changes = 0
     const api = fakeFetch((call) => (call.url.includes('/v1/sync/pull') ? respond() : reply(200, { results: [] })))
     const sync = createSync({
-      store: t.store, sessions: t.sessions, pins: t.pins, dataDir: dir, apiUrl: URL_, fetchFn: api.fn, now: () => clock,
+      store: t.store, sessions: t.sessions, pins: t.pins, files: nodeFiles(dir), apiUrl: URL_, fetchFn: api.fn, now: () => clock,
       onChange: (what) => { if (what.staff) changes += 1 },
     })
-    const refresh = createPinRefresh({ dataDir: dir, refresh: sync.runOnce, now: () => clock })
+    const refresh = createPinRefresh({ files: nodeFiles(dir), refresh: sync.runOnce, now: () => clock })
     return { ...t, dir, api, refresh, tick: (ms: number) => { clock += ms }, changes: () => changes }
   }
 
@@ -272,23 +274,38 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
   describe('with a slow website', () => {
     afterEach(() => { vi.useRealTimers() })
     // setImmediate is left real, so this waits on real work (scrypt, fetch) without moving the fake clock.
-    const until = async (done: () => boolean) => { while (!done()) await new Promise((r) => setImmediate(r)) }
+    const until = async (done: () => boolean) => {
+      while (!done()) {
+        await vi.advanceTimersByTimeAsync(0)
+        await new Promise((r) => setImmediate(r))
+      }
+    }
 
     it('answers within 2.5 s from the current list, and the next try sees the refreshed one', async () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      let advanced = 0
+      const stepUntil = async (done: () => boolean) => {
+        while (!done()) {
+          await vi.advanceTimersByTimeAsync(1)
+          advanced++
+          await new Promise((r) => setImmediate(r))
+        }
+      }
       let answer!: (r: Response) => void
       const t = paired(() => new Promise<Response>((resolve) => { answer = resolve }))
       let settled = false
       const first = checkPinFresh(() => t.pins.checkGate('333333'), t.refresh.soon).then((who) => { settled = true; return who })
-      await until(() => t.api.calls.length === 1) // the first check missed and the refresh has asked
-      await vi.advanceTimersByTimeAsync(2_499)
+      await stepUntil(() => t.api.calls.length === 1) // the first check missed and the refresh has asked
+      await vi.advanceTimersByTimeAsync(2_499 - advanced)
       expect(settled).toBe(false)
       await vi.advanceTimersByTimeAsync(1)
+      await stepUntil(() => settled)
       expect(await first).toBeNull() // the website has not answered: the PIN is not on the list yet
       expect(t.api.calls).toHaveLength(1)
 
       answer(pulled([bea, ana, carl])) // the refresh carries on in the background
-      await until(() => t.store.staffCache().length === 3)
+      await stepUntil(() => t.store.staffCache().length === 3)
+      vi.useRealTimers()
       expect(await checkPinFresh(() => t.pins.checkGate('333333'), t.refresh.soon)).toEqual({ staffId: 'b-2', role: 'staff', name: 'Carl' })
       expect(t.api.calls).toHaveLength(1) // a right PIN asks nothing
     })
@@ -296,9 +313,9 @@ describe('a new PIN on a wrong try (final fix 1)', () => {
 
   it('does not ask when the till is not paired, or was disconnected in admin', async () => {
     const t = paired(() => pulled([bea, ana, carl]))
-    forgetDevice(t.dir)
+    forgetDevice(nodeFiles(t.dir))
     expect(await t.refresh.soon()).toBe(false)
-    saveDevice(t.dir, { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: T - 500 })
+    saveDevice(nodeFiles(t.dir), { deviceId: 'd-1', name: 'Counter', token: TOKEN, pairedAt: T - 1000, revokedAt: T - 500 })
     expect(await t.refresh.soon()).toBe(false)
     expect(t.api.calls).toHaveLength(0)
   })
