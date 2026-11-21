@@ -288,15 +288,25 @@ test('rate_limits is keyed by key and window start', async () => {
 test('the new indexes exist', async () => {
   const rows = await db.sql`select indexname from pg_indexes where indexname in ('customers_display_name_idx',
     'stamp_cards_one_open', 'stamps_one_per_order', 'stamps_card_idx', 'points_once_per_order',
-    'orders_customer_idx') order by indexname`
+    'orders_customer_idx', 'stamp_cards_claimed_order_idx', 'stamps_customer_idx', 'sync_events_linked_recent')
+    order by indexname`
   expect(rows.map((r) => r.indexname)).toEqual([
     'customers_display_name_idx',
     'orders_customer_idx',
     'points_once_per_order',
+    'stamp_cards_claimed_order_idx',
     'stamp_cards_one_open',
     'stamps_card_idx',
+    'stamps_customer_idx',
     'stamps_one_per_order',
+    'sync_events_linked_recent',
   ])
+  const partial = await db.sql<{ indexname: string; indexdef: string }[]>`select indexname, indexdef from pg_indexes
+    where indexname in ('stamp_cards_claimed_order_idx', 'sync_events_linked_recent') order by indexname`
+  expect(partial[0]!.indexdef).toMatch(/\(claimed_order_id\) WHERE \(claimed_order_id IS NOT NULL\)/)
+  expect(partial[1]!.indexdef).toMatch(/\(device_id, received_at DESC\) WHERE/)
+  expect(partial[1]!.indexdef).toContain("'customer.linked'")
+  expect(partial[1]!.indexdef).toContain("'applied'")
   const [ledger] = await db.sql`select count(*)::int as n from pg_indexes
     where tablename = 'points_ledger' and indexdef like '%(customer_id, created_at DESC)%'`
   expect(ledger!.n).toBe(1)
@@ -409,12 +419,25 @@ test('an unconfirmed user sees no guest orders by email', async () => {
   expect(asCy).toEqual([])
 })
 
-test('owns_order takes the order time; the two-argument version is gone; only authenticated may run it', async () => {
+test('owns_order takes the order time; the two-argument version is gone; authenticated and anon may run it', async () => {
   const fns = await db.sql`select pg_get_function_identity_arguments(p.oid) as args from pg_proc p
     where p.proname = 'owns_order' and p.pronamespace = 'public'::regnamespace`
   expect(fns.map((f) => f.args)).toEqual(['order_user_id uuid, order_email text, order_created_at timestamp with time zone'])
   const [priv] = await db.sql`select
     has_function_privilege('authenticated', 'public.owns_order(uuid, text, timestamptz)', 'EXECUTE') as auth,
     has_function_privilege('anon', 'public.owns_order(uuid, text, timestamptz)', 'EXECUTE') as anon`
-  expect(priv).toEqual({ auth: true, anon: false })
+  expect(priv).toEqual({ auth: true, anon: true })
+  expect(await db.sql`select has_function_privilege('public', 'public.owns_order(uuid, text, timestamptz)', 'EXECUTE') as p`)
+    .toEqual([{ p: false }])
+})
+
+test('an anon read of orders, lines and options is zero rows, not an error (Ruling P7-1)', async () => {
+  const order = await addOrder({ email: 'anon-check@x.test', createdAt: '2026-11-12T00:00:00Z' })
+  const seen = await asUser(db.sql, null, async (tx) => ({
+    orders: await tx`select id from orders`,
+    lines: await tx`select id from order_lines`,
+    options: await tx`select id from order_line_options`,
+  }))
+  expect(order).toBeTruthy()
+  expect(seen).toEqual({ orders: [], lines: [], options: [] })
 })

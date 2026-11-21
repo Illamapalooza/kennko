@@ -52,6 +52,8 @@ create table stamp_cards (
 );
 
 create unique index stamp_cards_one_open on stamp_cards (customer_id) where filled_at is null;
+-- Releasing a voided order's claim and the stranded-claim sweep look cards up by their sale.
+create index stamp_cards_claimed_order_idx on stamp_cards (claimed_order_id) where claimed_order_id is not null;
 
 -- 4. Stamps. The id comes from the till. A stamp for a customer on paper has no
 -- card and the mode_was_paper flag. Only one live stamp per order: a forgiven
@@ -74,6 +76,8 @@ create table stamps (
 
 create unique index stamps_one_per_order on stamps (order_id) where not ('forgiven' = any(flags));
 create index stamps_card_idx on stamps (card_id);
+-- Paper stamps and account deletion's cascade find stamps by customer.
+create index stamps_customer_idx on stamps (customer_id);
 
 -- 5. Points. Integers, never money. An order is credited once and reversed once.
 create table points_ledger (
@@ -111,6 +115,10 @@ alter table sync_events add constraint sync_events_kind_check check (kind in (
   'customer.linked', 'customer.unlinked', 'stamp.added', 'reward.used'
 ));
 
+-- The pull's recent customers: this till's applied links of the last 30 minutes.
+create index sync_events_linked_recent on sync_events (device_id, received_at desc)
+  where kind = 'customer.linked' and result = 'applied';
+
 -- 8. owns_order: a guest order matches by confirmed email only when it was placed
 -- after the signed-in user was created. auth.users.created_at cannot be set by
 -- the user, and a deleted and re-created account gets a new one.
@@ -141,6 +149,9 @@ $$;
 
 revoke all on function public.owns_order(uuid, text, timestamptz) from public;
 grant execute on function public.owns_order(uuid, text, timestamptz) to authenticated;
+-- anon still has select on orders (the policies are evaluated for it, and answer false while auth.uid() is null);
+-- without execute an anon read of orders would be a permission error instead of zero rows (Ruling P7-1).
+grant execute on function public.owns_order(uuid, text, timestamptz) to anon;
 
 create policy "customer reads own orders"
   on orders for select
