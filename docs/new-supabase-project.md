@@ -97,7 +97,7 @@ npm run seed:all
 npm run create-owner -- <owner email> '<password, 12+ characters>' "<Full Name>"
 ```
 
-- `seed:all` loads the 15 delivery zones and the drinks menu (categories, items, sizes and prices, add-ons). It
+- `seed:all` loads the 14 delivery zones and the drinks menu (categories, items, sizes and prices, add-ons). It
   is safe to run again: it updates rows by name instead of duplicating them.
 - `create-owner` makes the owner's login (email and password, already confirmed) and the owner staff row. Use it
   once per project.
