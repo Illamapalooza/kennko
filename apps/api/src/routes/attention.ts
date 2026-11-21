@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { closeShift, markOrderSeen, resolveEvent, retryDevice, type ActionResult } from '../attention/actions.js'
 import { countAttention, readAttention } from '../attention/read.js'
 import { requireStaff, type AppEnv } from '../auth.js'
-import { sweepStrandedClaimsFor } from '../loyalty/cards.js'
+import { sweepStrandedClaimsQuietly } from '../loyalty/cards.js'
 import type { AppDeps } from '../create-app.js'
 import { apiError, invalid } from '../http.js'
 
@@ -40,7 +40,7 @@ export function attentionRoutes(deps: AppDeps): Hono<AppEnv> {
     const show = showSchema.safeParse(c.req.query('show') ?? 'open')
     if (!show.success) return invalid('show is open or resolved.')
     // Stranded free-drink claims go back to full cards (Ruling P7-6) whenever the owner looks.
-    await sweepStrandedClaimsFor(deps.sql, deps.now())
+    await sweepStrandedClaimsQuietly(deps.sql, deps.now(), 'attention')
     return c.json(await readAttention(deps.sql, show.data))
   })
 

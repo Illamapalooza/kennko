@@ -461,10 +461,39 @@ describe('stranded claims (Ruling P7-6) and late sales (Ruling P7-8)', () => {
 
   test('a claim younger than 30 minutes is never swept', async () => {
     const c = await customer({ stamps: 8 })
+    // Linked on this till, so the pull reads (and would sweep) this customer.
+    await linkOnTill(c.code)
     const claimId = await claimAgo(c.code, 29)
     expect(await lookup(c.code).then((r) => r.json())).toMatchObject({ fullCards: 0 })
-    expect((await pull()).state).toBeDefined()
+    expect((await pull()).state.customers!.find((x) => x.code === c.code)).toMatchObject({ fullCards: 0 })
     expect(await claimRow(claimId)).toHaveLength(1)
+  })
+
+  test('a failing sweep never fails the pull or a lookup: they answer with the card as it is', async () => {
+    const c = await customer({ stamps: 8 })
+    await linkOnTill(c.code)
+    const claimId = await claimAgo(c.code, 31)
+    await db.sql.unsafe(`
+      create function test_refuse_unclaim() returns trigger language plpgsql as $$
+      begin raise exception 'sweep refused for the test'; end $$;
+      create trigger test_refuse_unclaim before update on stamp_cards
+        for each row when (old.claimed_at is not null and new.claimed_at is null) execute function test_refuse_unclaim();`)
+    const logged: unknown[][] = []
+    const error = console.error
+    console.error = (...args: unknown[]) => void logged.push(args)
+    try {
+      expect((await pull()).state.customers!.find((x) => x.code === c.code)).toMatchObject({ fullCards: 0 })
+      const res = await lookup(c.code)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ fullCards: 0 })
+      expect(await claimRow(claimId)).toHaveLength(1)
+      expect(logged.map((a) => String(a[0]))).toEqual(['[pull] stranded-claim sweep failed:', '[lookup] stranded-claim sweep failed:'])
+    } finally {
+      console.error = error
+      await db.sql.unsafe('drop trigger test_refuse_unclaim on stamp_cards; drop function test_refuse_unclaim();')
+    }
+    // With the fault gone, the next read sweeps.
+    expect(await lookup(c.code).then((r) => r.json())).toMatchObject({ fullCards: 1 })
   })
 
   test('a claim whose sale arrived is never swept, however old', async () => {

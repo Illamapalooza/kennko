@@ -7,7 +7,7 @@ import type { AuthUser } from '../auth-admin.js'
 import { requireUser, type AppEnv } from '../auth.js'
 import type { AppDeps } from '../create-app.js'
 import { apiError, invalid } from '../http.js'
-import { sweepStrandedClaimsFor } from '../loyalty/cards.js'
+import { sweepStrandedClaimsQuietly } from '../loyalty/cards.js'
 import { cardSummary, lockCustomer } from '../loyalty/customers.js'
 import { balance } from '../loyalty/points.js'
 import { readHistory } from '../orders/read.js'
@@ -75,7 +75,7 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get('/', async (c) => {
     const id = c.get('userId')!
     // A stranded free-drink claim shows as a full card again (Ruling P7-6).
-    await sweepStrandedClaimsFor(deps.sql, deps.now(), [id])
+    await sweepStrandedClaimsQuietly(deps.sql, deps.now(), 'me', [id])
     c.header('cache-control', 'no-store')
     return c.json(await readMe(deps.sql, id))
   })

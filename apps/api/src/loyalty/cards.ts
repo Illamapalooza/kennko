@@ -226,3 +226,15 @@ export async function sweepStrandedClaimsFor(sql: postgres.Sql, now: Date, custo
   for (const r of rows) swept += (await sql.begin((tx) => sweepStrandedClaims(tx, r.customer_id, now))) as number
   return swept
 }
+
+/**
+ * `sweepStrandedClaimsFor` for read paths (the pull, a lookup, `/v1/me`, Needs a look, admin customers): best effort.
+ * A failure is logged and the read goes on with the cards as they are; the next read sweeps again.
+ */
+export async function sweepStrandedClaimsQuietly(sql: postgres.Sql, now: Date, where: string, customerIds?: string[]): Promise<void> {
+  try {
+    await sweepStrandedClaimsFor(sql, now, customerIds)
+  } catch (err) {
+    console.error(`[${where}] stranded-claim sweep failed:`, (err as Error).message)
+  }
+}

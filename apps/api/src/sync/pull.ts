@@ -1,6 +1,6 @@
 import { LINKED_RECENT_MS, normalisePublicCode, type PullState, type TillCustomer } from '@kennko/core'
 import type postgres from 'postgres'
-import { sweepStrandedClaimsFor } from '../loyalty/cards.js'
+import { sweepStrandedClaimsQuietly } from '../loyalty/cards.js'
 import { tillCustomer } from '../loyalty/customers.js'
 import { readMenuVersion } from '../menu/read.js'
 import { readPinRoster } from '../staff/pin-roster.js'
@@ -29,9 +29,10 @@ export async function readRecentCustomers(sql: postgres.Sql, deviceId: string, n
   }
   if (codes.length === 0) return []
   const ids = await sql<{ id: string }[]>`select id from customers where public_code in ${sql(codes)}`
-  await sweepStrandedClaimsFor(
+  await sweepStrandedClaimsQuietly(
     sql,
     now,
+    'pull',
     ids.map((r) => r.id),
   )
   // One snapshot, so a customer found here is still there for tillCustomer.
