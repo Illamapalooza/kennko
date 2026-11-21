@@ -674,6 +674,10 @@ describe('every route as kennko_api', () => {
         (select count(*)::int from visits where customer_id = ${leaver}) as visits`,
     )
     expect(had).toEqual({ cats: 1, cosmetics: 1, visits: 1 })
+    // A check-in attempt leaves a rate-limit row keyed by the user id.
+    await ok('POST', '/v1/checkin', leaverJwt, { code: 'wrongcode' }, 400)
+    const [limited] = await asSuper(() => db.sql`select count(*)::int as n from rate_limits where key = ${'checkin:' + leaver}`)
+    expect(limited!.n).toBe(1)
     expect(await ok('DELETE', '/v1/me', leaverJwt, { confirm: 'DELETE' })).toEqual({ deleted: true })
     const [left] = await asSuper(
       () => db.sql`select
@@ -685,7 +689,8 @@ describe('every route as kennko_api', () => {
         (select count(*)::int from push_subscriptions where customer_user_id = ${leaver}) +
         (select count(*)::int from cats where customer_id = ${leaver}) +
         (select count(*)::int from customer_cosmetics where customer_id = ${leaver}) +
-        (select count(*)::int from visits where customer_id = ${leaver}) as n`,
+        (select count(*)::int from visits where customer_id = ${leaver}) +
+        (select count(*)::int from rate_limits where key = ${'checkin:' + leaver}) as n`,
     )
     expect(left!.n).toBe(0)
     expect(auth.deleted).toContain(leaver)

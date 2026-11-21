@@ -188,6 +188,8 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
         update orders set customer_id = null, customer_user_id = null
         where customer_id = ${userId} or customer_user_id = ${userId}`
       await tx`delete from push_subscriptions where customer_user_id = ${userId}`
+      // The check-in rate limit is keyed by the user id (routes/checkin.ts).
+      await tx`delete from rate_limits where key = ${`checkin:${userId}`}`
       // Cascades to the cards, the stamps, the points ledger, the cat, the bought cosmetics and the visit.
       await tx`delete from customers where id = ${userId}`
     })

@@ -740,7 +740,7 @@ Plans 3 to 7 must be deployed first. Plan 8 gives every customer a pixel cat (na
 First, in the Supabase SQL editor, run this pre-flight. The new constraints check the rows already there, so it must be 0:
 
 ```sql
-select count(*) from points_ledger where reason = 'cosmetic';
+select count(*) from points_ledger where reason = 'cosmetic' or cosmetic_id is not null;
 ```
 
 If it is not 0, stop and ask. A failed migration rolls back cleanly, so nothing is left half-done, but do not try it.
@@ -790,7 +790,7 @@ Deploy the website. The new API must already be live. Check:
 
 1. **Back up first.** Close the till, then copy `data\pos.db` somewhere safe (for example `data\pos.db.before-plan8`). Copy `pos.db-wal` and `pos.db-shm` too if they exist.
 2. `git pull`, then `deploy\windows\setup.cmd`. It installs the new `qrcode` dependency, builds the till and restarts the POS and wall tasks.
-3. After the first sync, in the SQL editor, `select count(*) from shop_secrets;` is 1.
+3. In the SQL editor, `select count(*) from shop_secrets;` is already 1 (or becomes 1 at the next pull): the old till's pulls create it right after the API deploy, before the till is updated.
 4. The wall shows the QR code in the bottom-right corner within a minute. The till makes the code only after it has measured its clock against the server, so with no answer from the API yet, no QR shows. That is normal.
 
 ### 5. Live checks
@@ -800,6 +800,7 @@ Use a throwaway account with a card, and an owner points adjustment for test poi
 - **Check in.** Scan the wall QR with a signed-in phone that has a card, then press **Walk my cat in**. Within one sync (about 15 s) the cat walks onto the wall with its name.
 - **Buy and wear.** Buy a cosmetic with enough test points, equip it, and see it on the wall at the next pull.
 - **Too few points.** Buying shows "You need N more points".
+- **Stale sign-in.** Scan the wall with a phone that last signed in more than an hour ago: the check-in must work without signing in again.
 - **Old QR.** Wait over 2 minutes and use an old photo of the QR: "That code has changed".
 - **Switch off.** Turn "Show me on the wall" off: the cat leaves at the next pull.
 - **Admin hides.** Admin › Customers › hide the cat: it leaves, and the till's customer line shows no cat name.
@@ -819,6 +820,7 @@ These need a live API and a real phone, so they were not done during the build:
 
 - `/account` with the cat panel (customiser and shop) at 375 px, 768 px, 1024 px and 1440 px wide.
 - `/here` at 375 px (no code, a good code, a changed code, signed out).
+- Scan the wall with a phone that last signed in more than an hour ago: the check-in must work without signing in again.
 - Admin › Customers (hide a cat) and admin › Cosmetics, on the live API.
 - The wall with several visiting cats (up to 12), their names and the QR corner card. Scan the QR with a real phone in the shop's light.
 

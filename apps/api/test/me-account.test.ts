@@ -290,16 +290,20 @@ describe('/v1/me: Kennko card, account and deletion', () => {
         (select count(*)::int from push_subscriptions where customer_user_id = ${id}) as subs,
         (select count(*)::int from cats where customer_id = ${id}) as cats,
         (select count(*)::int from customer_cosmetics where customer_id = ${id}) as cosmetics,
-        (select count(*)::int from visits where customer_id = ${id}) as visits`
+        (select count(*)::int from visits where customer_id = ${id}) as visits,
+        (select count(*)::int from rate_limits where key = ${'checkin:' + id}) as limits`
     return r
   }
 
-  const NONE_LEFT = { customers: 0, cards: 0, stamps: 0, ledger: 0, orders: 0, subs: 0, cats: 0, cosmetics: 0, visits: 0 }
+  const NONE_LEFT = { customers: 0, cards: 0, stamps: 0, ledger: 0, orders: 0, subs: 0, cats: 0, cosmetics: 0, visits: 0, limits: 0 }
 
   describe('account deletion', () => {
     it('account deletion leaving no row that points to the person', async () => {
       const m = await seedMember()
-      expect(await leftovers(m.id)).toEqual({ customers: 1, cards: 2, stamps: 9, ledger: 3, orders: 9, subs: 1, cats: 1, cosmetics: 0, visits: 0 })
+      expect(await leftovers(m.id)).toEqual({ customers: 1, cards: 2, stamps: 9, ledger: 3, orders: 9, subs: 1, cats: 1, cosmetics: 0, visits: 0, limits: 0 })
+      // A check-in attempt (a stale code still counts against the limit) leaves its rate-limit row.
+      expect((await call('POST', '/v1/checkin', m.jwt, { code: 'wrongcode' })).status).toBe(400)
+      expect((await leftovers(m.id)).limits).toBe(1)
 
       const r = await call('DELETE', '/v1/me', m.jwt, { confirm: 'DELETE' })
       expect(r.status).toBe(200)
@@ -321,7 +325,7 @@ describe('/v1/me: Kennko card, account and deletion', () => {
       expect(worn.status).toBe(200)
       await db.sql`insert into visits (customer_id, visit_key, source, started_at, ends_at)
         values (${m.id}, ${randomUUID()}, 'checkin', ${NOW}, '2026-11-21T03:30:00Z')`
-      expect(await leftovers(m.id)).toEqual({ customers: 1, cards: 2, stamps: 9, ledger: 4, orders: 9, subs: 1, cats: 1, cosmetics: 1, visits: 1 })
+      expect(await leftovers(m.id)).toEqual({ customers: 1, cards: 2, stamps: 9, ledger: 4, orders: 9, subs: 1, cats: 1, cosmetics: 1, visits: 1, limits: 0 })
 
       expect((await call('DELETE', '/v1/me', m.jwt, { confirm: 'DELETE' })).status).toBe(200)
       expect(await leftovers(m.id)).toEqual(NONE_LEFT)
