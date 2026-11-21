@@ -730,3 +730,96 @@ These need a live API, a real camera and an email link, so they were not done du
 - `/account` (signed out, joining, with a card, with a full card) and admin › Customers (the list and one customer, including Stamps to check) at 375 px, 768 px and 1440 px wide.
 - The till at 768 px and 1024 px wide: Add Kennko card (camera and typed), the customer chip, Make one drink free, Stamp card on the paid screen, History, and the Orders board with Stamp at pickup.
 - The QR code scans from a phone screen in the shop's light.
+
+## Plan 8: Kennko cats, cosmetics and the wall check-in
+
+Plans 3 to 7 must be deployed first. Plan 8 gives every customer a pixel cat (name, coat, five cosmetic slots), a points shop for cosmetics, and a QR code on the wall that a customer scans to walk their cat into the shop. Migration 0020 is additive. Deploy in this order: **migration → API → website → till → wall**. The deployed till ignores the new pull keys, so the API can go first safely. The website's cat panel needs the new API. No new environment variables.
+
+### 1. Migration 0020 (Julius)
+
+First, in the Supabase SQL editor, run this pre-flight. The new constraints check the rows already there, so it must be 0:
+
+```sql
+select count(*) from points_ledger where reason = 'cosmetic';
+```
+
+If it is not 0, stop and ask. A failed migration rolls back cleanly, so nothing is left half-done, but do not try it.
+
+From `apps/api`, dry run first. It must list only 0020:
+
+```sh
+npx supabase db push --dry-run
+```
+
+Then apply it as one whole file:
+
+```sh
+npx supabase db push
+```
+
+Afterwards, in the SQL editor:
+
+```sql
+select (select count(*) from customers) as customers, (select count(*) from cats) as cats;
+select count(*) from cosmetics;
+select count(*) from shop_secrets;
+```
+
+- `customers` and `cats` are the same number: every existing customer has a starter cat.
+- `cosmetics` is 22 (4 starters, 18 for sale).
+- `shop_secrets` is 0. The API makes the secret on the first till pull.
+
+### 2. API deploy
+
+Deploy the API. No new variables. Smoke checks:
+
+- `GET /v1/cosmetics` returns 22 items without a token.
+- `POST /v1/checkin` without a token returns 401.
+- `PUT /v1/me/cat` without a token returns 401.
+
+### 3. Website deploy
+
+Deploy the website. The new API must already be live. Check:
+
+- `/here` without `?c=` shows the "scan the wall" prompt.
+- The account page's **Your cat** section on a phone.
+
+**Julius reviews the cosmetics art and the starter prices before announcing.** Look at admin › Cosmetics and dress a test cat in every item. Prices (and names, and on/off) can change in admin without a deploy. Adding a new cosmetic needs new art in code plus a migration row.
+
+### 4. Till and wall (shop computer, together)
+
+1. **Back up first.** Close the till, then copy `data\pos.db` somewhere safe (for example `data\pos.db.before-plan8`). Copy `pos.db-wal` and `pos.db-shm` too if they exist.
+2. `git pull`, then `deploy\windows\setup.cmd`. It installs the new `qrcode` dependency, builds the till and restarts the POS and wall tasks.
+3. After the first sync, in the SQL editor, `select count(*) from shop_secrets;` is 1.
+4. The wall shows the QR code in the bottom-right corner within a minute. The till makes the code only after it has measured its clock against the server, so with no answer from the API yet, no QR shows. That is normal.
+
+### 5. Live checks
+
+Use a throwaway account with a card, and an owner points adjustment for test points.
+
+- **Check in.** Scan the wall QR with a signed-in phone that has a card, then press **Walk my cat in**. Within one sync (about 15 s) the cat walks onto the wall with its name.
+- **Buy and wear.** Buy a cosmetic with enough test points, equip it, and see it on the wall at the next pull.
+- **Too few points.** Buying shows "You need N more points".
+- **Old QR.** Wait over 2 minutes and use an old photo of the QR: "That code has changed".
+- **Switch off.** Turn "Show me on the wall" off: the cat leaves at the next pull.
+- **Admin hides.** Admin › Customers › hide the cat: it leaves, and the till's customer line shows no cat name.
+- **Wi-Fi off on the shop computer.** The QR keeps rotating and the cats stay until their visits end. A phone check-in on mobile data works, and the cat appears once the till is back online.
+- **Counter link.** Link the test customer to a sale at the counter during a visit: `select ends_at from visits;` for that customer moves to about now + 90 minutes.
+- **Delete an account.** Delete a throwaway account that has a cat, a purchase and a visit. In the SQL editor, `cats`, `customer_cosmetics` and `visits` each have 0 rows for its id.
+
+If a fresh QR never counts as valid on a phone, suspect the shop computer's clock. The API accepts the code for the current and the previous minute only. The till corrects for its own clock using the server's time, but it must have talked to the API at least once.
+
+### 6. If the check-in secret ever leaks
+
+Delete the `shop_secrets` row in the SQL editor. The next till pull makes a new one, and old QR photos stop working. The secret is rotated only this way.
+
+### 7. Visual checks not yet done
+
+These need a live API and a real phone, so they were not done during the build:
+
+- `/account` with the cat panel (customiser and shop) at 375 px, 768 px, 1024 px and 1440 px wide.
+- `/here` at 375 px (no code, a good code, a changed code, signed out).
+- Admin › Customers (hide a cat) and admin › Cosmetics, on the live API.
+- The wall with several visiting cats (up to 12), their names and the QR corner card. Scan the QR with a real phone in the shop's light.
+
+**Art review (Julius).** All 22 cosmetics should be seen on every coat. In Task 1 the cats module was rendered to a PNG (14 cosmetics × 8 coats) and looked fine to the builder, but that file was made in a temporary folder and was not kept, so there is no path to point at. To look again, dress a test cat on `/account` (the shop shows every item), or ask for the grid to be rendered again. Small items, such as the held cup, croissant and fish, need the closest look.
