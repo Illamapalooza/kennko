@@ -27,6 +27,31 @@ describe('customerLine', () => {
   })
 })
 
+describe('typedCode while typing', () => {
+  // The input is controlled: each keystroke feeds the previous formatted value plus one character back in.
+  const type = (chars: string) => [...chars].reduce((shown, ch) => typedCode(shown + ch), '')
+  const backspace = (shown: string, n: number) => {
+    for (let i = 0; i < n; i++) shown = typedCode(shown.slice(0, -1))
+    return shown
+  }
+
+  it('adds the KC- prefix once, not on every keystroke', () => {
+    expect(type('j')).toBe('KC-J')
+    expect(type('jy')).toBe('KC-JY')
+    expect(type('jyecy98ua')).toBe('KC-JYE-CY9-8UA')
+  })
+
+  it('keeps a code that itself starts with K and C', () => {
+    expect(type('kc7f3k9qx')).toBe('KC-KC7-F3K-9QX')
+  })
+
+  it('stops at 9 symbols and backspaces cleanly', () => {
+    expect(type('jyecy98uazz')).toBe('KC-JYE-CY9-8UA')
+    expect(backspace(type('jy'), 1)).toBe('KC-J')
+    expect(backspace(type('jy'), 2)).toBe('')
+  })
+})
+
 describe('typedCode', () => {
   it('adds KC- and groups in threes while typing', () => {
     expect(typedCode('')).toBe('')

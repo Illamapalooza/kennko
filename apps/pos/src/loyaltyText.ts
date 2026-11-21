@@ -18,7 +18,9 @@ export function customerLine(c: TillCustomer | null, note?: string): string {
 
 /** The code field as it is typed: upper case, `KC-` in front, grouped in threes, at most nine symbols. */
 export function typedCode(input: string): string {
-  let s = input.toUpperCase().replace(/[\s-]+/g, '')
+  // The box shows its own value back with "KC-" in front; drop that first, or every keystroke would add another KC.
+  // A bare code may itself start with K and C, so without the dash KC is only a prefix on an 11-symbol input.
+  let s = input.toUpperCase().trimStart().replace(/^KC\s*-/, '').replace(/[\s-]+/g, '')
   if (s.startsWith('KC') && s.length > 9) s = s.slice(2)
   const symbols = [...s].filter((ch) => CODE_ALPHABET.includes(ch)).slice(0, 9).join('')
   if (!symbols) return ''
