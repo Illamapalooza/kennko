@@ -16,7 +16,7 @@ export async function getServerClient() {
           )
         } catch {
           // Called from a server component, where cookies are read-only.
-          // Session refresh is handled by middleware in Plan 2.
+          // Session refresh is handled by proxy.ts.
         }
       },
     },

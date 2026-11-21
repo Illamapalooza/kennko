@@ -8,7 +8,7 @@ export function navLinks(place: NavPlace, signedIn: boolean, customerName?: stri
     { label: 'Menu', href: '/order', current: place === 'menu' },
     { label: 'My orders', href: signedIn ? '/orders' : '/account', current: place === 'orders' },
     signedIn
-      ? { label: first, href: '/orders', current: false }
+      ? { label: first, href: '/account', current: place === 'account' }
       : { label: 'Sign in', href: '/account', current: place === 'account' },
   ]
 }

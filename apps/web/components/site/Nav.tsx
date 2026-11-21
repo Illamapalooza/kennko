@@ -16,6 +16,7 @@ export function Nav() {
           <a href="#food">Food</a>
           <a href="#perks">Perks</a>
           <a href="#visit">Visit</a>
+          <a href="/account">My card</a>
           {orderingOn ? (
             <a className="nav-order" href="/order">
               Order now

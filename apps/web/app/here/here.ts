@@ -26,8 +26,7 @@ export type CheckinMessage = {
 
 const timeFormat = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })
 
-/** What the customer reads after tapping "Walk my cat in". */
-/** `hidden`: Kennko has paused this cat, so "Show me on the wall" would not help. */
+/** What the customer reads after tapping "Walk my cat in". `hidden`: Kennko has paused this cat, so "Show me on the wall" would not help. */
 export function checkinMessage(result: CheckinResult, catName: string, code?: string, hidden = false): CheckinMessage {
   if (result.status === 'ok') {
     const until = `Your visit lasts until ${timeFormat.format(new Date(result.endsAt))}.`

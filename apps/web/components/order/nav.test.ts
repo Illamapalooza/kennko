@@ -9,9 +9,10 @@ describe('navLinks', () => {
     expect(links.map((l) => l.current)).toEqual([true, false, false])
   })
 
-  it('signed in shows the first name and sends history to /orders', () => {
+  it('signed in shows the first name linking to the account page, and sends history to /orders', () => {
     const links = navLinks('orders', true, 'Julius Baliling')
-    expect(links[links.length - 1]).toMatchObject({ label: 'Julius', href: '/orders' })
+    expect(links[links.length - 1]).toMatchObject({ label: 'Julius', href: '/account', current: false })
+    expect(navLinks('account', true, 'Julius')[2].current).toBe(true)
     expect(links[1]).toMatchObject({ label: 'My orders', href: '/orders', current: true })
     expect(links[0].current).toBe(false)
   })
