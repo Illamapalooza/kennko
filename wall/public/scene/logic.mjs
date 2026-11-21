@@ -67,11 +67,39 @@ export function boardView(orders, cap) {
   return { queued: column("queued", cap * 2), preparing: column("preparing", cap), serving: column("serving", cap) };
 }
 
-/** "03 - lofi_morning.mp3" -> "lofi morning" */
-export function trackTitle(file) {
-  const base = String(file).replace(/\.[a-z0-9]{2,5}$/i, "").replace(/_/g, " ");
-  const stripped = base.replace(/^\s*\d{1,3}\s*[-.)]?\s+/, "").trim();
-  return stripped || base.trim() || String(file);
+export function sceneEvents(prev, next) {
+  if (!prev) return [];
+  const events = [];
+  const prevOrders = new Map((prev.orders ?? []).map((o) => [o.id, o.status]));
+  const prevVisitors = new Set((prev.visitors ?? []).map((v) => v.key));
+  const nextVisitors = new Set((next.visitors ?? []).map((v) => v.key));
+
+  let hasJoin = false;
+  let hasPreparing = false;
+  let hasReady = false;
+  for (const o of next.orders ?? []) {
+    if (o.status === "cancelled") continue;
+    const before = prevOrders.get(o.id);
+    if (!before && o.status === "queued") hasJoin = true;
+    else if (before === "queued" && o.status === "preparing") hasPreparing = true;
+    else if (before !== "serving" && o.status === "serving") hasReady = true;
+  }
+
+  let hasCatIn = false;
+  for (const key of nextVisitors) {
+    if (!prevVisitors.has(key)) { hasCatIn = true; break; }
+  }
+  let hasCatOut = false;
+  for (const key of prevVisitors) {
+    if (!nextVisitors.has(key)) { hasCatOut = true; break; }
+  }
+
+  if (hasJoin) events.push("join");
+  if (hasPreparing) events.push("preparing");
+  if (hasReady) events.push("ready");
+  if (hasCatIn) events.push("catIn");
+  if (hasCatOut) events.push("catOut");
+  return events;
 }
 
 /** Fisher–Yates with an injectable random source. */

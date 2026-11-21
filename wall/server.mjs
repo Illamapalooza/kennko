@@ -10,13 +10,12 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { reduce, emptyState, manilaDay, normalize, OrderError } from "./store.mjs";
-import { trackTitle } from "./public/scene/logic.mjs";
-import { followPos, fromPosFeed, agedVisit } from "./pos-link.mjs";
+import { followPos, agedVisit } from "./pos-link.mjs";
+import { createFollower } from "./public/follow.mjs";
 import { FALLBACK_DRINKS, readMenu, loadCachedMenu, saveCachedMenu, namesOf, fetchTillMenu } from "./menu-source.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, "public");
-const MUSIC = path.join(ROOT, "music");
 const DATA = path.join(ROOT, "data");
 const ORDERS_FILE = path.join(DATA, "orders.json");
 
@@ -170,38 +169,40 @@ if (AMBIENT) {
 // ---------- following the till ----------
 if (POS) {
   let downSince = 0;
-  let standIn = null;
+  const follower = createFollower({
+    baristas: config.baristas,
+    board: BOARD,
+    now: Date.now,
+    timers: {
+      set: (fn, ms) => setTimeout(fn, ms).unref(),
+      clear: (id) => clearTimeout(id),
+    },
+    onStandIn: () => { if (!posLive) selfRunning = true; },
+    onSnapshot: (snap) => {
+      state = snap.state;
+      visit = { visitors: snap.visit.visitors, checkin: snap.visit.checkin, tillNow: snap.visit.tillNow };
+      visitReceivedAt = Date.now();
+      broadcast();
+    },
+  });
   followPos(POS_URL, {
     onUp: () => {
-      clearTimeout(standIn);
+      follower.up();
       if (downSince) console.log("  The till is back. The cats are following real orders again.");
       downSince = 0;
     },
     onFeed: (feed) => {
       setMenu(readMenu(feed?.menu));
-      const next = fromPosFeed(feed, config.baristas);
-      if (!next) return;
       posLive = true;
       selfRunning = false;
-      const { visitors, checkin, tillNow, ...sheet } = next;
-      state = sheet;
-      visit = { visitors, checkin, tillNow };
-      visitReceivedAt = Date.now();
-      broadcast();
+      follower.feed(feed);
     },
     onDown: (why) => {
       posLive = false;
-      // the QR's code changes every minute and expires after two, so a stale one only misleads; visiting cats stay until their end time
-      if (visit.checkin) { visit = { ...visit, checkin: null }; broadcast(); }
+      follower.down();
       if (downSince) return;
       downSince = Date.now();
       console.log(`  Can't reach the till at ${POS_URL} (${why}). Still trying; ${BOARD ? "the wall keeps the last orders it saw" : "the cafe will run itself meanwhile"}.`);
-      // With the board up, made-up orders would put numbers on the wall that no customer holds, so the wall
-      // just keeps the last real orders. Without the board, the cafe runs itself until the till is back.
-      if (BOARD) return;
-      // A short blip should not swap real orders for made-up ones, so wait a little before standing in.
-      standIn = setTimeout(() => { if (!posLive) selfRunning = true; }, 15000);
-      standIn.unref();
     },
   });
 }
@@ -301,13 +302,6 @@ function lanAddresses() {
     .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i.address);
 }
 
-function playlist() {
-  try {
-    return fs.readdirSync(MUSIC).filter((f) => !f.startsWith(".") && AUDIO.has(path.extname(f).toLowerCase()))
-      .sort((a, b) => a.localeCompare(b)).map((file) => ({ url: `/music/${encodeURIComponent(file)}`, title: trackTitle(file) }));
-  } catch { return []; }
-}
-
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   const route = url.pathname;
@@ -319,7 +313,6 @@ const server = http.createServer(async (req, res) => {
           padUrls: AMBIENT ? [] : lanAddresses().map((a) => `http://${a}:${config.port}/pad`),
         });
       }
-      if (route === "/api/playlist") return json(res, 200, playlist());
       if (route === "/api/events") {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
         res.write(`retry: 2000\n\ndata: ${snapshot()}\n\n`);
@@ -328,11 +321,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (route.startsWith("/api/")) return json(res, 404, { error: "Not found." });
-      if (route.startsWith("/music/")) {
-        const file = inside(MUSIC, route.slice("/music/".length));
-        if (!file || !AUDIO.has(path.extname(file).toLowerCase())) { res.writeHead(404); return res.end(); }
-        return sendFile(req, res, file);
-      }
       if (AMBIENT && (route === "/pad" || route.startsWith("/pad."))) { res.writeHead(404, { "content-type": "text/plain" }); return res.end("The order pad is off. Start the wall with --orders to use it."); }
       const rel = route === "/" ? "index.html" : route === "/pad" ? "pad.html" : route.slice(1);
       const file = inside(PUBLIC, rel);
@@ -378,7 +366,6 @@ server.listen(config.port, "0.0.0.0", () => {
   console.log(`  Wall (this computer):  ${wall}`);
   if (!AMBIENT) console.log(pads.length ? `  Order pad (tablet):    ${pads.join("   ")}` : "  Order pad: no network found. On this computer use http://localhost:" + config.port + "/pad");
   if (!AMBIENT && config.pin) console.log(`  Pad PIN:               ${config.pin}   (change it in config.json)`);
-  if (playlist().length === 0) console.log("  Music: the music/ folder is empty, so the wall will be silent.");
   console.log("  Press Ctrl+C to stop.\n");
   if (!NO_OPEN) {
     const [cmd, cmdArgs] = process.platform === "darwin" ? ["open", [wall]]

@@ -1,6 +1,7 @@
-// The wall: listens for order changes, drives the scene and the board, plays the playlist.
-import { createScene, W, H } from "/scene/scene.mjs";
-import { boardView, itemsLabel, shuffled, clockOffset, qrCell } from "/scene/logic.mjs";
+// The wall: listens for order changes, drives the scene and the board, plays sound effects.
+import { createScene, W, H } from "./scene/scene.mjs";
+import { boardView, itemsLabel, clockOffset, qrCell, sceneEvents } from "./scene/logic.mjs";
+import { createSfx } from "./sfx.mjs";
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (cls) n.className = cls; return n; };
@@ -27,73 +28,11 @@ tickClock();
 setInterval(tickClock, 5000);
 
 // ---------- sound ----------
-const audio = new Audio();
-audio.preload = "auto";
 let actx = null;
-let tracks = [];
-let queue = [];
-let lastUrl = "";
-let fails = 0;
-let muted = false;
-let duckTimer = 0;
-let retryTimer = 0;
-
-const baseVolume = () => (muted ? 0 : boot.volume);
-
-async function nextTrack() {
-  clearTimeout(retryTimer);
-  if (queue.length === 0) {
-    try { tracks = await (await fetch("/api/playlist")).json(); } catch { tracks = []; }
-    queue = shuffled(tracks);
-    if (queue.length > 1 && queue[0].url === lastUrl) queue.push(queue.shift());
-  }
-  const track = queue.shift();
-  if (!track) {
-    // nothing to play: stay quiet and look again later, in case tracks are added mid-shift
-    $("music").hidden = true;
-    retryTimer = setTimeout(nextTrack, 60000);
-    return;
-  }
-  lastUrl = track.url;
-  audio.src = track.url;
-  audio.volume = baseVolume();
-  $("track").textContent = track.title;
-  $("music").hidden = false;
-  audio.play().catch(() => { /* an unplayable file raises "error" below; a blocked play waits for a tap */ });
-}
-audio.addEventListener("playing", () => { fails = 0; });
-audio.addEventListener("ended", nextTrack);
-audio.addEventListener("error", () => {
-  if (!opened) return;
-  fails++;
-  if (fails >= Math.max(1, tracks.length)) {
-    // every track failed in a row: don't spin, try again in a minute
-    fails = 0;
-    queue = [];
-    $("music").hidden = true;
-    clearTimeout(retryTimer);
-    retryTimer = setTimeout(nextTrack, 60000);
-  } else nextTrack();
-});
+let sfx = createSfx(null);
 
 function bell() {
-  if (!actx || muted) return;
-  const now = actx.currentTime;
-  for (const [freq, delay] of [[1318.5, 0], [1760, 0.17]]) {
-    const osc = actx.createOscillator();
-    const gain = actx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.0001, now + delay);
-    gain.gain.exponentialRampToValueAtTime(0.35, now + delay + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 1.3);
-    osc.connect(gain).connect(actx.destination);
-    osc.start(now + delay);
-    osc.stop(now + delay + 1.4);
-  }
-  audio.volume = baseVolume() * 0.3;
-  clearTimeout(duckTimer);
-  duckTimer = setTimeout(() => { audio.volume = baseVolume(); }, 1900);
+  sfx.play("ready");
 }
 
 // What the customer was told: "W3" for an online order, else the counter number.
@@ -168,6 +107,7 @@ function setCheckin(checkin) {
 }
 addEventListener("resize", renderQr);
 
+let prevScene = null;
 function apply(state, visit) {
   tillOffset = clockOffset(visit?.tillNow, Date.now());
   const fresh = new Set();
@@ -176,7 +116,12 @@ function apply(state, visit) {
       if (o.status === "serving" && known.get(o.id) !== "serving") { fresh.add(o.id); banners.push(o); }
     }
   }
-  scene.sync(state.orders, state.baristas, known === null, visit?.visitors ?? []);
+  const visitors = visit?.visitors ?? [];
+  for (const kind of sceneEvents(prevScene, { orders: state.orders, visitors })) {
+    if (kind !== "ready") sfx.play(kind);
+  }
+  prevScene = { orders: state.orders, visitors };
+  scene.sync(state.orders, state.baristas, known === null, visitors);
   setCheckin(boot.ambient ? null : visit?.checkin ?? null);
   known = new Map(state.orders.map((o) => [o.id, o.status]));
   if (!boot.ambient) renderBoard(state, fresh);
@@ -184,8 +129,8 @@ function apply(state, visit) {
   showBanner();
 }
 
-function listen() {
-  const source = new EventSource("/api/events");
+function listen(sourceUrl = "/api/events") {
+  const source = typeof sourceUrl === "string" ? new EventSource(sourceUrl) : sourceUrl;
   source.onmessage = (e) => {
     $("link").hidden = true;
     let data;
@@ -193,6 +138,7 @@ function listen() {
     apply(data.state, data.visit);
   };
   source.onerror = () => { $("link").hidden = false; };
+  return source;
 }
 
 // ---------- start ----------
@@ -201,7 +147,7 @@ function open() {
   opened = true;
   $("start").hidden = true;
   try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { actx = null; }
-  nextTrack();
+  sfx = createSfx(actx);
   document.documentElement.requestFullscreen?.().catch(() => { /* fullscreen is a nicety */ });
   fit();
 }
@@ -210,8 +156,7 @@ $("open").addEventListener("click", open);
 addEventListener("keydown", (e) => {
   if (!opened || e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key.toLowerCase();
-  if (key === "m") { muted = !muted; audio.volume = baseVolume(); }
-  else if (key === "n") nextTrack();
+  if (key === "m") { sfx.muted = !sfx.muted; }
   else if (key === "f") {
     if (document.fullscreenElement) document.exitFullscreen?.();
     else document.documentElement.requestFullscreen?.().catch(() => {});
@@ -230,7 +175,7 @@ async function start() {
   } else if (boot.padUrls?.length) {
     hint.append("Order pad for the counter tablet: ", el("b", boot.padUrls[0]));
   } else hint.textContent = "No wifi found. The order pad only works on this computer for now.";
-  hint.append(el("br"), "Keys: M mute · N next song · F full screen");
+  hint.append(el("br"), "Keys: M mute · F full screen");
   listen();
 }
 start();

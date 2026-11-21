@@ -52,10 +52,8 @@ next-env.d.ts
 # playwright mcp scratch output
 .playwright-mcp/
 
-# cat cafe wall: the day's orders and the shop's own music stay off git
+# cat cafe wall: the day's orders stay off git
 /wall/data/
-/wall/music/*
-!/wall/music/.gitkeep
 
 # POS: the shop's sales database, its own settings, and the built screens stay off git
 /apps/pos/data/

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { coatFor, COATS, assignBaristas, assignSlots, boardView, VISIT_SPOTS, SEAT_SPOTS, visitorView, clockOffset, qrCell, itemsLabel, trackTitle, shuffled } from "../public/scene/logic.mjs";
+import { coatFor, COATS, assignBaristas, assignSlots, boardView, VISIT_SPOTS, SEAT_SPOTS, visitorView, clockOffset, qrCell, itemsLabel, shuffled } from "../public/scene/logic.mjs";
 import { CAT_FRONT, COAT_COLOURS, GLYPHS } from "../public/scene/sprites.mjs";
 
 test("a coat is stable per order and every coat gets used", () => {
@@ -34,13 +34,9 @@ test("the board shows the oldest few and counts the rest", () => {
   assert.deepEqual(view.queued, { shown: [], more: 0 });
 });
 
-test("item labels and track titles read cleanly", () => {
+test("item labels read cleanly", () => {
   assert.equal(itemsLabel([{ name: "Matcha", qty: 2 }, { name: "Americano", qty: 1 }]), "2× Matcha, Americano");
   assert.equal(itemsLabel(undefined), "");
-  assert.equal(trackTitle("03 - lofi_morning.mp3"), "lofi morning");
-  assert.equal(trackTitle("12. Sunset.flac"), "Sunset");
-  assert.equal(trackTitle("1999.mp3"), "1999");
-  assert.equal(trackTitle("Cafe Bossa.m4a"), "Cafe Bossa");
 });
 
 test("shuffle keeps every track", () => {

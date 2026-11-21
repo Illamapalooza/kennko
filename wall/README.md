@@ -12,7 +12,7 @@ nothing with the website and needs no install.
 | Windows | Double-click `start-wall.bat` |
 | Anywhere | `node wall/server.mjs` |
 
-Needs Node.js 20 or newer. The wall opens in the browser; tap the big button once to start the music and go full
+Needs Node.js 20 or newer. The wall opens in the browser; tap the big button once to enable sound effects and go full
 screen. Wall keys: `M` mute, `N` next song, `F` full screen.
 
 | Flag | What it does |
@@ -76,13 +76,9 @@ and the wall gains an order board with numbers. Open the pad address the termina
 |---|---|---|
 | `port` | 4455 | Port the wall listens on |
 | `pin` | "1234" | Orders mode: pad PIN. Change it before using the pad. `""` turns the PIN off |
-| `volume` | 0.5 | Music volume, 0 to 1 |
-| `autoclearMinutes` | 10 | Orders mode: how long a ready order stays up |
-| `boardSize` | 5 | Orders mode: rows per board column before "+N more" |
 | `baristas` | 2 | Barista cats behind the counter in the self-running cafe (1 to 3) |
 
-- **Music:** drop audio files (mp3, m4a, ogg, wav, flac) into `music/`. They play shuffled and loop. New files are
-  picked up when the current round finishes.
+- **Sound effects:** Web Audio chimes and synth cues play for new orders, prep steps, ready orders and visiting cats. Press `M` to mute.
 - **Menu:** drink names come from the till (its published menu) and are remembered in `data/menu.json`; there is nothing to edit.
   A wall that has never reached a till uses four generic names in the self-running cafe, and the order pad says "No drinks yet".
   Without `--pos` it asks the till (`posUrl` or `http://localhost:4466`) for the menu at start and every 10 minutes.
@@ -91,7 +87,7 @@ and the wall gains an order board with numbers. Open the pad address the termina
 
 | Symptom | Likely cause |
 |---|---|
-| No sound | `music/` is empty, or the wall was never tapped open. |
+| No sound | The wall was never tapped open, or `M` muted sound effects. |
 | "Port already in use" | The wall is already running in another window. |
 
 ## Tests
