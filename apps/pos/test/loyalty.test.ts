@@ -477,6 +477,51 @@ describe('releasing a claim that did not make a sale (Ruling P7-3)', () => {
     expect(pending(u.store)).toEqual([])
   })
 
+  it('a refused release (not 400) is dropped and the queue moves on; a 429 or no answer keeps it', async () => {
+    const t = till()
+    const [gone, busy, next] = ['55555555-5555-4555-8555-555555555551', '55555555-5555-4555-8555-555555555552', '55555555-5555-4555-8555-555555555553']
+    t.store.queueRelease(gone, T)
+    t.store.queueRelease(busy, T + 1)
+    t.store.queueRelease(next, T + 2)
+    const clock = { now: T + 1000 }
+    const answers: Record<string, () => Response> = {
+      [gone]: () => json(404, { code: 'NOT_FOUND', message: 'Not found' }),
+      [busy]: () => json(429, { code: 'RATE_LIMITED', message: 'Wait' }),
+      [next]: () => json(200, { released: true }),
+    }
+    const { sync, api } = syncFor(t, (body) => answers[body.claimId]!(), clock)
+    await sync.runOnce()
+    // The 404 is dropped; the 429 stops the round with it and the rest kept.
+    expect(pending(t.store)).toEqual([busy, next])
+    answers[busy] = () => json(409, { code: 'CONFLICT', message: 'No' })
+    await sync.runOnce()
+    expect(pending(t.store)).toEqual([])
+    expect(api.calls.filter((c) => c.path === '/v1/stamp-cards/release').map((c) => c.body.claimId)).toEqual([gone, busy, busy, next])
+  })
+
+  it('releases still go out when the website refuses the push, but not when it cannot be reached', async () => {
+    const t = till()
+    t.store.queueRelease('66666666-6666-4666-8666-666666666666', T)
+    t.store.createOrder(menu, sale(), T, ANA) // something in the outbox
+    let push: () => Response = () => json(400, { code: 'INVALID', message: 'Bad batch' })
+    const sessions = createSessions(t.store.db, () => T)
+    const pins = createPinDirectory({ staffPin: '1234', managerPin: '0000', staff: () => t.store.staffCache() })
+    const api = fakeApi((p) => {
+      if (p === '/v1/stamp-cards/release') return json(200, { released: true })
+      if (p === '/v1/sync/push') return push()
+      return json(200, { menu: null, soldOut: [], staff: [], shop: { name: 'K', address: 'B', phone: null } } satisfies PullState)
+    })
+    const sync = createSync({ store: t.store, sessions, pins, dataDir: t.dataDir, apiUrl: API, fetchFn: api.fn, now: () => T + 1000, onChange: () => {} })
+    push = () => new Response('down', { status: 503 })
+    await sync.runOnce()
+    expect(api.calls.filter((c) => c.path === '/v1/stamp-cards/release')).toEqual([])
+    expect(pending(t.store)).toHaveLength(1)
+    push = () => json(400, { code: 'INVALID', message: 'Bad batch' })
+    await sync.runOnce()
+    expect(api.calls.filter((c) => c.path === '/v1/stamp-cards/release')).toHaveLength(1)
+    expect(pending(t.store)).toEqual([])
+  })
+
   it('a refused claim queues nothing', async () => {
     const t = till()
     const api = fakeApi(() => json(409, { code: 'NO_FREE_DRINK', message: 'none' }))

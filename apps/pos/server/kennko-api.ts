@@ -162,8 +162,11 @@ export async function chargeWithFreeDrink(o: {
 
 /**
  * Tries each queued release once (or only `only`), oldest first. `released: true` drops it; `released: false` drops it
- * once the claim attempt is older than `RELEASE_WINDOW_MS`, else keeps it (the claim may not have committed yet). No
- * answer keeps it and stops this round. A claim a sale was written under is dropped without a call. Never throws.
+ * once the claim attempt is older than `RELEASE_WINDOW_MS`, else keeps it (the claim may not have committed yet). A
+ * refusal (any 4xx but 429) is permanent, so it is dropped and the queue moves on: one bad entry never holds up the
+ * others, and the server sweeps a claim nobody released after 30 minutes anyway (Ruling P7-6). No answer, a 429 or a
+ * disconnected till keeps it and stops this round. A claim a sale was written under is dropped without a call.
+ * Never throws.
  */
 export async function releasePending(store: Store, dataDir: string, apiUrl: string, now: number, fetchFn: typeof fetch = fetch, only?: string): Promise<void> {
   for (const { claimId, claimedAt } of store.pendingReleases()) {
@@ -174,8 +177,9 @@ export async function releasePending(store: Store, dataDir: string, apiUrl: stri
     }, CLAIM_WAIT_MS, fetchFn)
     if (a.kind === 'ok' && a.body?.released === true) store.dropRelease(claimId)
     else if (a.kind === 'ok' && a.body?.released === false && now - claimedAt > RELEASE_WINDOW_MS) store.dropRelease(claimId)
-    // A 400 means the API cannot read this claim id at all: retrying never helps.
-    else if (a.kind === 'refused' && a.status === 400) store.dropRelease(claimId)
-    else if (a.kind !== 'ok') return
+    else if (a.kind === 'refused' && a.status !== 429) {
+      console.warn(`  A free-drink release was refused (${a.status}${a.code ? ` ${a.code}` : ''}); the website lets the claim go by itself.`)
+      store.dropRelease(claimId)
+    } else if (a.kind !== 'ok') return
   }
 }
