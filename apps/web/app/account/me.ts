@@ -1,5 +1,5 @@
-import type { MeView } from '@kennko/core'
-import { userFetch } from '@/lib/api/client'
+import type { CosmeticView, MeView } from '@kennko/core'
+import { publicFetch, userFetch } from '@/lib/api/client'
 
 type Card = NonNullable<NonNullable<MeView['customer']>['card']>
 
@@ -28,4 +28,16 @@ export function stampCircles(card: Card): { circles: StampCircle[]; freeDrinkRea
     return { filled: ready, date: null }
   })
   return { circles, freeDrinkReady: ready }
+}
+
+/** The shop catalogue (public, cached by the API for a minute). An empty shop beats a broken account page. */
+export async function loadCosmetics(): Promise<CosmeticView[]> {
+  try {
+    const res = await publicFetch('/v1/cosmetics')
+    if (res.status !== 200) return []
+    return (await res.json()) as CosmeticView[]
+  } catch (err) {
+    console.error('[account] cosmetics failed:', (err as Error).message)
+    return []
+  }
 }

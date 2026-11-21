@@ -5,12 +5,13 @@ import { GoogleSignIn } from '@/components/order/GoogleSignIn'
 import { EmailSignIn } from '@/components/account/EmailSignIn'
 import { JoinForm } from '@/components/account/JoinForm'
 import { StampCard } from '@/components/account/StampCard'
+import { CatCustomiser } from '@/components/account/CatCustomiser'
 import { DeleteAccount } from '@/components/account/DeleteAccount'
 import { RenameCard } from '@/components/account/RenameCard'
 import { safeNextPath } from '@/lib/auth/redirect'
 import { OrderNav } from '@/components/order/OrderNav'
 import { signOutCustomer } from './actions'
-import { loadMe } from './me'
+import { loadCosmetics, loadMe } from './me'
 import { qrSvg } from './qr'
 import '../order/order.css'
 import './account.css'
@@ -78,6 +79,7 @@ export default async function AccountPage({
   }
 
   const svg = await qrSvg(card.publicCode)
+  const catalogue = await loadCosmetics()
   return (
     <Shell signedIn name={customer.name}>
       <div className="panel account-card kcard">
@@ -89,11 +91,7 @@ export default async function AccountPage({
 
       <StampCard customer={card} />
 
-      <section className="panel account-card" aria-labelledby="points-h">
-        <h2 className="panel-title" id="points-h">Points</h2>
-        <p className="points-n">Points: {card.points}</p>
-        <p className="account-guest">Points will soon dress up your Kennko cat.</p>
-      </section>
+      <CatCustomiser cat={card.cat} owned={card.owned} points={card.points} catalogue={catalogue} />
 
       <div className="panel account-card">
         <RenameCard name={card.displayName} />
