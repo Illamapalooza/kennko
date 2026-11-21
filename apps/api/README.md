@@ -638,6 +638,8 @@ From `apps/api`, dry run first. It must list only 0019:
 npx supabase db push --dry-run
 ```
 
+0019 also creates these indexes (check them in the file the dry run names): `customers_display_name_idx`, `orders_customer_idx`, `stamp_cards_one_open`, `stamp_cards_claimed_order_idx`, `stamps_one_per_order`, `stamps_card_idx`, `stamps_customer_idx`, `points_once_per_order`, `points_ledger_customer_idx` and `sync_events_linked_recent`.
+
 Then apply it as one whole file:
 
 ```sh
@@ -649,14 +651,17 @@ Afterwards, in the SQL editor:
 ```sql
 select count(*) from customers;
 select pg_get_function_identity_arguments(p.oid) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'owns_order';
+select has_function_privilege('anon', 'public.owns_order(uuid, text, timestamptz)', 'EXECUTE') as anon,
+       has_function_privilege('authenticated', 'public.owns_order(uuid, text, timestamptz)', 'EXECUTE') as authenticated;
+select indexname from pg_indexes where indexname in ('stamp_cards_claimed_order_idx', 'stamps_customer_idx', 'sync_events_linked_recent') order by indexname;
 ```
 
-The count is 0, and `owns_order` has one row: `order_user_id uuid, order_email text, order_created_at timestamptz` (three arguments, no two-argument version).
+The count is 0. `owns_order` has one row: `order_user_id uuid, order_email text, order_created_at timestamp with time zone` (three arguments, no two-argument version). Both privileges are `true`: anon must be able to run `owns_order`, or a signed-out read of orders fails instead of returning no rows. The last query lists all three indexes.
 
 ### 2. Supabase Auth (dashboard)
 
 1. Authentication › Providers › **Email** is on, with **Confirm email** on and the magic link (email sign-in link) enabled. Google stays as it is.
-2. Authentication › URL Configuration › Redirect URLs: add `https://kennko.vercel.app/auth/callback`, and allow the query string, because the website sends `/auth/callback?next=…` (for example `https://kennko.vercel.app/auth/callback**`). If it is not on the list, the link lands on the site root and nobody is signed in.
+2. Authentication › URL Configuration › Redirect URLs: add `https://kennko.vercel.app/auth/callback` (or the production domain, if the site has moved to its own), and allow the query string, because the website sends `/auth/callback?next=…` (for example `https://kennko.vercel.app/auth/callback**`). If it is not on the list, the link lands on the site root and nobody is signed in.
 3. Authentication › Email Templates › **Magic Link**: put it in Kennko's wording. Keep the `{{ .ConfirmationURL }}` link.
 4. SMTP stays on the existing Resend sender. No new service.
 5. Rate limits: raise the email limit from the default to about 30 per hour.
@@ -693,13 +698,15 @@ Use a throwaway email address and a test customer. Website, on a phone:
 
 At the till (tablet):
 
-- In a sale, press **Add Kennko card** and scan the QR code over https. The customer's name and stamp count show.
-- Type the code with one character wrong: the till says "No Kennko card has that code. Check it with the customer."
+- In a sale, press **Add Kennko card** and scan the QR code over https. The card code and stamp count show (the till never shows the customer's name).
+- Type the code with one character wrong: the till says "Check the code" straight away, without asking the website.
+- Type a valid code that no one holds: the till says "No Kennko card has that code. Check it with the customer." (A typo is caught by the code's last symbol, so this needs a well-formed code that was never issued, for example one printed by `node -e "import('@kennko/core').then(c => console.log(c.formatPublicCode(c.makePublicCode(n => Math.floor(Math.random() * n)))))"` run in `apps/api`.)
 - Charge a drink and press **Stamp card**. In admin › Customers, the customer shows 1 stamp and the points for the price.
 - Wi-Fi off on the till: type the code (it will confirm when back online), charge, stamp. Wi-Fi on: the stamp arrives within a sync.
-- Stamp until the card is full. The 9th stamp starts a new card, and the full one waits for a free drink.
-- Free drink: with a full card on the sale, press **Make one drink free**, enter a manager PIN (it needs the internet) and charge. The drink's base price is ₱0 and add-ons are charged. A second claim on the same card says "No free drink waiting". Voiding that sale gives the free drink back to the card.
-- Void a stamped test sale: the stamp and its points are reversed.
+- Fill the test card with 8 stamped test sales. Do not void any of them until the free-drink checks below are done: a void takes its stamp off, and the card is no longer full. The 9th stamp starts a new card, and the full one waits for a free drink.
+- Free drink: with a full card on the sale, press **Make one drink free**, enter a manager PIN (it needs the internet) and charge. The drink's base price is ₱0 and add-ons are charged. Try a second free drink on the same card: the Manager PIN prompt says "No free drink waiting on this card." Voiding the free-drink sale gives the free drink back to the card.
+- Stranded claim: fill another card, claim its free drink, then let the sale fail or leave it (for example unplug the till's network cable right after entering the manager PIN, then cancel the sale). After 30 minutes look the card up again, or open it in admin › Customers: the card is full again and can be claimed.
+- Now void a stamped test sale: the stamp and its points are reversed.
 
 Admin:
 
