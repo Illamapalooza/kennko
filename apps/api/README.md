@@ -617,3 +617,109 @@ These need a live API, so they were not done during the build. Check them at 375
 
 - Admin › Reports (tables scroll inside their cards, not the page).
 - Admin › Needs a look, including the close-shift confirm.
+
+## Plan 7: customer accounts, the digital stamp card and points
+
+Plans 3, 4, 5 and 6 must be deployed first. Plan 7 adds the Kennko card (sign-in by email link, a QR code and a typed code), stamps and the free drink at the till, points, and admin › Customers. Migration 0019 is additive, except that it replaces `owns_order`. Deploy in this order: migration → API → website → till. The till must not send the new event kinds before the API accepts them, and the website needs the new API first. No new environment variables.
+
+### 1. Migration 0019 (Julius)
+
+First, in the Supabase SQL editor, run this read-only pre-flight. 0019 drops `owns_order(uuid,text)`, so nothing else may depend on it:
+
+```sql
+select classid::regclass, objid, pg_describe_object(classid, objid, objsubid) from pg_depend where refobjid = 'public.owns_order(uuid,text)'::regprocedure;
+```
+
+Expect only the three order policies (on `orders`, `order_lines` and `order_line_options`). 0019 rebuilds them. If anything else is listed, stop and ask.
+
+From `apps/api`, dry run first. It must list only 0019:
+
+```sh
+npx supabase db push --dry-run
+```
+
+Then apply it as one whole file:
+
+```sh
+npx supabase db push
+```
+
+Afterwards, in the SQL editor:
+
+```sql
+select count(*) from customers;
+select pg_get_function_identity_arguments(p.oid) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'owns_order';
+```
+
+The count is 0, and `owns_order` has one row: `order_user_id uuid, order_email text, order_created_at timestamptz` (three arguments, no two-argument version).
+
+### 2. Supabase Auth (dashboard)
+
+1. Authentication › Providers › **Email** is on, with **Confirm email** on and the magic link (email sign-in link) enabled. Google stays as it is.
+2. Authentication › URL Configuration › Redirect URLs: add `https://kennko.vercel.app/auth/callback`, and allow the query string, because the website sends `/auth/callback?next=…` (for example `https://kennko.vercel.app/auth/callback**`). If it is not on the list, the link lands on the site root and nobody is signed in.
+3. Authentication › Email Templates › **Magic Link**: put it in Kennko's wording. Keep the `{{ .ConfirmationURL }}` link.
+4. SMTP stays on the existing Resend sender. No new service.
+5. Rate limits: raise the email limit from the default to about 30 per hour.
+
+### 3. API deploy
+
+Deploy the API. No new variables. Smoke checks:
+
+- `GET /health` returns 200.
+- `GET /v1/me` without a token returns 401.
+- `GET /v1/customers/by-code/KC-AAA-AAA-AAA` without a device token returns 401.
+- `GET /v1/stamps/to-check` without a token returns 401.
+
+An old website and an old till keep working against the new API: the till ignores the new fields, and `GET /v1/me/orders` now matches a guest order to an account only for orders placed after the account was created.
+
+### 4. Website deploy
+
+Deploy the website (new dependency `qrcode`, installed by the build). The new API must already be live.
+
+Before announcing cards, Julius reads and approves the privacy notice text on `/privacy` (it is a draft).
+
+### 5. Till (shop computer)
+
+1. `git pull`, then `deploy\windows\setup.cmd` (installs the new `jsqr` dependency, builds the till and restarts it).
+2. Reload every tablet, so they run the new screens.
+3. On each tablet, open the till once on the https address (`https://<till address>:4443`) and allow the camera when asked. Scanning only works there; typing the code always works.
+
+### 6. Live checks
+
+Use a throwaway email address and a test customer. Website, on a phone:
+
+- Open `/account` and press **Email me a sign-in link**. The email arrives from the Resend sender in Kennko's wording, and the link signs you in.
+- Press **Get my Kennko card** (13 or older, privacy notice ticked). The account page shows the stamp card, the typed code and the QR code.
+
+At the till (tablet):
+
+- In a sale, press **Add Kennko card** and scan the QR code over https. The customer's name and stamp count show.
+- Type the code with one character wrong: the till says "No Kennko card has that code. Check it with the customer."
+- Charge a drink and press **Stamp card**. In admin › Customers, the customer shows 1 stamp and the points for the price.
+- Wi-Fi off on the till: type the code (it will confirm when back online), charge, stamp. Wi-Fi on: the stamp arrives within a sync.
+- Stamp until the card is full. The 9th stamp starts a new card, and the full one waits for a free drink.
+- Free drink: with a full card on the sale, press **Make one drink free**, enter a manager PIN (it needs the internet) and charge. The drink's base price is ₱0 and add-ons are charged. A second claim on the same card says "No free drink waiting". Voiding that sale gives the free drink back to the card.
+- Void a stamped test sale: the stamp and its points are reversed.
+
+Admin:
+
+- Admin › Customers › the test customer › **Switch to paper card**. Stamp another sale at the till: it shows under **Stamps to check** (on Customers and on Needs a look). Switch back with **Switch to digital card**, then apply the stamp.
+- As owner, adjust points with a note (for example +50): the balance and the ledger change.
+- Online order: place an order signed in as the customer. Admin confirms the payment, and the points are credited. The till's online ticket shows **Stamp at pickup**.
+
+Account deletion: on a throwaway account's page open **Delete account**, type DELETE and confirm. Then, in the SQL editor:
+
+```sql
+select count(*) from orders where customer_user_id = '<id>' or customer_id = '<id>';
+select count(*) from customers where id = '<id>';
+```
+
+Both are 0, and the user is gone from Supabase › Authentication › Users.
+
+### 7. Visual checks not yet done
+
+These need a live API, a real camera and an email link, so they were not done during the build:
+
+- `/account` (signed out, joining, with a card, with a full card) and admin › Customers (the list and one customer, including Stamps to check) at 375 px, 768 px and 1440 px wide.
+- The till at 768 px and 1024 px wide: Add Kennko card (camera and typed), the customer chip, Make one drink free, Stamp card on the paid screen, History, and the Orders board with Stamp at pickup.
+- The QR code scans from a phone screen in the shop's light.
