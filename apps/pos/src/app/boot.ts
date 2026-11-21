@@ -6,6 +6,7 @@ import { createStore } from '../../till/store.ts'
 import { createTill } from '../../till/till.ts'
 import { setTransport } from '../transport.ts'
 import { appFiles } from './app-files.ts'
+import { wireFeed } from './feed.ts'
 import { inAppTransport } from './inapp-transport.ts'
 import { appBackup, wireLifecycle } from './lifecycle.ts'
 import { nativeFetch } from './native-fetch.ts'
@@ -52,6 +53,8 @@ export async function bootApp(): Promise<void> {
 
   till.start()
   wireLifecycle(till, App)
+  const kennkoFeed = (Capacitor as any).Plugins?.KennkoFeed
+  if (kennkoFeed) wireFeed(till, kennkoFeed)
 
   let askedBattery = false
   const baseTransport = inAppTransport(till, {
