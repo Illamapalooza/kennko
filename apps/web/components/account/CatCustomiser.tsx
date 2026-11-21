@@ -74,7 +74,7 @@ export function CatCustomiser({ cat, owned, points, catalogue }: {
           id="cat-name"
           type="text"
           value={name}
-          maxLength={24}
+          maxLength={16}
           aria-invalid={!nameCheck.ok}
           aria-describedby="cat-name-hint"
           onChange={(e) => setName(e.target.value)}

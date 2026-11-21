@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CosmeticView } from '@kennko/core'
-import { draftLook, shopRows } from './cat'
+import { catLabel, draftLook, shopRows } from './cat'
 
 const item = (key: string, slot: CosmeticView['slot'], pricePoints: number, isStarter = false): CosmeticView => ({
   id: `id-${key}`, key, slot, name: key, pricePoints, isStarter, isActive: true, sortOrder: 0,
@@ -35,6 +35,31 @@ describe('shopRows', () => {
   })
   it('40 points can buy a 40-point item', () => {
     expect(row(shopRows(catalogue, ['ginger'], 40), 'hat', 'beanie').state).toBe('buy')
+  })
+})
+
+describe('shopRows, switched-off items', () => {
+  it('keeps an owned item the shop no longer lists, equippable', () => {
+    const r = row(shopRows(catalogue, ['ginger', 'party-hat'], 0), 'hat', 'party-hat')
+    expect(r.state).toBe('equippable')
+    expect(r.name).toBe('Party hat')
+  })
+  it('puts an owned coat in the coat slot', () => {
+    expect(row(shopRows(catalogue, ['ginger', 'siamese'], 0), 'coat', 'siamese').state).toBe('equippable')
+  })
+  it('skips keys the cats package does not know', () => {
+    const all = shopRows(catalogue, ['ginger', 'nonsense'], 0).flatMap((s) => s.items)
+    expect(all.some((i) => i.key === 'nonsense')).toBe(false)
+  })
+  it('does not show a switched-off item that is not owned', () => {
+    const all = shopRows(catalogue, ['ginger'], 999).flatMap((s) => s.items)
+    expect(all.some((i) => i.key === 'party-hat')).toBe(false)
+  })
+})
+
+describe('catLabel', () => {
+  it('humanises a key with no catalogue name', () => {
+    expect(catLabel('Mochi', { coat: 'ginger', hat: 'party-hat' }, {})).toBe('Mochi, a ginger cat wearing Party hat')
   })
 })
 
