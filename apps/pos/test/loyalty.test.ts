@@ -330,7 +330,10 @@ describe('looking up a customer', () => {
     expect(online.calls[0]!.path).toBe(`/v1/customers/by-code/${code}`)
     expect(found).toEqual({ customer: customer(code) })
     expect(store.cachedCustomer(code)).toEqual(customer(code))
-    expect(JSON.stringify(store.db.prepare('select * from customer_cache').all())).not.toMatch(/ana@x|37|email|points/)
+    // Check the cached payload only: the row's updated_at is a timestamp whose digits can contain 37.
+    const cached = store.db.prepare('select data from customer_cache').all() as { data: string }[]
+    expect(cached).toHaveLength(1)
+    expect(cached[0]!.data).not.toMatch(/ana@x|\b37\b|email|points/)
 
     const other = newCode()
     expect(await lookupCustomer(store, dataDir, API, other, offlineFetch))
