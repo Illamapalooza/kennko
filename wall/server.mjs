@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { reduce, emptyState, manilaDay, normalize, OrderError } from "./store.mjs";
 import { trackTitle } from "./public/scene/logic.mjs";
-import { followPos, fromPosFeed } from "./pos-link.mjs";
+import { followPos, fromPosFeed, agedVisit } from "./pos-link.mjs";
 import { FALLBACK_DRINKS, readMenu, loadCachedMenu, saveCachedMenu, namesOf, fetchTillMenu } from "./menu-source.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -105,7 +105,9 @@ function save() {
 const clients = new Set();
 // What the till sent besides orders: visiting cats, the check-in QR and the till's clock. Never saved to disk.
 let visit = { visitors: [], checkin: null, tillNow: null };
-const snapshot = () => JSON.stringify({ state, now: Date.now(), visit });
+let visitReceivedAt = Date.now();
+// tillNow is the till's clock when its last feed arrived; every send ages it by the time since.
+const snapshot = () => JSON.stringify({ state, now: Date.now(), visit: agedVisit(visit, visitReceivedAt, Date.now()) });
 function broadcast() {
   const frame = `data: ${snapshot()}\n\n`;
   for (const res of clients) res.write(frame);
@@ -184,6 +186,7 @@ if (POS) {
       const { visitors, checkin, tillNow, ...sheet } = next;
       state = sheet;
       visit = { visitors, checkin, tillNow };
+      visitReceivedAt = Date.now();
       broadcast();
     },
     onDown: (why) => {

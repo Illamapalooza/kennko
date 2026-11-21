@@ -126,3 +126,14 @@ export function followPos(baseUrl, { onFeed, onUp, onDown }) {
 
   return () => { stopped = true; };
 }
+
+/**
+ * The visit block as it should go out at `now`: `tillNow` was the till's clock when the feed was received, so it is
+ * advanced by the feed's age. Without it a replay (browser reconnect, a later broadcast) would look just-sent.
+ * @param {{visitors: unknown[], checkin: unknown, tillNow: number | null}} visit
+ * @param {number} receivedAt the wall server's Date.now() when that feed arrived
+ * @param {number} now the wall server's Date.now() at send time
+ */
+export function agedVisit(visit, receivedAt, now) {
+  return { ...visit, tillNow: Number.isFinite(visit.tillNow) ? visit.tillNow + Math.max(0, now - receivedAt) : null };
+}

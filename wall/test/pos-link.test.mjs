@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fromPosFeed, sseParser } from "../pos-link.mjs";
+import { fromPosFeed, sseParser, agedVisit } from "../pos-link.mjs";
 
 const order = (over = {}) => ({ id: 7, number: 3, name: "Ana", items: [{ name: "Matcha", qty: 2 }], status: "queued", createdAt: 100, updatedAt: 200, ...over });
 
@@ -149,4 +149,13 @@ test("the till's clock comes along as tillNow, or null", () => {
   assert.equal(fromPosFeed(feedOf({ now: 123456 }), 1).tillNow, 123456);
   assert.equal(fromPosFeed(feedOf({ now: "x" }), 1).tillNow, null);
   assert.equal(fromPosFeed(feedOf(), 1).tillNow, null);
+});
+
+test("a replayed visit block carries the till's time advanced by the feed's age", () => {
+  const visit = { visitors: [], checkin: null, tillNow: 1_000_000 };
+  assert.equal(agedVisit(visit, 50_000, 50_000 + 10 * 60_000).tillNow, 1_000_000 + 10 * 60_000);
+  assert.equal(agedVisit(visit, 50_000, 50_000).tillNow, 1_000_000); // a fresh feed resets it
+  assert.equal(agedVisit({ ...visit, tillNow: null }, 0, 99).tillNow, null);
+  assert.equal(agedVisit(visit, 100, 50).tillNow, 1_000_000); // a clock step back never rewinds it
+  assert.equal(visit.tillNow, 1_000_000);
 });
