@@ -1,13 +1,16 @@
 // The wall: listens for order changes, drives the scene and the board, plays the playlist.
 import { createScene, W, H } from "/scene/scene.mjs";
-import { boardView, itemsLabel, shuffled } from "/scene/logic.mjs";
+import { boardView, itemsLabel, shuffled, clockOffset, qrCell } from "/scene/logic.mjs";
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (cls) n.className = cls; return n; };
 
 let boot = { volume: 0.5, boardSize: 5, padUrls: [], ambient: true };
 let opened = false;
-const scene = createScene($("scene"), $("tags"));
+// Visitors' end times are on the till's clock; the projector may be another PC with its own idea of the time.
+// Offset = the till's time when the feed was sent - this browser's time when it arrived.
+let tillOffset = 0;
+const scene = createScene($("scene"), $("tags"), { clock: () => Date.now() + tillOffset });
 
 // ---------- layout ----------
 function fit() {
@@ -138,14 +141,43 @@ function renderBoard(state, freshIds) {
 
 // ---------- live state ----------
 let known = null; // order id -> status, from the previous snapshot
-function apply(state) {
+let qrModules = null;
+function renderQr() {
+  const card = $("checkin-card");
+  card.hidden = !qrModules;
+  document.body.classList.toggle("has-qr", Boolean(qrModules));
+  if (!qrModules) return;
+  const n = qrModules.length;
+  const cell = qrCell(n, Math.min(innerHeight * 0.27, innerWidth * 0.2));
+  const size = (n + 8) * cell; // 4-module quiet zone on every side, whole pixels per module
+  const canvas = $("checkin");
+  canvas.width = size; canvas.height = size;
+  canvas.style.width = `${size}px`; canvas.style.height = `${size}px`;
+  const g = canvas.getContext("2d");
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, size, size);
+  g.fillStyle = "#0d1b3d";
+  qrModules.forEach((row, y) => { for (let x = 0; x < n; x++) if (row[x] === "1") g.fillRect((x + 4) * cell, (y + 4) * cell, cell, cell); });
+}
+let qrKey = "";
+function setCheckin(checkin) {
+  const key = checkin ? checkin.modules.join("") : "";
+  if (key === qrKey) return;
+  qrKey = key;
+  qrModules = checkin ? checkin.modules : null;
+  renderQr();
+}
+addEventListener("resize", renderQr);
+
+function apply(state, visit) {
+  tillOffset = clockOffset(visit?.tillNow, Date.now());
   const fresh = new Set();
   if (known && !boot.ambient) {
     for (const o of state.orders) {
       if (o.status === "serving" && known.get(o.id) !== "serving") { fresh.add(o.id); banners.push(o); }
     }
   }
-  scene.sync(state.orders, state.baristas, known === null);
+  scene.sync(state.orders, state.baristas, known === null, visit?.visitors ?? []);
+  setCheckin(boot.ambient ? null : visit?.checkin ?? null);
   known = new Map(state.orders.map((o) => [o.id, o.status]));
   if (!boot.ambient) renderBoard(state, fresh);
   if (banners.length > 4) banners.splice(0, banners.length - 4);
@@ -158,7 +190,7 @@ function listen() {
     $("link").hidden = true;
     let data;
     try { data = JSON.parse(e.data); } catch { return; }
-    apply(data.state);
+    apply(data.state, data.visit);
   };
   source.onerror = () => { $("link").hidden = false; };
 }

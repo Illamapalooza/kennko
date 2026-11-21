@@ -38,7 +38,15 @@ up on the till walks in as a customer cat, and the wall shows the queue and call
 | Online order paid | Comes in like any other, shown as **W3** with the customer's first name |
 | Online order out for delivery | Leaves the wall (delivery orders are not called at the counter) |
 | Online order cancelled | Taken off the wall at the till's next sync (not instantly; it stays while the till is offline) |
+| A customer checks in with the QR | Their cat walks in wearing its cosmetics, with its name on a tag; up to 12 at once |
+| The visit ends (90 minutes after the last check-in or linked order) | The cat walks out |
+| The till has not synced yet, or cannot reach the server | No QR card; the cats already in stay until their visit ends |
 
+- **Check-in QR:** a white card in the bottom-right corner reads "Scan to bring your cat in". The till makes a new code
+  every minute, so a photo of the QR stops working after about two minutes. The wall only receives the link and the
+  QR's dots, never the secret, and for each visiting cat only a per-visit key, its name, its look and its end time.
+  Visit end times are on the till's clock, so the wall checks them against the time the till reports (not the wall PC's
+  own clock, which may be minutes off). Not shown in visuals-only mode (`--no-board`).
 - The number on the wall is the order number the till shows after payment and prints on the receipt. Online orders
   carry a `W` in front (W3) and are separate from counter number 3; the banner reads "Order W3 for Ana is ready!".
 - The wall only receives drink names (including the menu's), first names and steps. It never sees prices or payments.

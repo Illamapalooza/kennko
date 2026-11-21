@@ -66,7 +66,7 @@ test("a voided order is a cancelled one on the wall, a done one stays done", () 
 });
 
 test("an empty till is an empty cafe, not an error", () => {
-  assert.deepEqual(fromPosFeed({ day: "2026-11-17", orders: [] }, 3), { day: "2026-11-17", seq: 0, baristas: 3, orders: [] });
+  assert.deepEqual(fromPosFeed({ day: "2026-11-17", orders: [] }, 3), { day: "2026-11-17", seq: 0, baristas: 3, orders: [], visitors: [], checkin: null, tillNow: null });
 });
 
 test("never passes money or anything else through", () => {
@@ -92,4 +92,61 @@ test("reads server-sent events across split chunks", () => {
   assert.deepEqual(seen, ['{"a":1}', '{"b":2}']);
   parse("tial\n\n");
   assert.deepEqual(seen, ['{"a":1}', '{"b":2}', "partial"]);
+});
+
+const visitor = (over = {}) => ({ key: "k1", name: "Mochi", look: { coat: "ginger", hat: "beanie" }, endsAt: 5000, ...over });
+const feedOf = (extra = {}) => ({ day: "2026-11-20", orders: [], ...extra });
+
+test("visitors pass through with only key, name, look and endsAt", () => {
+  const state = fromPosFeed(feedOf({ visitors: [visitor({ customerId: "c-1", email: "a@b.c" })] }), 1);
+  assert.deepEqual(state.visitors, [{ key: "k1", name: "Mochi", look: { coat: "ginger", hat: "beanie" }, endsAt: 5000 }]);
+});
+
+test("a visitor look keeps only the slot keys", () => {
+  const state = fromPosFeed(feedOf({ visitors: [visitor({ look: { coat: "tabby", hat: "crown", balance: 99, nonsense: "x" } })] }), 1);
+  assert.deepEqual(state.visitors[0].look, { coat: "tabby", hat: "crown" });
+});
+
+test("a bad visitor is dropped and the others stay", () => {
+  const state = fromPosFeed(feedOf({ visitors: [
+    visitor({ key: "a", look: { hat: "beanie" } }),
+    visitor({ key: "b" }),
+    visitor({ key: "c", endsAt: "soon" }),
+    visitor({ key: "", name: "x" }),
+    visitor({ key: "k".repeat(65) }),
+    visitor({ key: "d", name: 5 }),
+    null,
+  ] }), 1);
+  assert.deepEqual(state.visitors.map((v) => v.key), ["b"]);
+});
+
+test("at most 12 visitors are kept", () => {
+  const many = Array.from({ length: 15 }, (_, i) => visitor({ key: `k${i}` }));
+  assert.equal(fromPosFeed(feedOf({ visitors: many }), 1).visitors.length, 12);
+});
+
+test("a long cat name is cut to 16", () => {
+  assert.equal(fromPosFeed(feedOf({ visitors: [visitor({ name: "x".repeat(30) })] }), 1).visitors[0].name, "x".repeat(16));
+});
+
+test("checkin needs an https url and a square of 0/1 strings", () => {
+  const modules = ["101", "010", "101"];
+  assert.deepEqual(fromPosFeed(feedOf({ checkin: { url: "https://kennko.vercel.app/here?c=abc", modules, secret: "no" } }), 1).checkin, { url: "https://kennko.vercel.app/here?c=abc", modules });
+  assert.equal(fromPosFeed(feedOf({ checkin: { url: "http://x/here", modules } }), 1).checkin, null);
+  assert.equal(fromPosFeed(feedOf({ checkin: { url: "https://x/here", modules: ["101", "01"] } }), 1).checkin, null);
+  assert.equal(fromPosFeed(feedOf({ checkin: { url: "https://x/here", modules: ["101", "010", "1x1"] } }), 1).checkin, null);
+  assert.equal(fromPosFeed(feedOf({ checkin: { url: "https://x/here", modules: [] } }), 1).checkin, null);
+  assert.equal(fromPosFeed(feedOf({ checkin: null }), 1).checkin, null);
+});
+
+test("a feed without the keys gives no visitors and no check-in", () => {
+  const state = fromPosFeed(feedOf(), 1);
+  assert.deepEqual(state.visitors, []);
+  assert.equal(state.checkin, null);
+});
+
+test("the till's clock comes along as tillNow, or null", () => {
+  assert.equal(fromPosFeed(feedOf({ now: 123456 }), 1).tillNow, 123456);
+  assert.equal(fromPosFeed(feedOf({ now: "x" }), 1).tillNow, null);
+  assert.equal(fromPosFeed(feedOf(), 1).tillNow, null);
 });

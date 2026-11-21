@@ -1,7 +1,7 @@
 // The cat cafe: a 288 x 152 pixel room drawn on a canvas, with crisp DOM labels laid over it.
 // Table service: customers sit down, a barista makes the drink, a server cat carries it over.
-import { drawCat, drawLoaf, drawCup, drawText, textWidth, CAT_W, CAT_H, INK, BLUE, AMBER } from "./sprites.mjs";
-import { coatFor, assignBaristas, assignSlots, itemsLabel } from "./logic.mjs";
+import { drawCat, drawLoaf, drawCup, drawText, textWidth, catBounds, CAT_W, CAT_H, INK, BLUE, AMBER } from "./sprites.mjs";
+import { coatFor, assignBaristas, assignSlots, itemsLabel, TABLES, VISIT_SPOTS, visitorView } from "./logic.mjs";
 
 export const W = 288;
 export const H = 152;
@@ -9,7 +9,6 @@ export const H = 152;
 // Positions are a cat's feet: centre x, bottom y.
 const WAIT = [26, 48, 70, 92, 114, 136].map((x) => ({ x, y: 122 })); // standing room, only when every seat is taken
 // listed in the order they fill, so the room looks evenly busy
-const TABLES = [{ x: 172, y: 142 }, { x: 60, y: 142 }, { x: 214, y: 112 }, { x: 258, y: 142 }, { x: 112, y: 142 }, { x: 214, y: 142 }, { x: 258, y: 112 }];
 const SEATS = TABLES.flatMap((t) => [{ x: t.x - 15, y: t.y, flip: false, table: t }, { x: t.x + 15, y: t.y, flip: true, table: t }]);
 const DOOR = { x: -12, y: 136 };
 const STATIONS = [62, 104, 132];
@@ -88,7 +87,7 @@ function skyFor(hour) {
 /**
  * @param {HTMLCanvasElement} canvas 288 x 152
  * @param {HTMLElement} tagLayer positioned box exactly over the canvas
- * @param {{manilaHour?: () => number}} [opts]
+ * @param {{manilaHour?: () => number, clock?: () => number}} [opts] clock: now on the till's clock (visitors' end times are on it)
  */
 export function createScene(canvas, tagLayer, opts = {}) {
   const ctx = canvas.getContext("2d");
@@ -96,6 +95,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
   room.width = W; room.height = H;
   paintRoom(room.getContext("2d"));
   const manilaHour = opts.manilaHour ?? (() => ((Date.now() / 3600000 + 8) % 24));
+  const clock = opts.clock ?? Date.now;
 
   /** @type {Map<number, any>} */ const custs = new Map();
   let orders = [];
@@ -107,6 +107,8 @@ export function createScene(canvas, tagLayer, opts = {}) {
   const baristas = [];
   const server = { x: SERVER_HOME.x, y: SERVER_HOME.y, tx: SERVER_HOME.x, ty: SERVER_HOME.y, state: "idle", job: null, carrying: false, flip: true, moving: false };
   const steam = [];
+  /** @type {Map<string, any>} visiting cats by their per-visit key */ const visitors = new Map();
+  let visitSlots = new Map();
   const tags = new Map();
   let t = 0; // seconds
   let last = performance.now();
@@ -123,7 +125,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
   }
 
   /** Bring the cats in line with the orders. `initial` places them without walking in. */
-  function sync(nextOrders, count, initial = false) {
+  function sync(nextOrders, count, initial = false, nextVisitors = []) {
     orders = nextOrders;
     baristaCount = count;
     const preparing = orders.filter((o) => o.status === "preparing").sort((a, b) => a.updatedAt - b.updatedAt || a.id - b.id).map((o) => o.id);
@@ -168,6 +170,29 @@ export function createScene(canvas, tagLayer, opts = {}) {
       baristas.push({ x: STATIONS[i], tx: STATIONS[i], nextMove: t + rand(2, 6), coat: BARISTA_COATS[i % BARISTA_COATS.length] });
     }
     baristas.length = Math.min(baristas.length, count);
+    syncVisitors(ambient ? [] : nextVisitors, initial);
+  }
+
+  /** Visiting cats: the ones on the list stand on their spot, a new one walks in, one gone walks out. */
+  function syncVisitors(list, initial) {
+    const here = visitorView(list, clock());
+    visitSlots = assignSlots(visitSlots, here.map((v) => v.key), VISIT_SPOTS.length);
+    const seen = new Set();
+    for (const info of here) {
+      const slot = visitSlots.get(info.key);
+      if (slot < 0) continue;
+      seen.add(info.key);
+      let v = visitors.get(info.key);
+      if (!v) {
+        v = { key: info.key, x: DOOR.x, y: DOOR.y, tx: DOOR.x, ty: DOOR.y, flip: false, phase: "in", moving: false, seed: visitors.size + 1 };
+        visitors.set(info.key, v);
+        if (initial) { v.x = VISIT_SPOTS[slot].x; v.y = VISIT_SPOTS[slot].y; v.flip = VISIT_SPOTS[slot].flip; }
+      }
+      v.name = info.name; v.look = info.look; v.endsAt = info.endsAt; v.phase = "in";
+      go(v, VISIT_SPOTS[slot]);
+      v.spot = VISIT_SPOTS[slot];
+    }
+    for (const v of visitors.values()) if (!seen.has(v.key) && v.phase !== "leave") { v.phase = "leave"; go(v, DOOR); }
   }
 
   /** Move toward the target; returns true once there. */
@@ -219,6 +244,13 @@ export function createScene(canvas, tagLayer, opts = {}) {
       if (seat && c.phase !== "leave") c.flip = seat.flip;
       if (c.phase === "finish" && t > c.leaveAt) leave(c);
       else if (c.phase === "leave") custs.delete(c.id);
+    }
+    for (const v of visitors.values()) {
+      // a visit that ends between two feeds still ends on time, by the till's clock
+      if (v.phase === "in" && v.endsAt <= clock()) { v.phase = "leave"; go(v, DOOR); }
+      if (!walk(v, dt)) continue;
+      if (v.phase === "leave") visitors.delete(v.key);
+      else if (v.spot) v.flip = v.spot.flip;
     }
     if (baristaCount > 0) stepServer(dt);
     baristas.forEach((b, i) => {
@@ -292,6 +324,13 @@ export function createScene(canvas, tagLayer, opts = {}) {
     else drawCup(ctx, c.flip ? x - 2 : x + CAT_W - 2, y + (sipping ? 5 : 9));
   }
 
+  function drawVisitor(v) {
+    const bob = v.moving ? Math.floor(t * 7 + v.seed) % 2 : 0;
+    const x = Math.round(v.x) - 7, y = Math.round(v.y) - CAT_H - bob;
+    ctx.fillStyle = "rgba(26,35,64,.14)"; ctx.fillRect(x + 1, Math.round(v.y) - 1, 12, 2);
+    drawCat(ctx, x, y, v.look, { flip: v.flip, blink: blink(200 + v.seed) });
+  }
+
   function drawServer() {
     const bob = server.moving ? Math.floor(t * 7) % 2 : 0;
     const x = Math.round(server.x) - 7, y = Math.round(server.y) - CAT_H - bob;
@@ -349,7 +388,8 @@ export function createScene(canvas, tagLayer, opts = {}) {
 
     // floor: tables, customers and the server, back to front
     const things = [...TABLES.map((tb) => ({ y: tb.y + 0.5, draw: () => drawTable(tb) })),
-      ...[...custs.values()].map((c) => ({ y: c.y, draw: () => drawCust(c) }))];
+      ...[...custs.values()].map((c) => ({ y: c.y, draw: () => drawCust(c) })),
+      ...[...visitors.values()].map((v) => ({ y: v.y, draw: () => drawVisitor(v) }))];
     if (baristaCount > 0) things.push({ y: server.y, draw: drawServer });
     things.sort((a, b) => a.y - b.y).forEach((th) => th.draw());
   }
@@ -376,6 +416,10 @@ export function createScene(canvas, tagLayer, opts = {}) {
       for (const c of custs.values()) {
         if (c.phase === "in" && !c.cup) tag(`c${c.id}`, "tag", byId.get(c.id)?.label ?? String(c.id), c.x, c.y - CAT_H - 2);
       }
+    }
+    for (const v of visitors.values()) {
+      if (v.phase !== "in") continue;
+      tag(`v${v.key}`, "tag visitor", v.name, v.x, v.y - CAT_H + Math.min(0, catBounds(v.look).y0) - 2);
     }
     baristas.forEach((b, i) => {
       const o = byId.get(assignment[i]);

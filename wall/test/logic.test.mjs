@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { coatFor, COATS, assignBaristas, assignSlots, boardView, itemsLabel, trackTitle, shuffled } from "../public/scene/logic.mjs";
+import { coatFor, COATS, assignBaristas, assignSlots, boardView, VISIT_SPOTS, SEAT_SPOTS, visitorView, clockOffset, qrCell, itemsLabel, trackTitle, shuffled } from "../public/scene/logic.mjs";
 import { CAT_FRONT, COAT_COLOURS, GLYPHS } from "../public/scene/sprites.mjs";
 
 test("a coat is stable per order and every coat gets used", () => {
@@ -60,4 +60,41 @@ test("sprite maps are rectangular and every coat colours every key", () => {
     assert.equal(rows.length, 5, ch);
     for (const row of rows) assert.equal(row.length, rows[0].length, ch);
   }
+});
+
+test("12 visit spots, all inside the room, off the counter, away from every seat", () => {
+  assert.equal(VISIT_SPOTS.length, 12);
+  assert.equal(new Set(VISIT_SPOTS.map((p) => `${p.x},${p.y}`)).size, 12);
+  for (const p of VISIT_SPOTS) {
+    assert.ok(Number.isInteger(p.x) && Number.isInteger(p.y) && typeof p.flip === "boolean");
+    assert.ok(p.x >= 7 && p.x <= 288 - 7 && p.y >= 16 && p.y <= 152, `${p.x},${p.y} inside 288 x 152`);
+    assert.ok(!(p.x >= 11 && p.x <= 179 && p.y >= 75 && p.y <= 102), `${p.x},${p.y} off the counter`);
+    for (const s of SEAT_SPOTS) assert.ok(Math.hypot(p.x - s.x, p.y - s.y) > 8, `${p.x},${p.y} clear of seat ${s.x},${s.y}`);
+  }
+});
+
+test("visitorView drops the expired and puts the newest first", () => {
+  const v = (key, endsAt) => ({ key, name: key, look: { coat: "ginger" }, endsAt });
+  const view = visitorView([v("old", 1500), v("gone", 1000), v("new", 9000), v("mid", 5000)], 1000);
+  assert.deepEqual(view.map((x) => x.key), ["new", "mid", "old"]);
+  assert.equal(visitorView(Array.from({ length: 20 }, (_, i) => v(`k${i}`, 5000 + i)), 0).length, 12);
+});
+
+test("expiry follows the till's clock even when the wall's clock is minutes off", () => {
+  const tillNow = 1_000_000;
+  const wallLocal = tillNow + 5 * 60_000; // the projector PC runs 5 minutes fast
+  const offset = clockOffset(tillNow, wallLocal);
+  const visit = [{ key: "a", name: "Mochi", look: { coat: "tabby" }, endsAt: tillNow + 60_000 }];
+  // by the raw local clock the visit looks ended 4 minutes ago; on the till's clock it has a minute left
+  assert.equal(visitorView(visit, wallLocal).length, 0);
+  assert.equal(visitorView(visit, wallLocal + offset).length, 1);
+  assert.equal(visitorView(visit, wallLocal + 70_000 + offset).length, 0);
+  assert.equal(clockOffset(null, wallLocal), 0);
+  assert.equal(clockOffset(Number.NaN, wallLocal), 0);
+});
+
+test("the QR cell is a whole number of pixels, the card fits the box", () => {
+  assert.equal(qrCell(29, 370), 10);
+  assert.equal(qrCell(29, 20), 1);
+  assert.ok(Number.isInteger(qrCell(33, 301)));
 });

@@ -83,3 +83,38 @@ export function shuffled(list, random = Math.random) {
   }
   return out;
 }
+
+// ---------- visiting cats (Plan 8) ----------
+export const MAX_VISITORS = 12;
+
+// The tables, listed in the order they fill. Positions are a cat's feet: centre x, bottom y.
+export const TABLES = [{ x: 172, y: 142 }, { x: 60, y: 142 }, { x: 214, y: 112 }, { x: 258, y: 142 }, { x: 112, y: 142 }, { x: 214, y: 142 }, { x: 258, y: 112 }];
+export const SEAT_SPOTS = TABLES.flatMap((t) => [{ x: t.x - 15, y: t.y }, { x: t.x + 15, y: t.y }]);
+
+/**
+ * Where visiting cats stand: the free floor below the counter and between the tables, in two staggered rows
+ * (so their name tags do not collide) and a short row on the right. None is on the counter or near a seat.
+ */
+export const VISIT_SPOTS = [
+  ...[24, 66, 108, 150].map((x) => ({ x, y: 112, flip: x > 100 })),
+  ...[26, 62, 98, 134, 170].map((x) => ({ x, y: 125, flip: x > 100 })),
+  ...[196, 232, 268].map((x) => ({ x, y: 124, flip: true })),
+];
+
+/** The visitors still here on the till's clock `now`, newest arrival (latest end) first, at most 12. */
+export function visitorView(visitors, now) {
+  return (visitors ?? [])
+    .filter((v) => Number.isFinite(v?.endsAt) && v.endsAt > now)
+    .sort((a, b) => b.endsAt - a.endsAt || (a.key < b.key ? -1 : 1))
+    .slice(0, MAX_VISITORS);
+}
+
+/** Add this to the wall's own clock to get the till's. 0 when the feed carried no usable time. */
+export function clockOffset(tillNow, localNow) {
+  return Number.isFinite(tillNow) ? tillNow - localNow : 0;
+}
+
+/** Whole pixels per QR module so the code plus its 4-module quiet zone fits `boxPx`. */
+export function qrCell(modules, boxPx) {
+  return Math.max(1, Math.floor(boxPx / (modules + 8)));
+}

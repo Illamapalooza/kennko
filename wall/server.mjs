@@ -103,7 +103,9 @@ function save() {
 }
 
 const clients = new Set();
-const snapshot = () => JSON.stringify({ state, now: Date.now() });
+// What the till sent besides orders: visiting cats, the check-in QR and the till's clock. Never saved to disk.
+let visit = { visitors: [], checkin: null, tillNow: null };
+const snapshot = () => JSON.stringify({ state, now: Date.now(), visit });
 function broadcast() {
   const frame = `data: ${snapshot()}\n\n`;
   for (const res of clients) res.write(frame);
@@ -179,11 +181,15 @@ if (POS) {
       if (!next) return;
       posLive = true;
       selfRunning = false;
-      state = next;
+      const { visitors, checkin, tillNow, ...sheet } = next;
+      state = sheet;
+      visit = { visitors, checkin, tillNow };
       broadcast();
     },
     onDown: (why) => {
       posLive = false;
+      // the QR's code changes every minute and expires after two, so a stale one only misleads; visiting cats stay until their end time
+      if (visit.checkin) { visit = { ...visit, checkin: null }; broadcast(); }
       if (downSince) return;
       downSince = Date.now();
       console.log(`  Can't reach the till at ${POS_URL} (${why}). Still trying; ${BOARD ? "the wall keeps the last orders it saw" : "the cafe will run itself meanwhile"}.`);

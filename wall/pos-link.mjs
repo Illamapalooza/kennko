@@ -35,7 +35,40 @@ export function fromPosFeed(feed, baristas) {
     orders.push({ id, ...(online ? { label: `W${o.number}` } : {}), name: typeof o.name === "string" ? o.name.slice(0, 16) : "", items, status, createdAt: o.createdAt, updatedAt: o.updatedAt });
   }
   orders.sort((a, b) => a.id - b.id);
-  return { day: feed.day, seq: orders.reduce((max, o) => Math.max(max, o.id), 0), baristas, orders };
+  return {
+    day: feed.day, seq: orders.reduce((max, o) => Math.max(max, o.id), 0), baristas, orders,
+    visitors: cleanVisitors(feed.visitors), checkin: cleanCheckin(feed.checkin),
+    // The till's clock when it sent this: visitors' end times are on it, and the wall's own clock may be off.
+    tillNow: Number.isFinite(feed.now) ? feed.now : null,
+  };
+}
+
+const MAX_VISITORS = 12;
+const SLOTS = ["hat", "face", "neck", "held"];
+
+/** Visiting cats: a bad entry is dropped, never the whole feed. Only key, name, look and endsAt get through. */
+function cleanVisitors(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const v of raw) {
+    if (out.length >= MAX_VISITORS) break;
+    if (!v || typeof v.key !== "string" || v.key === "" || v.key.length > 64) continue;
+    if (typeof v.name !== "string" || !Number.isFinite(v.endsAt)) continue;
+    if (!v.look || typeof v.look.coat !== "string") continue;
+    const look = { coat: v.look.coat };
+    for (const slot of SLOTS) if (typeof v.look[slot] === "string") look[slot] = v.look[slot];
+    out.push({ key: v.key, name: v.name.slice(0, 16), look, endsAt: v.endsAt });
+  }
+  return out;
+}
+
+/** The check-in QR as the till drew it: only an https link and a square of "0"/"1" rows. */
+function cleanCheckin(raw) {
+  if (!raw || typeof raw.url !== "string" || !raw.url.startsWith("https://")) return null;
+  const rows = raw.modules;
+  if (!Array.isArray(rows) || rows.length === 0 || rows.length > 177) return null;
+  if (!rows.every((r) => typeof r === "string" && r.length === rows.length && /^[01]+$/.test(r))) return null;
+  return { url: raw.url, modules: [...rows] };
 }
 
 /** Feed it text as it arrives; it calls onData once per complete server-sent event. */

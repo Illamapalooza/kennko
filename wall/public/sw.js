@@ -2,7 +2,7 @@
 // Saved copies are shown at once and refreshed in the background, so an update arrives on the next open.
 // Nothing under /api/ is ever kept (orders, the event streams, the PIN), and neither is any non-GET request.
 const CACHE = "kennko-wall-v3";
-const SHELL = ["/", "/wall.css", "/wall.mjs", "/scene/scene.mjs", "/scene/sprites.mjs", "/scene/logic.mjs", "/brand/icon.png", "/brand/wordmark-white.png", "/brand/wordmark-blue.png"];
+const SHELL = ["/", "/wall.css", "/wall.mjs", "/scene/scene.mjs", "/scene/sprites.mjs", "/scene/cats.mjs", "/scene/logic.mjs", "/brand/icon.png", "/brand/wordmark-white.png", "/brand/wordmark-blue.png"];
 const STATIC = /\.(html|css|mjs|js|png|svg|webmanifest)$/;
 
 self.addEventListener("install", (event) => {
