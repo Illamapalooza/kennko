@@ -1,6 +1,6 @@
 # Kennko POS and Kennko Wall as Android apps — design
 
-Status: draft for Julius's approval · 2026-11-21
+Status: approved by Julius · 2026-11-22
 
 ## Why
 
@@ -90,6 +90,13 @@ no internet. The wall should run on the projector with nobody typing addresses.
 - **Storage:** the database lives in the app's private storage. The device token and the check-in secret live there
   too (not in a file a backup or share could pick up). A daily backup copy is kept in app storage; staff or the owner
   can **Export backup** through Android's share sheet. Sync to Kennko remains the real off-tablet copy.
+- **New online orders get noticed (Julius chose this over push into the app).** Online orders still arrive by the
+  sync pull (about every 15 seconds while the app is on screen), as today. New in the app: when a pull brings an online
+  order the till hasn't shown before, it plays a **chime**, shows a **banner** ("New online order W3", tap to open
+  Orders) and keeps a **count badge** on the Orders tab until Orders is opened. Not on first load after connecting, and
+  not again for the same order. While the tablet sleeps, nothing arrives until it wakes (then at once). For that gap
+  the shop uses the existing website **Order alerts** (web push) on a manager's or the owner's phone, or on the tablet
+  in Chrome; no push into the POS app itself (no Firebase).
 - **Card QR scanning:** the camera scanning the till already has keeps working (Capacitor camera permission; a native
   scanner plugin is acceptable if the web scanner is unreliable on the Samsung). Typing the code always works.
 - **Always on, and safe when it isn't (Julius: the till is on screen most of the day, but the tablet sometimes
@@ -163,6 +170,8 @@ no internet. The wall should run on the projector with nobody typing addresses.
 - The tablet is on Kennko POS most of the day but may sleep on its own; it must recover cleanly (see Always on).
 - Projector: Wanbo WPD24.
 - No wall music; sound effects for actions in the scene instead.
+- New online orders: chime, banner and Orders badge in the POS app; website Order alerts cover the tablet asleep.
+  No push into the POS app.
 
 ## Builder's calls Julius can correct
 
