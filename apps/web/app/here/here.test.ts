@@ -53,6 +53,12 @@ describe('checkinMessage', () => {
   it('a missing or malformed code', () => {
     expect(checkinMessage({ status: 'error', reason: 'NO_CODE' }, 'Mochi').title).toBe('Scan the QR code on the wall at Kennko.')
   })
+  it('signed out: sign in again, with a link back to /here', () => {
+    const m = checkinMessage({ status: 'error', reason: 'SIGNED_OUT' }, 'Mochi', 'abcd2345')
+    expect(m.tone).toBe('bad')
+    expect(m.title).toBe('Your sign-in ended. Sign in again.')
+    expect(m.link).toEqual({ href: '/account?next=%2Fhere%3Fc%3Dabcd2345', label: 'Sign in again' })
+  })
   it('anything else is a generic retry', () => {
     expect(checkinMessage({ status: 'error', reason: 'FAILED' }, 'Mochi').tone).toBe('bad')
   })

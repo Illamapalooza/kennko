@@ -12,7 +12,7 @@ export function hereNextPath(code: string): string {
   return `/account?next=${encodeURIComponent(`/here?c=${code}`)}`
 }
 
-export type CheckinReason = 'BAD_WALL_CODE' | 'RATE_LIMITED' | 'NOT_JOINED' | 'NO_CODE' | 'FAILED'
+export type CheckinReason = 'BAD_WALL_CODE' | 'RATE_LIMITED' | 'NOT_JOINED' | 'NO_CODE' | 'SIGNED_OUT' | 'FAILED'
 export type CheckinResult =
   | { status: 'ok'; onWall: boolean; endsAt: string }
   | { status: 'error'; reason: CheckinReason }
@@ -27,7 +27,7 @@ export type CheckinMessage = {
 const timeFormat = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })
 
 /** What the customer reads after tapping "Walk my cat in". */
-export function checkinMessage(result: CheckinResult, catName: string): CheckinMessage {
+export function checkinMessage(result: CheckinResult, catName: string, code?: string): CheckinMessage {
   if (result.status === 'ok') {
     const until = `Your visit lasts until ${timeFormat.format(new Date(result.endsAt))}.`
     if (result.onWall) return { tone: 'good', title: `${catName} is walking in. Look at the wall!`, detail: until }
@@ -47,6 +47,12 @@ export function checkinMessage(result: CheckinResult, catName: string): CheckinM
       return { tone: 'bad', title: 'Get your Kennko card first.', link: { href: '/account', label: 'Get my Kennko card' } }
     case 'NO_CODE':
       return { tone: 'bad', title: 'Scan the QR code on the wall at Kennko.' }
+    case 'SIGNED_OUT':
+      return {
+        tone: 'bad',
+        title: 'Your sign-in ended. Sign in again.',
+        link: { href: code ? hereNextPath(code) : '/account', label: 'Sign in again' },
+      }
     default:
       return { tone: 'bad', title: 'We could not check you in. Try again.' }
   }

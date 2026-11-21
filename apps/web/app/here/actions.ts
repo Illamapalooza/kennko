@@ -18,9 +18,12 @@ export async function checkIn(code: string): Promise<CheckinResult> {
       body: JSON.stringify({ code: clean }),
     })
   } catch (err) {
+    // userFetch throws this exact message when nobody is signed in (lib/api/client.ts): not a failure to log.
+    if ((err as Error).message === 'You are not signed in.') return { status: 'error', reason: 'SIGNED_OUT' }
     console.error('[here] check-in failed:', (err as Error).message)
     return { status: 'error', reason: 'FAILED' }
   }
+  if (res.status === 401) return { status: 'error', reason: 'SIGNED_OUT' }
   if (res.status === 429) return { status: 'error', reason: 'RATE_LIMITED' }
   const body = (await res.json().catch(() => null)) as { code?: string; onWall?: unknown; endsAt?: unknown } | null
   if (res.ok && typeof body?.onWall === 'boolean' && typeof body.endsAt === 'string') {

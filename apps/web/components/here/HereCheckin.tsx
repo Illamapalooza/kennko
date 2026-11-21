@@ -12,7 +12,7 @@ import { CatCanvas } from '@/components/account/CatCanvas'
 export function HereCheckin({ code, name, look }: { code: string; name: string; look: CatLook }) {
   const [result, setResult] = useState<CheckinResult | null>(null)
   const [pending, start] = useTransition()
-  const message = result ? checkinMessage(result, name) : null
+  const message = result ? checkinMessage(result, name, code) : null
   const done = result?.status === 'ok'
 
   return (
