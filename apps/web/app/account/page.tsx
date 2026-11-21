@@ -81,19 +81,23 @@ export default async function AccountPage({
   const svg = await qrSvg(card.publicCode)
   const catalogue = await loadCosmetics()
   return (
-    <Shell signedIn name={customer.name}>
-      <div className="panel account-card kcard">
+    <Shell signedIn name={customer.name} wide>
+      <div className="panel account-card kcard area-card">
         <h1>Your Kennko card</h1>
         <div className="qr" role="img" aria-label={`QR code for ${card.publicCode}`} dangerouslySetInnerHTML={{ __html: svg }} />
         <p className="kcode" aria-label="Your code">{card.publicCode}</p>
         <p className="account-guest">Show this at the counter, or read the code out.</p>
       </div>
 
-      <StampCard customer={card} />
+      <div className="area-stamps">
+        <StampCard customer={card} />
+      </div>
 
-      <CatCustomiser cat={card.cat} owned={card.owned} points={card.points} catalogue={catalogue} />
+      <div className="area-cat">
+        <CatCustomiser cat={card.cat} owned={card.owned} points={card.points} catalogue={catalogue} />
+      </div>
 
-      <div className="panel account-card">
+      <div className="panel account-card area-settings">
         <RenameCard name={card.displayName} />
         <p className="account-guest">Signed in as {customer.email}</p>
         <p className="account-links"><Link href="/orders">See my orders</Link></p>
@@ -102,20 +106,20 @@ export default async function AccountPage({
         </form>
       </div>
 
-      <div className="panel account-card">
+      <div className="panel account-card area-delete">
         <DeleteAccount hasCard />
       </div>
     </Shell>
   )
 }
 
-function Shell({ children, signedIn, name }: { children: React.ReactNode; signedIn: boolean; name?: string }) {
+function Shell({ children, signedIn, name, wide = false }: { children: React.ReactNode; signedIn: boolean; name?: string; wide?: boolean }) {
   return (
     <div className="order-shell">
       <div className="order-main order-main-nav">
         <OrderNav place="account" signedIn={signedIn} customerName={name} />
       </div>
-      <div className="account stack">{children}</div>
+      <div className={wide ? 'account stack account-wide' : 'account stack'}>{children}</div>
     </div>
   )
 }

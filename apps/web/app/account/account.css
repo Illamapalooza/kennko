@@ -79,3 +79,21 @@
 .cat-save { width: 100%; min-height: 48px; margin-top: 8px; }
 .cat-save[disabled] { opacity: .5; cursor: not-allowed; }
 @media (min-width: 640px) { .cat-grid { grid-template-columns: repeat(3, 1fr); } .cat-save { width: auto; padding: 0 28px; } }
+
+/* With a card: one column on phones (card, stamps, cat, settings, delete); from 920px the cat gets the right column. */
+.account.account-wide { max-width: 1120px; }
+.account-wide > * { min-width: 0; }
+@media (min-width: 920px) {
+  .account.account-wide {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    grid-template-areas: 'card cat' 'stamps cat' 'settings cat' 'delete cat' '. cat';
+    grid-template-rows: auto auto auto auto 1fr;
+    align-items: start;
+    column-gap: var(--space-6);
+  }
+  .area-card { grid-area: card; }
+  .area-stamps { grid-area: stamps; }
+  .area-cat { grid-area: cat; position: sticky; top: 16px; }
+  .area-settings { grid-area: settings; }
+  .area-delete { grid-area: delete; }
+}
