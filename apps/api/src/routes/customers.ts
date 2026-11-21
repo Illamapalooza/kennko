@@ -10,6 +10,7 @@ import {
   paperStamps,
   resolvePaperStamp,
   searchCustomers,
+  setCatHidden,
   setStampMode,
   type Failure,
 } from '../loyalty/admin.js'
@@ -39,6 +40,7 @@ function uuidParam(c: Context<AppEnv>, name: string): string {
 const failed = (c: Context<AppEnv>, out: Failure) => c.json({ code: out.code, message: out.message }, out.status)
 
 const modeSchema = z.object({ mode: z.enum(['digital', 'paper']) })
+const hiddenSchema = z.object({ hidden: z.boolean() })
 const pointsSchema = z.object({
   delta: z
     .number()
@@ -100,6 +102,18 @@ export function customerRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!parsed.success) return invalid('mode is digital or paper.')
     const out = await setStampMode(deps.sql, { customerId, mode: parsed.data.mode, staffId: c.get('staff').id, now: deps.now() })
     return out.ok ? c.json({ stampMode: out.stampMode, changed: out.changed }) : failed(c, out)
+  })
+
+  app.post('/:id/cat/hidden', requireStaff(deps, 'manager'), async (c) => {
+    const customerId = uuidParam(c, 'id')
+    const parsed = hiddenSchema.safeParse(await body(c))
+    if (!parsed.success) return invalid('hidden is true or false.')
+    const out = await setCatHidden(deps.sql, { customerId, hidden: parsed.data.hidden, staffId: c.get('staff').id, now: deps.now() })
+    if (!out.ok) return failed(c, out)
+    const found = await customerDetail(deps.sql, customerId)
+    if (!found) throw apiError(404, 'NOT_FOUND', 'Not found')
+    c.header('Cache-Control', 'no-store')
+    return c.json(found)
   })
 
   app.post('/:id/points', requireStaff(deps, 'owner'), async (c) => {

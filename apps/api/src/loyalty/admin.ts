@@ -2,6 +2,7 @@ import {
   formatPublicCode,
   normalisePublicCode,
   ticketLabel,
+  type CatLook,
   type CustomerDetail,
   type CustomerListItem,
   type PaperStamp,
@@ -185,8 +186,12 @@ export async function customerDetail(sql: postgres.Sql, id: string): Promise<Cus
       order by p.created_at desc, p.id desc
       limit ${LEDGER_SHOWN}`
 
+    const [cat] = await tx<{ name: string; equipped: CatLook; show_on_wall: boolean; hidden_by_admin: boolean }[]>`
+      select name, equipped, show_on_wall, hidden_by_admin from cats where customer_id = ${id}`
+
     return {
       ...toListItem(row),
+      cat: cat ? { name: cat.name, look: cat.equipped, showOnWall: cat.show_on_wall, hiddenByAdmin: cat.hidden_by_admin } : null,
       stampModeSetBy: row.set_by_name,
       stampModeSetAt: iso(row.stamp_mode_set_at),
       cards: cards.map((k) => ({
@@ -307,5 +312,24 @@ export async function resolvePaperStamp(
       where kind = 'stamp.added' and result = 'flagged' and payload->>'stampId' = ${stampId} and resolved_at is null
         ${stamp.device_id ? tx`and device_id = ${stamp.device_id}` : tx``}`
     return { ok: true }
+  })) as { ok: true } | Failure
+}
+
+/**
+ * A manager or owner hides a cat from the wall, or lets it back (Ruling 15). Records who and when; unhiding clears both.
+ * A customer with no cat is not found. Runs under the customer lock.
+ */
+export async function setCatHidden(
+  sql: postgres.Sql,
+  input: { customerId: string; hidden: boolean; staffId: string; now: Date },
+): Promise<{ ok: true } | Failure> {
+  return (await sql.begin(async (tx) => {
+    if (!(await lockCustomer(tx, input.customerId))) return NOT_FOUND
+    const done = await tx`
+      update cats set hidden_by_admin = ${input.hidden},
+        hidden_by = ${input.hidden ? input.staffId : null}, hidden_at = ${input.hidden ? input.now : null}
+      where customer_id = ${input.customerId}
+      returning customer_id`
+    return done.length === 0 ? NOT_FOUND : { ok: true }
   })) as { ok: true } | Failure
 }

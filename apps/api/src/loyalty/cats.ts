@@ -169,3 +169,40 @@ export async function activeCosmetics(sql: Sql): Promise<CosmeticView[]> {
   const rank = (s: CosmeticSlot) => COSMETIC_SLOTS.indexOf(s)
   return [...rows].sort((a, b) => rank(a.slot) - rank(b.slot)).map(toView)
 }
+
+/** The owner's list: every row, switched-off items too, in shop order. */
+export async function allCosmetics(sql: Sql): Promise<CosmeticView[]> {
+  const rows = await sql<CosmeticRow[]>`
+    select id, key, slot, name, price_points, is_starter, is_active, sort_order from cosmetics order by sort_order, key`
+  const rank = (s: CosmeticSlot) => COSMETIC_SLOTS.indexOf(s)
+  return [...rows].sort((a, b) => rank(a.slot) - rank(b.slot)).map(toView)
+}
+
+export type CosmeticPatch = { name?: string; pricePoints?: number; isActive?: boolean; sortOrder?: number }
+
+/**
+ * The owner renames, reprices or switches off an item (Ruling 3). `key` and `slot` never change. A starter stays free
+ * and on, so no cat is left without a free coat: asking otherwise is 409 STARTER_ITEM (price 0 and on are accepted).
+ */
+export async function patchCosmetic(sql: postgres.Sql, id: string, patch: CosmeticPatch): Promise<CosmeticView | Failure> {
+  return (await sql.begin(async (tx) => {
+    const [item] = await tx<CosmeticRow[]>`
+      select id, key, slot, name, price_points, is_starter, is_active, sort_order from cosmetics where id = ${id} for update`
+    if (!item) return fail(404, 'NOT_FOUND', 'Not found')
+    if (item.is_starter && patch.pricePoints !== undefined && patch.pricePoints !== 0) {
+      return fail(409, 'STARTER_ITEM', 'A starter item is always free.')
+    }
+    if (item.is_starter && patch.isActive === false) {
+      return fail(409, 'STARTER_ITEM', 'A starter item cannot be switched off.')
+    }
+    const [row] = await tx<CosmeticRow[]>`
+      update cosmetics set
+        name = ${patch.name ?? item.name},
+        price_points = ${patch.pricePoints ?? item.price_points},
+        is_active = ${patch.isActive ?? item.is_active},
+        sort_order = ${patch.sortOrder ?? item.sort_order}
+      where id = ${id}
+      returning id, key, slot, name, price_points, is_starter, is_active, sort_order`
+    return toView(row!)
+  })) as CosmeticView | Failure
+}

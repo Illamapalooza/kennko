@@ -760,6 +760,29 @@ describe('every route as kennko_api', () => {
     expect(after!.ends_at.toISOString()).toBe(end)
   })
 
+  it('admin cats and cosmetics: hide and unhide a cat, list, reprice and switch off an item as kennko_api', async () => {
+    const fan = '00000000-0000-4000-8000-0000000000a9'
+    await asSuper(() => db.sql`insert into auth.users (id, email) values (${fan}, 'fan@x.test')`)
+    auth.users[fan] = { email: 'fan@x.test', emailConfirmed: true, createdAt: '2026-11-01T00:00:00Z' }
+    await ok('POST', '/v1/me/join', await signFor(fan), { ageConfirmed: true, privacyVersion: '2026-11' })
+    const managerJwt = await signFor(MANAGER_LOGIN)
+
+    const hidden = await ok('POST', `/v1/customers/${fan}/cat/hidden`, managerJwt, { hidden: true })
+    expect(hidden.cat).toMatchObject({ hiddenByAdmin: true })
+    const [row] = await asSuper(() => db.sql<{ by: string }[]>`select s.user_id as by from cats c join staff s on s.id = c.hidden_by where c.customer_id = ${fan}`)
+    expect(row!.by).toBe(MANAGER_LOGIN)
+    expect((await ok('POST', `/v1/customers/${fan}/cat/hidden`, managerJwt, { hidden: false })).cat).toMatchObject({ hiddenByAdmin: false })
+
+    const all = (await ok('GET', '/v1/cosmetics/all', ownerJwt)) as unknown as { id: string; key: string }[]
+    expect(all).toHaveLength(22)
+    const crown = all.find((x) => x.key === 'crown')!
+    expect(await ok('PATCH', `/v1/cosmetics/${crown.id}`, ownerJwt, { pricePoints: 120, name: 'Crown!' })).toMatchObject({ pricePoints: 120, name: 'Crown!' })
+    expect(await ok('PATCH', `/v1/cosmetics/${crown.id}`, ownerJwt, { isActive: false })).toMatchObject({ isActive: false })
+    expect(((await ok('GET', '/v1/cosmetics')) as unknown as { key: string }[]).map((x) => x.key)).not.toContain('crown')
+    await ok('PATCH', `/v1/cosmetics/${crown.id}`, ownerJwt, { isActive: true })
+    expect((await call('PATCH', `/v1/cosmetics/${crown.id}`, managerJwt, { pricePoints: 1 })).status).toBe(403)
+  })
+
   it('till customers: lookup, claim, release and a pull with customers and online card state as kennko_api', async () => {
     const member = '00000000-0000-4000-8000-0000000000b3'
     const bare = makePublicCode(randomInt)

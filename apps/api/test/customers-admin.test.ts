@@ -434,3 +434,130 @@ describe('stamps to check (Ruling 13)', () => {
     expect((await call('GET', '/v1/stamps/to-check', null)).status).toBe(401)
   })
 })
+
+/** A customer with a cat on the wall right now (a visit that ends after NOW). */
+async function visitor(name = 'Miso') {
+  const c = await customer({ name: 'Cat Person' })
+  await db.sql`insert into cats (customer_id, name, equipped, updated_at) values (${c.id}, ${name}, ${db.sql.json({ coat: 'ginger' })}, ${NOW})`
+  await db.sql`insert into visits (customer_id, visit_key, source, started_at, ends_at)
+    values (${c.id}, ${randomUUID()}, 'checkin', ${NOW}, ${new Date(NOW.getTime() + 60 * 60_000)})`
+  return c
+}
+const hide = (id: string, hidden: unknown, t: string | null = managerLogin) => call('POST', `/v1/customers/${id}/cat/hidden`, t, { hidden })
+const wallNames = async () => {
+  const res = await api.app.request('/v1/sync/pull', { headers: { Authorization: `Bearer ${token}` } })
+  return ((await res.json()) as { visitors: { name: string }[] }).visitors.map((v) => v.name)
+}
+
+describe('POST /v1/customers/:id/cat/hidden (manager, Ruling 15)', () => {
+  test('hides the cat from the wall and shows it in the detail; unhide restores it', async () => {
+    const c = await visitor('Hideme')
+    expect(await wallNames()).toContain('Hideme')
+    expect((await detail(c.id)).view.cat).toEqual({ name: 'Hideme', look: { coat: 'ginger' }, showOnWall: true, hiddenByAdmin: false })
+
+    const r = await hide(c.id, true)
+    expect(r.status, r.text).toBe(200)
+    expect((r.body as unknown as CustomerDetail).cat?.hiddenByAdmin).toBe(true)
+    expect(await wallNames()).not.toContain('Hideme')
+    const [row] = await db.sql<{ hidden_by: string; hidden_at: Date }[]>`select hidden_by, hidden_at from cats where customer_id = ${c.id}`
+    expect(row).toEqual({ hidden_by: managerId, hidden_at: NOW })
+    expect((await detail(c.id)).view.cat?.hiddenByAdmin).toBe(true)
+
+    const back = await hide(c.id, false)
+    expect((back.body as unknown as CustomerDetail).cat?.hiddenByAdmin).toBe(false)
+    expect(await wallNames()).toContain('Hideme')
+  })
+
+  test('a customer with no cat has cat null; a barista is 403; bad input 400; unknown customer 404', async () => {
+    const plain = await customer()
+    expect((await detail(plain.id)).view.cat).toBeNull()
+    expect((await hide(plain.id, true)).status).toBe(404)
+    const c = await visitor('Guarded')
+    expect((await hide(c.id, true, baristaLogin)).status).toBe(403)
+    expect((await hide(c.id, 'yes')).status).toBe(400)
+    expect((await hide(randomUUID(), true)).status).toBe(404)
+    expect((await hide('nope', true)).status).toBe(404)
+    expect((await hide(c.id, true, null)).status).toBe(401)
+    expect(await wallNames()).toContain('Guarded')
+  })
+})
+
+describe('the cosmetics catalogue (owner)', () => {
+  const all = (t: string | null = ownerLogin) => call('GET', '/v1/cosmetics/all', t)
+  const patch = (key: string, body: unknown, t: string | null = ownerLogin) =>
+    db.sql<{ id: string }[]>`select id from cosmetics where key = ${key}`.then(([r]) => call('PATCH', `/v1/cosmetics/${r!.id}`, t, body))
+  const shop = async () => {
+    const res = await api.app.request('/v1/cosmetics')
+    return (await res.json()) as { key: string; pricePoints: number; name: string }[]
+  }
+
+  test('the owner lists every row; a manager is 403', async () => {
+    const r = await all()
+    expect(r.status).toBe(200)
+    expect(r.body as unknown as unknown[]).toHaveLength(22)
+    expect((await all(managerLogin)).status).toBe(403)
+    expect((await all(null)).status).toBe(401)
+  })
+
+  test('repricing crown to 120 shows in the shop and a purchase charges 120', async () => {
+    const out = await patch('crown', { pricePoints: 120 })
+    expect(out.status, out.text).toBe(200)
+    expect(out.body).toMatchObject({ key: 'crown', pricePoints: 120 })
+    expect((await shop()).find((x) => x.key === 'crown')!.pricePoints).toBe(120)
+
+    const buyer = await customer({ name: 'Rich' })
+    await db.sql`insert into cats (customer_id, name, equipped, updated_at) values (${buyer.id}, 'Rich', ${db.sql.json({ coat: 'ginger' })}, ${NOW})`
+    await db.sql`insert into points_ledger (customer_id, delta, reason, note, created_by_staff, created_at)
+      values (${buyer.id}, 200, 'adjustment', 'seed', ${ownerId}, ${NOW})`
+    const [crown] = await db.sql<{ id: string }[]>`select id from cosmetics where key = 'crown'`
+    const bought = await call('POST', `/v1/me/cosmetics/${crown!.id}/buy`, buyer.id)
+    expect(bought.status, bought.text).toBe(200)
+    const [bal] = await db.sql<{ n: number }[]>`select sum(delta)::int as n from points_ledger where customer_id = ${buyer.id}`
+    expect(bal!.n).toBe(80)
+  })
+
+  test('rename and sort order; name and key rules', async () => {
+    expect((await patch('blush', { name: '  Rosy cheeks ', sortOrder: 40 })).body).toMatchObject({ name: 'Rosy cheeks', sortOrder: 40 })
+    expect((await patch('blush', { name: '' })).status).toBe(400)
+    expect((await patch('blush', { name: 'x'.repeat(41) })).status).toBe(400)
+    expect((await patch('blush', { key: 'other' })).status).toBe(400)
+    expect((await patch('blush', {})).status).toBe(400)
+  })
+
+  test('a manager is 403; bad prices are 400; an unknown or non-uuid id is 404', async () => {
+    expect((await patch('crown', { pricePoints: 100 }, managerLogin)).status).toBe(403)
+    expect((await patch('crown', { pricePoints: 100 }, null)).status).toBe(401)
+    for (const price of [-1, 10_001, 1.5, '50', null]) expect((await patch('crown', { pricePoints: price })).status).toBe(400)
+    expect((await patch('crown', { pricePoints: 0 })).status).toBe(200)
+    expect((await patch('crown', { pricePoints: 10_000 })).status).toBe(200)
+    expect((await call('PATCH', `/v1/cosmetics/${randomUUID()}`, ownerLogin, { pricePoints: 5 })).status).toBe(404)
+    expect((await call('PATCH', '/v1/cosmetics/nope', ownerLogin, { pricePoints: 5 })).status).toBe(404)
+  })
+
+  test('a starter keeps price 0 and stays on (409 STARTER_ITEM); renaming a starter is fine', async () => {
+    const price = await patch('ginger', { pricePoints: 10 })
+    expect(price.status).toBe(409)
+    expect(price.body).toMatchObject({ code: 'STARTER_ITEM' })
+    expect((await patch('ginger', { isActive: false })).status).toBe(409)
+    expect((await patch('ginger', { pricePoints: 0, isActive: true, name: 'Marmalade' })).body).toMatchObject({ name: 'Marmalade', pricePoints: 0 })
+  })
+
+  test('switching fish off hides it from the shop but a cat that owns it keeps it equipped', async () => {
+    const owner = await customer({ name: 'Fisher' })
+    await db.sql`insert into cats (customer_id, name, equipped, updated_at)
+      values (${owner.id}, 'Fisher', ${db.sql.json({ coat: 'ginger', held: 'fish' })}, ${NOW})`
+    const [fish] = await db.sql<{ id: string }[]>`select id from cosmetics where key = 'fish'`
+    await db.sql`insert into customer_cosmetics (customer_id, cosmetic_id, acquired_at) values (${owner.id}, ${fish!.id}, ${NOW})`
+
+    expect((await patch('fish', { isActive: false })).body).toMatchObject({ isActive: false })
+    expect((await shop()).map((x) => x.key)).not.toContain('fish')
+    expect((await all()).body as unknown as { key: string }[]).toContainEqual(expect.objectContaining({ key: 'fish', isActive: false }))
+    expect((await detail(owner.id)).view.cat?.look).toEqual({ coat: 'ginger', held: 'fish' })
+    const equip = await call('PUT', '/v1/me/cat', owner.id, { name: 'Fisher', look: { coat: 'ginger', held: 'fish' }, showOnWall: true })
+    expect(equip.status, equip.text).toBe(200)
+    const buy = await call('POST', `/v1/me/cosmetics/${fish!.id}/buy`, (await customer()).id)
+    expect(buy.status).toBe(404)
+
+    expect((await patch('fish', { isActive: true })).body).toMatchObject({ isActive: true })
+  })
+})
