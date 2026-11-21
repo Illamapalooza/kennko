@@ -1,4 +1,5 @@
 import type { IceLevel, IceServe } from './ice.ts'
+import type { CatLook, CosmeticSlot } from './cats.ts'
 import type { StampMode } from './loyalty.ts'
 import type { PaymentStatus, PrepStatus } from './order-status.ts'
 import type { PaperStamp } from './sync.ts'
@@ -131,7 +132,22 @@ export type MeView = {
     /** Null while the customer is on a paper card. */
     card: { stamps: { stampedAt: string }[]; fullCards: number } | null
     points: number
+    cat: { name: string; look: CatLook; showOnWall: boolean; hiddenByAdmin: boolean; visitEndsAt: string | null }
+    /** Keys of every cosmetic the customer may wear (starters and bought). */
+    owned: string[]
   } | null
+}
+
+/** One cosmetic in the shop and in admin. Points only, never a peso price. */
+export type CosmeticView = {
+  id: string
+  key: string
+  slot: CosmeticSlot
+  name: string
+  pricePoints: number
+  isStarter: boolean
+  isActive: boolean
+  sortOrder: number
 }
 
 /**
@@ -152,6 +168,7 @@ export type CustomerListItem = {
 
 /** One customer for admin: the last 10 cards (newest first), the last 50 ledger rows (newest first), open paper stamps. */
 export type CustomerDetail = CustomerListItem & {
+  cat: { name: string; look: CatLook; showOnWall: boolean; hiddenByAdmin: boolean } | null
   /** The staff member who last switched the card mode (their name), or null when it was never switched by hand. */
   stampModeSetBy: string | null
   stampModeSetAt: string | null

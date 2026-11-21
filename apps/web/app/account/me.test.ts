@@ -17,6 +17,8 @@ const customer = (card: Customer['card']): Customer => ({
   stampMode: card ? 'digital' : 'paper',
   card,
   points: 4,
+  cat: { name: 'Mochi', look: { coat: 'ginger' }, showOnWall: true, hiddenByAdmin: false, visitEndsAt: null },
+  owned: ['ginger', 'tabby', 'black', 'cream'],
 })
 
 beforeEach(() => vi.clearAllMocks())

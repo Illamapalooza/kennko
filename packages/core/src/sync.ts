@@ -3,6 +3,7 @@ import type { OrderStatus, OrderType, PaymentMethod } from './order.ts'
 import type { IceLevel, IceServe } from './ice.ts'
 import { canMovePrep, type Fulfilment, type PaymentStatus, type PrepStatus } from './order-status.ts'
 import type { MenuSnapshot } from './snapshot.ts'
+import type { WallVisitor } from './cats.ts'
 import { formatPublicCode, normalisePublicCode, type StampMode } from './loyalty.ts'
 
 export const MAX_PUSH_EVENTS = 50
@@ -112,7 +113,7 @@ export type OnlineQueueOrder = {
 export type TillCustomer = {
   /** Formatted, `KC-XXX-XXX-XXX`. */
   code: string
-  /** Always null until cats arrive. */
+  /** The customer's cat name; null when Kennko has hidden the cat. */
   catName: string | null
   stampMode: StampMode
   stamps: number
@@ -129,6 +130,10 @@ export type PullState = {
   onlineOrders?: OnlineQueueOrder[]
   /** Customers linked through this till recently. Absent = an API from before the loyalty plan. */
   customers?: TillCustomer[]
+  /** The wall check-in secret and URL. null = none yet; absent = an API from before the cats plan. */
+  checkin?: { secret: string; url: string } | null
+  /** Cats visiting now (no real names or ids). Absent = an API from before the cats plan: keep the cache. */
+  visitors?: WallVisitor[]
 }
 
 export type ImportShift = {
