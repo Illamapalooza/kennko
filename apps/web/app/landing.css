@@ -8,7 +8,7 @@
 .landing { min-height: 100vh; overflow-x: clip; }
 
 .landing .menu-card:hover .perch-peek,
-.landing .stamp-card:hover .perch-peek { transform: translateY(calc(-84 / 92 * 100% - 6px)); }
+.landing .perks-card-wrap:hover .perch-peek { transform: translateY(calc(-84 / 92 * 100% - 6px)); }
 .landing main section { padding: var(--space-6) 0; }
 .landing main section[id] { scroll-margin-top: 96px; }
 
@@ -319,7 +319,7 @@
 /* ---------- Perks ---------- */
 .perks-grid { grid-template-columns: 1fr 1fr; align-items: center; }
 .perk-card h3 { margin-top: var(--space-4); font-size: var(--text-lg); font-weight: var(--weight-heading); color: var(--blue); line-height: var(--leading-tight); }
-.perk-steps { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin-top: var(--space-5); }
+.perk-steps { display: grid; grid-template-columns: 1fr; gap: var(--space-3); margin-top: var(--space-5); }
 .perk-card .step {
   background: var(--amber-soft);
   border: var(--outline-thin) solid var(--ink);
@@ -330,48 +330,7 @@
 }
 .perk-card .step strong { display: block; font-size: 2.2rem; line-height: 1; color: var(--blue); margin-bottom: var(--space-2); }
 
-.stamp-card {
-  position: relative;
-  margin: 0;
-  background: var(--blue);
-  color: var(--white);
-  border: var(--outline) solid var(--ink);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-hard);
-  padding: var(--space-6);
-  transform: rotate(2deg);
-}
-.stamp-card figcaption {
-  font-weight: var(--weight-heading);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
-  font-size: var(--text-md);
-  margin-bottom: var(--space-5);
-}
-.stamp-card figcaption span { display: block; font-size: var(--text-xl); letter-spacing: 0.02em; color: var(--cream); -webkit-text-stroke: 0.05em var(--ink); paint-order: stroke fill; }
-.stamp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
-.stamp-grid li {
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: var(--outline-thin) dashed var(--white);
-  font-weight: var(--weight-heading);
-  font-size: var(--text-lg);
-  color: rgba(255, 255, 255, 0.7);
-  text-align: center;
-}
-.stamp-grid li.is-stamped { border-style: solid; border-color: var(--ink); background: var(--white); padding: 4px; }
-.stamp-grid li.is-stamped img { width: 100%; height: auto; transform: rotate(-10deg); }
-.stamp-grid li.is-reward {
-  border: var(--outline-thin) solid var(--ink);
-  background: var(--amber);
-  color: var(--ink);
-  font-size: var(--text-xs);
-  line-height: 1.05;
-  text-transform: uppercase;
-  padding: var(--space-1);
-}
+.perks-card-wrap { position: relative; transform: rotate(2deg); }
 
 /* ---------- Visit ---------- */
 .visit-grid { grid-template-columns: 1.05fr 0.95fr; }
@@ -437,7 +396,7 @@
   .landing .menu-grid { grid-template-columns: 1fr; }
   .landing .section-head { flex-direction: column; align-items: start; }
   .map-frame { aspect-ratio: 4 / 3; }
-  .stamp-card { transform: none; }
+  .perks-card-wrap { transform: none; }
 }
 
 /* ---------- Phone ---------- */
@@ -460,7 +419,7 @@
   .hero-badge { width: 96px; height: 96px; font-size: 0.9rem; }
   .hero-sticker-smiley { width: 64px; }
   .landing .section-head { padding: var(--space-4); }
-  .about-card, .stamp-card { padding: var(--space-5); }
+  .about-card { padding: var(--space-5); }
   .landing .menu-card { grid-template-columns: 1fr; }
   .menu-card-art { border-right: 0; border-bottom: var(--outline) solid var(--ink); }
   .menu-card-art svg { max-width: 120px; }

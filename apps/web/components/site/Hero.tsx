@@ -1,7 +1,7 @@
 import { CupSticker } from './CupSticker'
 import { CatToon } from '@kennko/cats'
 
-const TICKER = ['Premium coffee', 'Sweet sips', 'Matcha series', 'Cookies & fries', 'Free upsize at 4 stamps', 'Made with love']
+const TICKER = ['Premium coffee', 'Sweet sips', 'Matcha series', 'Cookies & fries', 'Free drink at 8 stamps', 'Made with love']
 
 export function Hero() {
   const orderingOn = process.env.NEXT_PUBLIC_ORDERING_ENABLED === 'true'
