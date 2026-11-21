@@ -287,24 +287,47 @@ describe('/v1/me: Kennko card, account and deletion', () => {
         (select count(*)::int from stamps where customer_id = ${id}) as stamps,
         (select count(*)::int from points_ledger where customer_id = ${id}) as ledger,
         (select count(*)::int from orders where customer_id = ${id} or customer_user_id = ${id}) as orders,
-        (select count(*)::int from push_subscriptions where customer_user_id = ${id}) as subs`
+        (select count(*)::int from push_subscriptions where customer_user_id = ${id}) as subs,
+        (select count(*)::int from cats where customer_id = ${id}) as cats,
+        (select count(*)::int from customer_cosmetics where customer_id = ${id}) as cosmetics,
+        (select count(*)::int from visits where customer_id = ${id}) as visits`
     return r
   }
+
+  const NONE_LEFT = { customers: 0, cards: 0, stamps: 0, ledger: 0, orders: 0, subs: 0, cats: 0, cosmetics: 0, visits: 0 }
 
   describe('account deletion', () => {
     it('account deletion leaving no row that points to the person', async () => {
       const m = await seedMember()
-      expect(await leftovers(m.id)).toEqual({ customers: 1, cards: 2, stamps: 9, ledger: 3, orders: 9, subs: 1 })
+      expect(await leftovers(m.id)).toEqual({ customers: 1, cards: 2, stamps: 9, ledger: 3, orders: 9, subs: 1, cats: 1, cosmetics: 0, visits: 0 })
 
       const r = await call('DELETE', '/v1/me', m.jwt, { confirm: 'DELETE' })
       expect(r.status).toBe(200)
       expect(r.body).toEqual({ deleted: true })
-      expect(await leftovers(m.id)).toEqual({ customers: 0, cards: 0, stamps: 0, ledger: 0, orders: 0, subs: 0 })
+      expect(await leftovers(m.id)).toEqual(NONE_LEFT)
       expect(auth.deleted).toEqual([m.id])
 
       // The sales stay, with their totals.
       const kept = await db.sql`select id, total_centavos from orders where id in ${db.sql([m.counter, m.online])} order by total_centavos`
       expect(kept.map((o) => o.total_centavos)).toEqual([12000, 15000])
+    })
+
+    it('a cat, a bought and worn cosmetic and a visit leave no row either', async () => {
+      const m = await seedMember()
+      // 30 points in the ledger: 12 + 15 + 3. The bandana costs 30.
+      const [bandana] = await db.sql`select id from cosmetics where key = 'bandana'`
+      expect((await call('POST', `/v1/me/cosmetics/${bandana!.id}/buy`, m.jwt)).status).toBe(200)
+      const worn = await call('PUT', '/v1/me/cat', m.jwt, { name: 'Biko', look: { coat: 'black', neck: 'bandana' }, showOnWall: true })
+      expect(worn.status).toBe(200)
+      await db.sql`insert into visits (customer_id, visit_key, source, started_at, ends_at)
+        values (${m.id}, ${randomUUID()}, 'checkin', ${NOW}, '2026-11-21T03:30:00Z')`
+      expect(await leftovers(m.id)).toEqual({ customers: 1, cards: 2, stamps: 9, ledger: 4, orders: 9, subs: 1, cats: 1, cosmetics: 1, visits: 1 })
+
+      expect((await call('DELETE', '/v1/me', m.jwt, { confirm: 'DELETE' })).status).toBe(200)
+      expect(await leftovers(m.id)).toEqual(NONE_LEFT)
+      // The catalogue item stays.
+      const [still] = await db.sql`select count(*)::int as n from cosmetics where key = 'bandana'`
+      expect(still!.n).toBe(1)
     })
 
     it('a person without a card can delete their login too', async () => {
@@ -332,7 +355,7 @@ describe('/v1/me: Kennko card, account and deletion', () => {
       const r = await call('DELETE', '/v1/me', m.jwt, { confirm: 'DELETE' })
       expect(r.status).toBe(502)
       expect(r.body.code).toBe('AUTH_DELETE_FAILED')
-      expect(await leftovers(m.id)).toEqual({ customers: 0, cards: 0, stamps: 0, ledger: 0, orders: 0, subs: 0 })
+      expect(await leftovers(m.id)).toEqual(NONE_LEFT)
 
       auth.failDelete = false
       const retry = await call('DELETE', '/v1/me', m.jwt, { confirm: 'DELETE' })

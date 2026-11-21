@@ -656,7 +656,24 @@ describe('every route as kennko_api', () => {
         values (${randomUUID()}, ${leaver}, ${card!.id}, ${orderId}, ${NOW}, ${NOW})`
       await db.sql`insert into points_ledger (customer_id, delta, reason, order_id, created_at)
         values (${leaver}, 12, 'order', ${orderId}, ${NOW})`
+      await db.sql`insert into points_ledger (customer_id, delta, reason, note, created_by_staff, created_at)
+        values (${leaver}, 18, 'adjustment', 'Welcome', ${OWNER}, ${NOW})`
     })
+    // The cat from joining, a bought and worn bandana (30 points) and a visit go too.
+    const [bandana] = await asSuper(() => db.sql`select id from cosmetics where key = 'bandana'`)
+    await ok('POST', `/v1/me/cosmetics/${bandana!.id as string}/buy`, leaverJwt)
+    await ok('PUT', '/v1/me/cat', leaverJwt, { name: 'Biko', look: { coat: 'black', neck: 'bandana' }, showOnWall: true })
+    await asSuper(
+      () => db.sql`insert into visits (customer_id, visit_key, source, started_at, ends_at)
+        values (${leaver}, ${randomUUID()}, 'checkin', ${NOW}, '2026-11-21T03:30:00Z')`,
+    )
+    const [had] = await asSuper(
+      () => db.sql`select
+        (select count(*)::int from cats where customer_id = ${leaver}) as cats,
+        (select count(*)::int from customer_cosmetics where customer_id = ${leaver}) as cosmetics,
+        (select count(*)::int from visits where customer_id = ${leaver}) as visits`,
+    )
+    expect(had).toEqual({ cats: 1, cosmetics: 1, visits: 1 })
     expect(await ok('DELETE', '/v1/me', leaverJwt, { confirm: 'DELETE' })).toEqual({ deleted: true })
     const [left] = await asSuper(
       () => db.sql`select
@@ -665,10 +682,49 @@ describe('every route as kennko_api', () => {
         (select count(*)::int from stamps where customer_id = ${leaver}) +
         (select count(*)::int from points_ledger where customer_id = ${leaver}) +
         (select count(*)::int from orders where customer_id = ${leaver} or customer_user_id = ${leaver}) +
-        (select count(*)::int from push_subscriptions where customer_user_id = ${leaver}) as n`,
+        (select count(*)::int from push_subscriptions where customer_user_id = ${leaver}) +
+        (select count(*)::int from cats where customer_id = ${leaver}) +
+        (select count(*)::int from customer_cosmetics where customer_id = ${leaver}) +
+        (select count(*)::int from visits where customer_id = ${leaver}) as n`,
     )
     expect(left!.n).toBe(0)
     expect(auth.deleted).toContain(leaver)
+  })
+
+  it('Kennko cats: catalogue, join with a cat, buy, equip and view as kennko_api', async () => {
+    const shop = (await ok('GET', '/v1/cosmetics')) as unknown as { id: string; key: string }[]
+    expect(shop).toHaveLength(22)
+    const beanie = shop.find((x) => x.key === 'beanie')!
+
+    const catLover = '00000000-0000-4000-8000-0000000000a6'
+    await asSuper(() => db.sql`insert into auth.users (id, email) values (${catLover}, 'cat@x.test')`)
+    auth.users[catLover] = { email: 'cat@x.test', emailConfirmed: true, createdAt: '2026-11-01T00:00:00Z' }
+    const jwt = await signFor(catLover)
+    const joined = await ok('POST', '/v1/me/join', jwt, { ageConfirmed: true, privacyVersion: '2026-11' })
+    expect((joined.customer as { owned: string[] }).owned).toEqual(['black', 'cream', 'ginger', 'tabby'])
+    await asSuper(
+      () => db.sql`insert into points_ledger (customer_id, delta, reason, note, created_by_staff, created_at)
+        values (${catLover}, 45, 'adjustment', 'Welcome', ${OWNER}, ${NOW})`,
+    )
+
+    const bought = await ok('POST', `/v1/me/cosmetics/${beanie.id}/buy`, jwt)
+    expect(bought.customer).toMatchObject({ points: 5 })
+    expect((bought.customer as { owned: string[] }).owned).toContain('beanie')
+    await ok('PUT', '/v1/me/cat', jwt, { name: ' Kape ', look: { coat: 'ginger', hat: 'beanie' }, showOnWall: false })
+    expect((await ok('GET', '/v1/me', jwt)).customer).toMatchObject({
+      points: 5,
+      cat: { name: 'Kape', look: { coat: 'ginger', hat: 'beanie' }, showOnWall: false, hiddenByAdmin: false, visitEndsAt: null },
+    })
+
+    // A customer from a pre-deploy join (no cat) gets one on the next GET.
+    const gap = '00000000-0000-4000-8000-0000000000a7'
+    await asSuper(async () => {
+      await db.sql`insert into auth.users (id, email) values (${gap}, 'gap@x.test')`
+      await db.sql`insert into customers (id, public_code, display_name, age_confirmed_at, privacy_accepted_at, privacy_version, created_at)
+        values (${gap}, ${makePublicCode(randomInt)}, 'Gap', ${NOW}, ${NOW}, '2026-11', ${NOW})`
+    })
+    const gapView = await ok('GET', '/v1/me', await signFor(gap))
+    expect((gapView.customer as { cat: { look: { coat: string } } }).cat.look.coat).toMatch(/^(ginger|tabby|black|cream)$/)
   })
 
   it('till customers: lookup, claim, release and a pull with customers and online card state as kennko_api', async () => {

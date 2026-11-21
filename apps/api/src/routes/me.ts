@@ -8,6 +8,7 @@ import { requireUser, type AppEnv } from '../auth.js'
 import type { AppDeps } from '../create-app.js'
 import { apiError, invalid } from '../http.js'
 import { sweepStrandedClaimsQuietly } from '../loyalty/cards.js'
+import { buyCosmetic, ensureCat, ownedKeys, readCat, saveCat, type Failure } from '../loyalty/cats.js'
 import { cardSummary, lockCustomer } from '../loyalty/customers.js'
 import { balance } from '../loyalty/points.js'
 import { readHistory } from '../orders/read.js'
@@ -24,6 +25,10 @@ const joinSchema = z.object({
 })
 const renameSchema = z.object({ displayName })
 const deleteSchema = z.object({ confirm: z.literal('DELETE') })
+const catSchema = z.object({ name: z.string(), look: z.unknown(), showOnWall: z.boolean() })
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const failed = (out: Failure) => apiError(out.status, out.code, out.message)
 
 const body = async (c: { req: { json(): Promise<unknown> } }) => c.req.json().catch(() => null)
 
@@ -33,13 +38,17 @@ const fitName = (s: string | null | undefined) => {
   return t ? t : null
 }
 
-/** The signed-in customer's view: the card (null on paper), the formatted code and the points balance. */
-async function readMe(sql: postgres.Sql, id: string): Promise<MeView> {
+/**
+ * The signed-in customer's view: the card (null on paper), the formatted code, the points balance, the cat and what it
+ * may wear. A customer without a cat (joined through an older API) gets one here.
+ */
+async function readMe(sql: postgres.Sql, id: string, now: Date): Promise<MeView> {
   return (await sql.begin(async (tx) => {
     type Row = { public_code: string; display_name: string; created_at: Date; stamp_mode: StampMode }
     const [c] = await tx<Row[]>`
       select public_code, display_name, created_at, stamp_mode from customers where id = ${id}`
     if (!c) return { customer: null }
+    await ensureCat(tx, id, now)
     return {
       customer: {
         publicCode: formatPublicCode(c.public_code),
@@ -48,6 +57,8 @@ async function readMe(sql: postgres.Sql, id: string): Promise<MeView> {
         stampMode: c.stamp_mode,
         card: c.stamp_mode === 'paper' ? null : await cardSummary(tx, id),
         points: await balance(tx, id),
+        cat: await readCat(tx, id, now),
+        owned: await ownedKeys(tx, id),
       },
     }
   })) as MeView
@@ -77,7 +88,7 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     // A stranded free-drink claim shows as a full card again (Ruling P7-6).
     await sweepStrandedClaimsQuietly(deps.sql, deps.now(), 'me', [id])
     c.header('cache-control', 'no-store')
-    return c.json(await readMe(deps.sql, id))
+    return c.json(await readMe(deps.sql, id, deps.now()))
   })
 
   // "Get my Kennko card": 13+ and the privacy notice accepted. Joining twice answers the same card.
@@ -88,7 +99,7 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     c.header('cache-control', 'no-store')
 
     const [existing] = await deps.sql`select 1 from customers where id = ${userId}`
-    if (existing) return c.json(await readMe(deps.sql, userId))
+    if (existing) return c.json(await readMe(deps.sql, userId, deps.now()))
 
     let name = fitName(parsed.data.displayName)
     if (!name) {
@@ -99,10 +110,14 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     for (let attempt = 1; ; attempt++) {
       try {
         // A concurrent join for the same person wins quietly (on conflict on the id); only a code clash throws.
-        await deps.sql`
-          insert into customers (id, public_code, display_name, age_confirmed_at, privacy_accepted_at, privacy_version, created_at)
-          values (${userId}, ${makeCode()}, ${name}, ${now}, ${now}, ${parsed.data.privacyVersion}, ${now})
-          on conflict (id) do nothing`
+        // The cat is made with the card (Ruling 11).
+        await deps.sql.begin(async (tx) => {
+          await tx`
+            insert into customers (id, public_code, display_name, age_confirmed_at, privacy_accepted_at, privacy_version, created_at)
+            values (${userId}, ${makeCode()}, ${name}, ${now}, ${now}, ${parsed.data.privacyVersion}, ${now})
+            on conflict (id) do nothing`
+          await ensureCat(tx, userId, now)
+        })
         break
       } catch (err) {
         const e = err as { code?: string; constraint_name?: string }
@@ -110,7 +125,7 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
         throw err
       }
     }
-    return c.json(await readMe(deps.sql, userId))
+    return c.json(await readMe(deps.sql, userId, now))
   })
 
   app.patch('/', async (c) => {
@@ -121,7 +136,31 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
       update customers set display_name = ${parsed.data.displayName} where id = ${userId} returning id`
     if (updated.length === 0) throw apiError(404, 'NOT_JOINED', 'You do not have a Kennko card yet.')
     c.header('cache-control', 'no-store')
-    return c.json(await readMe(deps.sql, userId))
+    return c.json(await readMe(deps.sql, userId, deps.now()))
+  })
+
+  // Name the cat, dress it in what the customer owns, and choose whether it visits the wall (Ruling 13).
+  app.put('/cat', async (c) => {
+    const userId = c.get('userId')!
+    const parsed = catSchema.safeParse(await body(c))
+    if (!parsed.success) return invalid('Send { name, look, showOnWall }.')
+    const now = deps.now()
+    const out = await deps.sql.begin((tx) => saveCat(tx, userId, parsed.data, now))
+    if (out) throw failed(out)
+    c.header('cache-control', 'no-store')
+    return c.json(await readMe(deps.sql, userId, now))
+  })
+
+  // Buy a cosmetic with points (Ruling 12). Already owned is a 200 with no charge.
+  app.post('/cosmetics/:id/buy', async (c) => {
+    const userId = c.get('userId')!
+    const cosmeticId = c.req.param('id')
+    if (!UUID.test(cosmeticId)) throw apiError(404, 'UNKNOWN_COSMETIC', 'That item is not in the shop.')
+    const now = deps.now()
+    const out = await deps.sql.begin((tx) => buyCosmetic(tx, userId, cosmeticId, now))
+    if (!out.ok) throw failed(out)
+    c.header('cache-control', 'no-store')
+    return c.json(await readMe(deps.sql, userId, now))
   })
 
   /**
@@ -149,7 +188,7 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
         update orders set customer_id = null, customer_user_id = null
         where customer_id = ${userId} or customer_user_id = ${userId}`
       await tx`delete from push_subscriptions where customer_user_id = ${userId}`
-      // Cascades to the cards, the stamps and the points ledger.
+      // Cascades to the cards, the stamps, the points ledger, the cat, the bought cosmetics and the visit.
       await tx`delete from customers where id = ${userId}`
     })
 
