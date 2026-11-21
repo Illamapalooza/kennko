@@ -1,0 +1,17 @@
+{
+  "name": "@kennko/wall-app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "probe:build": "node probe/copy-scene.mjs && npx cap sync android",
+    "probe:apk": "npm run probe:build && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/core": "8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.2"
+  }
+}

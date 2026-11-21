@@ -64,3 +64,14 @@ next-env.d.ts
 
 # Built API bundle (apps/api npm run build)
 /apps/api/server.js
+
+# Android apps & signing
+/apps/pos/dist-app/
+/apps/wall-app/www/
+/apps/wall-app/www-probe/scene/
+/apps/*/android/app/release/
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties

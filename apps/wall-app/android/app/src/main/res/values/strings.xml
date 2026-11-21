@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Kennko Wall</string>
+    <string name="title_activity_main">Kennko Wall</string>
+    <string name="package_name">coffee.kennko.wall</string>
+    <string name="custom_url_scheme">coffee.kennko.wall</string>
+</resources>
