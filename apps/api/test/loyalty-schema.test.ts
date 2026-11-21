@@ -252,7 +252,7 @@ test('order reasons need an order id and other reasons must not have one', async
   await expect(db.sql`insert into points_ledger (customer_id, delta, reason, order_id, created_by_staff, note, created_at)
     values (${BEN}, 5, 'adjustment', ${order}, ${OWNER}, 'Sorry', now())`).rejects.toThrow(/points_ledger_check/)
   await db.sql`insert into points_ledger (customer_id, delta, reason, cosmetic_id, created_at)
-    values (${BEN}, -50, 'cosmetic', gen_random_uuid(), now())`
+    values (${BEN}, -50, 'cosmetic', (select id from cosmetics where key = 'party-hat'), now())`
 })
 
 test('an adjustment without a note or without staff fails; with both it succeeds', async () => {

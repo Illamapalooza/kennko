@@ -305,7 +305,8 @@ describe('points', () => {
     const c = await customer()
     const orderId = await counterOrder({ customerId: c.id, subtotal: 24000 })
     expect(await tx((t) => creditOrderPoints(t, orderId, NOW))).toBe(24)
-    await db.sql`insert into points_ledger (customer_id, delta, reason, created_at) values (${c.id}, -20, 'cosmetic', ${NOW})`
+    await db.sql`insert into points_ledger (customer_id, delta, reason, cosmetic_id, created_at)
+      values (${c.id}, -20, 'cosmetic', (select id from cosmetics where key = 'kennko-cup'), ${NOW})`
     expect(await tx((t) => balance(t, c.id))).toBe(4)
     expect(await tx((t) => reverseOrderPoints(t, orderId, NOW))).toBe(-24)
     const [rev] = await db.sql`select delta from points_ledger where order_id = ${orderId} and reason = 'order_reversed'`
