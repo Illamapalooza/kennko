@@ -57,7 +57,7 @@ function cleanVisitors(raw) {
     if (!v.look || typeof v.look.coat !== "string") continue;
     const look = { coat: v.look.coat };
     for (const slot of SLOTS) if (typeof v.look[slot] === "string") look[slot] = v.look[slot];
-    out.push({ key: v.key, name: v.name.slice(0, 16), look, endsAt: v.endsAt });
+    out.push({ key: v.key, name: [...v.name].slice(0, 16).join(""), look, endsAt: v.endsAt });
   }
   return out;
 }

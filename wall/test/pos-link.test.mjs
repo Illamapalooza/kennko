@@ -129,6 +129,11 @@ test("a long cat name is cut to 16", () => {
   assert.equal(fromPosFeed(feedOf({ visitors: [visitor({ name: "x".repeat(30) })] }), 1).visitors[0].name, "x".repeat(16));
 });
 
+test("a name is cut by code points, never through an emoji", () => {
+  const name = "x".repeat(15) + "🐱" + "tail";
+  assert.equal(fromPosFeed(feedOf({ visitors: [visitor({ name })] }), 1).visitors[0].name, "x".repeat(15) + "🐱");
+});
+
 test("checkin needs an https url and a square of 0/1 strings", () => {
   const modules = ["101", "010", "101"];
   assert.deepEqual(fromPosFeed(feedOf({ checkin: { url: "https://kennko.vercel.app/here?c=abc", modules, secret: "no" } }), 1).checkin, { url: "https://kennko.vercel.app/here?c=abc", modules });
