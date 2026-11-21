@@ -4,6 +4,7 @@ import type { Discount, LineInput, Menu, OrderType, TillCustomer } from '@kennko
 import { ApiError, api, setOnLocked, type Bootstrap, type Live, type Session } from './api.ts'
 import { ClockIcon, CupIcon, DrawerIcon, ListIcon, LockIcon, TicketIcon } from './components/Icons.tsx'
 import { Gate } from './screens/Gate.tsx'
+import { FirstRun } from './screens/FirstRun.tsx'
 import { Sell } from './screens/Sell.tsx'
 import { Orders } from './screens/Orders.tsx'
 import { History } from './screens/History.tsx'
@@ -93,21 +94,22 @@ export function App() {
   // till about the session. Gone → the PIN screen (call() does that); otherwise open the feed again shortly.
   useEffect(() => {
     if (!unlocked) return
-    let source: EventSource | null = null
+    let close: (() => void) | null = null
     let retry: ReturnType<typeof setTimeout> | undefined
     let stopped = false
     const reopen = () => { if (!stopped) retry = setTimeout(open, 2000) }
     function open() {
-      source = new EventSource(api.eventsUrl())
-      source.onmessage = (event) => { setLive(JSON.parse(event.data)); setOnline(true) }
-      source.onerror = () => {
-        setOnline(false)
-        if (source?.readyState !== EventSource.CLOSED) return
-        api.session().then(reopen, (err) => { if (!(err instanceof ApiError && err.status === 401)) reopen() })
-      }
+      close = api.events(
+        (data) => { setLive(data); setOnline(true) },
+        (closed) => {
+          setOnline(false)
+          if (!closed) return
+          api.session().then(reopen, (err) => { if (!(err instanceof ApiError && err.status === 401)) reopen() })
+        },
+      )
     }
     open()
-    return () => { stopped = true; clearTimeout(retry); source?.close() }
+    return () => { stopped = true; clearTimeout(retry); close?.() }
   }, [unlocked])
 
   const menuKey = live?.menuKey
@@ -144,7 +146,21 @@ export function App() {
       </div>
     )
   }
-  if (!unlocked) return <Gate onUnlock={(session) => { setWho(session); setUnlocked(true) }} secureUrl={boot.secureUrl} pinMode={boot.pinMode} onRefresh={refreshBoot} />
+  if (boot.firstRun === 'connect' && boot.device === null) {
+    return <FirstRun onConnected={refreshBoot} />
+  }
+  if (!unlocked) {
+    return (
+      <Gate
+        onUnlock={(session) => { setWho(session); setUnlocked(true) }}
+        secureUrl={boot.secureUrl}
+        pinMode={boot.pinMode}
+        host={boot.host}
+        noLeads={boot.noLeads}
+        onRefresh={refreshBoot}
+      />
+    )
+  }
 
   return (
     <div className="app">

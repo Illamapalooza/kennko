@@ -41,7 +41,7 @@ export function History({ boot, live, notify }: { boot: Bootstrap; live: Live; n
       <header className="page-head">
         <h1>History</h1>
         <input type="date" className="input input-date" value={day} max={live.day} aria-label="Day" onChange={(e) => e.target.value && setDay(e.target.value)} />
-        <a className="btn btn-outline" href={api.csvUrl(day)} download>Export CSV</a>
+        <button type="button" className="btn btn-outline" onClick={() => api.exportCsv(day).catch((err) => notify(err.message))}>Export CSV</button>
       </header>
       <p className="muted">{sold.length} order{sold.length === 1 ? '' : 's'} · {formatPesos(sold.reduce((sum, o) => sum + o.totalCentavos, 0))} in sales</p>
 

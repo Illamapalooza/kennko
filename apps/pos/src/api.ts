@@ -1,4 +1,5 @@
 import type { CashMove, Discount, Menu, OnlineQueueOrder, Order, PrepStatus, Shift, Summary, TillCustomer } from '@kennko/core'
+import { getTransport } from './transport.ts'
 
 export type Bootstrap = {
   shop: { name: string; address: string; phone: string; receiptFooter: string }
@@ -57,22 +58,19 @@ let onLocked: () => void = () => {}
 export const setOnLocked = (fn: () => void) => { onLocked = fn }
 
 async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  let res: Response
+  let status: number
+  let data: any
   try {
-    res = await fetch(path, {
-      method,
-      headers: body === undefined ? {} : { 'content-type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
-    })
+    const res = await getTransport().call(method, path, body, signal)
+    status = res.status
+    data = res.data
   } catch {
     throw new ApiError("Can't reach the till computer. Check the wifi.", 0)
   }
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
+  if (status < 200 || status >= 300) {
     // 401 means the session is gone. A 429 lockout only stops PIN checks; sales go on with the session.
-    if (res.status === 401) onLocked()
-    throw new ApiError(data.error || "That didn't work. Try again.", res.status)
+    if (status === 401) onLocked()
+    throw new ApiError(data?.error || "That didn't work. Try again.", status)
   }
   return data as T
 }
@@ -113,4 +111,13 @@ export const api = {
   report: (day: string) => call<{ day: string; summary: Summary }>('GET', `/api/report?day=${day}`),
   csvUrl: (day: string) => `/api/report.csv?day=${day}`,
   eventsUrl: () => '/api/events',
+  events: (onLive: (live: Live) => void, onDown: (closed: boolean) => void): (() => void) =>
+    getTransport().follow((json) => onLive(JSON.parse(json) as Live), onDown),
+  exportCsv: (day: string): Promise<void> =>
+    getTransport().download(`/api/report.csv?day=${day}`, `kennko-sales-${day}.csv`),
+  exportBackup: (): Promise<void> => {
+    const fn = getTransport().exportBackup
+    if (!fn) return Promise.reject(new Error('Only in the Kennko POS app.'))
+    return fn()
+  },
 }

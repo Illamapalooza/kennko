@@ -113,7 +113,7 @@ export function Till({ live, notify }: { live: Live; notify: (message: string) =
           </div>
 
           <div className="foot-row page-foot">
-            <a className="btn btn-outline" href={api.csvUrl(live.day)} download>Export today's sales</a>
+            <button type="button" className="btn btn-outline" onClick={() => api.exportCsv(live.day).catch((err) => notify(err.message))}>Export today's sales</button>
             <button type="button" className="btn btn-danger" onClick={() => setClosing(true)}>Close the till</button>
           </div>
         </>

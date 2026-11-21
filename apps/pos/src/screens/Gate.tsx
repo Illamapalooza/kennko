@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import { api, type Bootstrap, type Session } from '../api.ts'
 import { InstallNote } from '../components/InstallNote.tsx'
 import { Keypad } from '../components/Keypad.tsx'
+import { gateNote } from '../gateText.ts'
 import { CatToon } from '@kennko/cats'
 
 type Props = {
   onUnlock: (who: Session) => void
   secureUrl: string | null
   pinMode: Bootstrap['pinMode']
+  host: Bootstrap['host']
+  noLeads: boolean
   /** Re-reads the till's PIN mode; called on mount and every 30 s while the Gate is shown. */
   onRefresh: () => void
 }
@@ -19,8 +22,9 @@ const REFRESH_MS = 30_000
  * Per-person mode asks for each person's own 6 digits; shared mode for the PIN from config.json. Either way up to
  * 8 digits can be typed (sent from 4 in per-person): the shown mode may be a moment old, and the till decides.
  */
-export function Gate({ onUnlock, secureUrl, pinMode, onRefresh }: Props) {
+export function Gate({ onUnlock, secureUrl, pinMode, host, noLeads, onRefresh }: Props) {
   const own = pinMode === 'per-person'
+  const note = gateNote({ pinMode, host, noLeads })
 
   useEffect(() => {
     onRefresh()
@@ -52,6 +56,12 @@ export function Gate({ onUnlock, secureUrl, pinMode, onRefresh }: Props) {
         <CatToon coat="ginger" pose="peek" className="perch perch-peek perch-left" />
         <CatToon coat="tuxedo" pose="wave" className="perch perch-sit perch-right" />
         <h1>{own ? 'Enter your own 6-digit PIN' : 'Enter your PIN'}</h1>
+        {note ? (
+          <p className="muted center">
+            {note}{' '}
+            <button type="button" className="btn-link" onClick={onRefresh}>Try again</button>
+          </p>
+        ) : null}
         <div className="pin-dots" aria-label={`${entry.length} digits entered`}>
           {Array.from({ length: Math.max(own ? 6 : 4, entry.length) }, (_, i) => <i key={i} className={i < entry.length ? 'on' : ''} />)}
         </div>
