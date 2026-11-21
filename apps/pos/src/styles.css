@@ -367,7 +367,9 @@ body { background: var(--pattern-grid), var(--cream); }
 .rail-logo { border: var(--outline-thin) solid var(--ink); }
 .rail-btn.on { border: var(--outline-thin) solid var(--ink); box-shadow: 0 3px 0 var(--ink); }
 .badge { border: 2px solid var(--ink); }
+.badge-new { background: var(--amber); color: var(--ink); }
 .banner { border-bottom: var(--outline-thin) solid var(--ink); }
+.order-banner { display: block; width: 100%; border-top: 0; border-left: 0; border-right: 0; font: inherit; font-weight: 800; cursor: pointer; }
 .toast { border: var(--outline-thin) solid var(--white); }
 
 /* Sell: outlined category tabs and drink tiles that press down */

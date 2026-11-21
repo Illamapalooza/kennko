@@ -10,6 +10,8 @@ import { Orders } from './screens/Orders.tsx'
 import { History } from './screens/History.tsx'
 import { Till } from './screens/Till.tsx'
 import { MenuScreen } from './screens/MenuScreen.tsx'
+import { bannerText, loadAlertMemory, nextOnlineAlerts, saveAlertMemory } from './onlineAlerts.ts'
+import { playChime } from './chime.ts'
 import { clockWarning, offlineBadge, syncProblem } from './syncText.ts'
 
 export type CartLine = LineInput & { key: string }
@@ -49,6 +51,8 @@ export function App() {
   const [tab, setTab] = useState<Tab>('sell')
   const [cart, setCart] = useState<Cart>(EMPTY_CART)
   const [toast, setToast] = useState('')
+  const [newCount, setNewCount] = useState(0)
+  const [freshBanner, setFreshBanner] = useState<string[]>([])
 
   const notify = useCallback((message: string) => setToast(message), [])
   useEffect(() => {
@@ -112,6 +116,27 @@ export function App() {
     return () => { stopped = true; clearTimeout(retry); close?.() }
   }, [unlocked])
 
+  useEffect(() => {
+    if (tab === 'orders') {
+      setNewCount(0)
+      setFreshBanner([])
+    }
+  }, [tab])
+
+  useEffect(() => {
+    if (!live) return
+    const items = (live.online ?? []).map((o) => ({ id: o.id, label: `W${o.ticketNumber}` }))
+    const { memory, fresh } = nextOnlineAlerts(loadAlertMemory(), items)
+    saveAlertMemory(memory)
+    if (fresh.length > 0) {
+      playChime()
+      if (tab !== 'orders') {
+        setNewCount((c) => c + fresh.length)
+        setFreshBanner((prev) => [...prev, ...fresh])
+      }
+    }
+  }, [live, tab])
+
   const menuKey = live?.menuKey
   useEffect(() => {
     if (!unlocked) return
@@ -170,7 +195,11 @@ export function App() {
           <button type="button" key={id} className={`rail-btn${tab === id ? ' on' : ''}`} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
             <Icon />
             <span>{label}</span>
-            {id === 'orders' && activeCount > 0 ? <b className="badge">{activeCount}</b> : null}
+            {id === 'orders' && newCount > 0
+              ? <b className="badge badge-new">{newCount}</b>
+              : id === 'orders' && activeCount > 0
+                ? <b className="badge">{activeCount}</b>
+                : null}
           </button>
         ))}
         <span className="rail-gap" />
@@ -184,6 +213,11 @@ export function App() {
       </nav>
       <main className="main">
         {!online ? <div className="banner" role="status">Lost touch with the till computer. Trying again…</div> : null}
+        {freshBanner.length > 0 ? (
+          <button type="button" className="banner order-banner" role="status" onClick={() => setTab('orders')}>
+            {bannerText(freshBanner)}
+          </button>
+        ) : null}
         {live ? <SyncPills live={live} /> : null}
         {screen}
       </main>

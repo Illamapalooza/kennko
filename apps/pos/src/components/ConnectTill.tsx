@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ApiError, api } from '../api.ts'
+import { saveAlertMemory } from '../onlineAlerts.ts'
 import { Keypad } from './Keypad.tsx'
 import { Modal } from './Modal.tsx'
 import { PinPrompt } from './PinPrompt.tsx'
@@ -22,6 +23,7 @@ export function ConnectTill({ onConnected, onClose = () => {}, needsPin = true, 
         onSubmit={async (pin) => {
           try {
             const { name } = await api.pairDevice(code, pin)
+            saveAlertMemory(null)
             onConnected(name)
           } catch (err) {
             // A wrong PIN (403) or a lockout (429) is shown in the PIN prompt; anything else is about the code.
@@ -42,6 +44,7 @@ export function ConnectTill({ onConnected, onClose = () => {}, needsPin = true, 
     setError('')
     try {
       const { name } = await api.pairDevice(code, '')
+      saveAlertMemory(null)
       onConnected(name)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That did not work.')
