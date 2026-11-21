@@ -5,12 +5,18 @@
   "type": "module",
   "exports": {
     ".": "./src/CatToon.tsx",
+    "./pixel": {
+      "types": "./src/pixel-cats.d.ts",
+      "default": "./src/pixel-cats.js"
+    },
     "./cats.css": "./cats.css"
   },
   "peerDependencies": {
     "react": ">=19"
   },
   "scripts": {
-    "export-wall": "tsx scripts/export-wall-svgs.tsx"
+    "export-wall": "tsx scripts/export-wall-svgs.tsx",
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit"
   }
 }

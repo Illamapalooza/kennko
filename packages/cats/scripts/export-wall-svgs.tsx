@@ -18,3 +18,6 @@ for (const [name, coat, pose] of cats) {
   fs.writeFileSync(`${out}/${name}.svg`, svg + '\n')
 }
 console.log('wrote', cats.length)
+// The wall also carries the pixel cat and its cosmetics as one plain module (wall/test/cats-copy.test.mjs checks the copy).
+fs.copyFileSync(new URL('../src/pixel-cats.js', import.meta.url), new URL('../../../wall/public/scene/cats.mjs', import.meta.url))
+console.log('wrote wall/public/scene/cats.mjs')

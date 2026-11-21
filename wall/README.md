@@ -95,3 +95,8 @@ and the wall gains an order board with numbers. Open the pad address the termina
 The wall wears the website's sticker theme (`brand/DESIGN.md`): cream grid paper, ink outlines and the Kennko cats.
 It stays zero-dependency, so the cats are static SVGs in `public/brand/cats/`, exported from `packages/cats`.
 After changing the cat drawings, run `npm run export-wall -w @kennko/cats` from the repo root.
+
+The pixel cat, its coats and its cosmetics (hat, face, neck, held) are one plain module,
+`packages/cats/src/pixel-cats.js`, shared with the website. The export also copies it byte for byte to
+`public/scene/cats.mjs`, which `sprites.mjs` re-exports; never edit that copy.
+`test/cats-copy.test.mjs` fails when it is out of date (and skips when the wall is checked out alone).

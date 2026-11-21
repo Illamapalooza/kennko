@@ -6,8 +6,9 @@
     "jsx": "react-jsx",
     "strict": true,
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src", "scripts"]
+  "include": ["src", "scripts", "test"]
 }
