@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto'
-import { formatPublicCode, LOOKUPS_PER_MINUTE, makePublicCode, type PullState, type TillCustomer } from '@kennko/core'
+import { COSMETIC_SLOTS, formatPublicCode, LOOKUPS_PER_MINUTE, makePublicCode, type PullState, type TillCustomer } from '@kennko/core'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { publishMenu } from '../src/menu/snapshot.js'
 import { hit } from '../src/rate-limit.js'
@@ -159,7 +159,14 @@ describe('the till allowlist', () => {
     const ana = await customer({ name: 'Ana Reyes', email: 'ana@x.test', stamps: 3 })
     const owner = await seedStaff(db.sql, { fullName: 'Olive', role: 'owner' })
     await db.sql`insert into points_ledger (customer_id, delta, reason, note, created_at, created_by_staff)
-      values (${ana.id}, 37, 'adjustment', 'Welcome', ${NOW}, ${owner})`
+      values (${ana.id}, 120, 'adjustment', 'Welcome', ${NOW}, ${owner})`
+    // Mochi wears a bought hat and is visiting.
+    const [beanie] = await db.sql<{ id: string }[]>`select id from cosmetics where key = 'beanie'`
+    await db.sql`insert into customer_cosmetics (customer_id, cosmetic_id, acquired_at) values (${ana.id}, ${beanie!.id}, ${NOW})`
+    await db.sql`insert into cats (customer_id, name, equipped, updated_at)
+      values (${ana.id}, 'Mochi', ${db.sql.json({ coat: 'tabby', hat: 'beanie' })}, ${NOW})`
+    await db.sql`insert into visits (customer_id, visit_key, source, started_at, ends_at)
+      values (${ana.id}, ${randomUUID()}, 'checkin', ${NOW}, ${new Date(NOW.getTime() + 90 * 60_000)})`
     await onlineOrder(ana.id, 'Pickup Jo')
     await onlineOrder(null, 'Guest Lu')
 
@@ -169,7 +176,7 @@ describe('the till allowlist', () => {
     const lookupRaw = await res.text()
     const found = JSON.parse(lookupRaw) as TillCustomer
     expect(Object.keys(found).sort()).toEqual(TILL_KEYS)
-    expect(found).toEqual({ code: ana.code, catName: null, stampMode: 'digital', stamps: 3, fullCards: 0 })
+    expect(found).toEqual({ code: ana.code, catName: 'Mochi', stampMode: 'digital', stamps: 3, fullCards: 0 })
 
     await linkOnTill(ana.code)
     const { state, raw } = await pull()
@@ -177,14 +184,33 @@ describe('the till allowlist', () => {
     expect(Object.keys(state.customers![0]!).sort()).toEqual(TILL_KEYS)
     expect(state.customers!.find((c) => c.code === ana.code)).toEqual(found)
 
+    // Visitors: the per-visit key, the cat name, the look and the end time, and nothing else.
+    expect(state.visitors!.length).toBeGreaterThan(0)
+    for (const v of state.visitors!) {
+      expect(Object.keys(v).sort()).toEqual(['endsAt', 'key', 'look', 'name'])
+      for (const slot of Object.keys(v.look)) expect(COSMETIC_SLOTS).toContain(slot)
+    }
+    expect(state.visitors!.find((v) => v.name === 'Mochi')!.look).toEqual({ coat: 'tabby', hat: 'beanie' })
+    const visitorsRaw = JSON.stringify(state.visitors)
+    for (const secret of ['Ana Reyes', 'ana@x.test', ana.id, ana.bare, ana.code]) expect(visitorsRaw).not.toContain(secret)
+    expect(Object.keys(state.checkin!).sort()).toEqual(['secret', 'url'])
+
     for (const text of [raw, lookupRaw]) {
       expect(text).not.toContain('Ana Reyes')
       expect(text).not.toContain('ana@x.test')
     }
+    // Visitors carry the cat's `name` by design; their keys are pinned exactly above.
     const leaked = [...keysDeep(state.customers), ...keysDeep(found)].filter((k) => PRIVATE_KEYS.includes(k))
     expect(leaked).toEqual([])
     expect(state.onlineOrders!.length).toBeGreaterThan(0)
     for (const o of state.onlineOrders!) expect(['stamp', 'stamped', 'paper', null]).toContain(o.card)
+
+    // Hidden by Kennko: the name is withheld from the till and the cat leaves the wall.
+    await db.sql`update cats set hidden_by_admin = true where customer_id = ${ana.id}`
+    expect(((await (await lookup(ana.code)).json()) as TillCustomer).catName).toBeNull()
+    const hidden = (await pull()).state
+    expect(hidden.customers!.find((c) => c.code === ana.code)!.catName).toBeNull()
+    expect(hidden.visitors!.map((v) => v.name)).not.toContain('Mochi')
   })
 })
 

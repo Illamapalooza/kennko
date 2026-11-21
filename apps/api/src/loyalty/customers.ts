@@ -32,15 +32,20 @@ export async function cardSummary(tx: Tx, id: string): Promise<{ stamps: { stamp
   return { stamps: stamps.map((s) => ({ stampedAt: s.stamped_at.toISOString() })), fullCards: full!.n }
 }
 
-/** The till's view of a customer. The only function that builds it: no name, email, phone or point balance. */
+/**
+ * The till's view of a customer. The only function that builds it: no name, email, phone or point balance. The cat's
+ * name is withheld (null) while Kennko has hidden the cat, or when there is no cat yet.
+ */
 export async function tillCustomer(tx: Tx, id: string): Promise<TillCustomer> {
-  const [c] = await tx<{ public_code: string; stamp_mode: StampMode }[]>`
-    select public_code, stamp_mode from customers where id = ${id}`
+  const [c] = await tx<{ public_code: string; stamp_mode: StampMode; cat_name: string | null }[]>`
+    select cu.public_code, cu.stamp_mode, case when ca.hidden_by_admin then null else ca.name end as cat_name
+    from customers cu left join cats ca on ca.customer_id = cu.id
+    where cu.id = ${id}`
   if (!c) throw new Error(`customer ${id} not found`)
   const summary = await cardSummary(tx, id)
   return {
     code: formatPublicCode(c.public_code),
-    catName: null,
+    catName: c.cat_name,
     stampMode: c.stamp_mode,
     stamps: summary.stamps.length,
     fullCards: summary.fullCards,

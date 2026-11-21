@@ -3,6 +3,7 @@ import type postgres from 'postgres'
 import { addStamp, removeOrderStamp, unclaim } from '../loyalty/cards.js'
 import { customerByCode, lockCustomer } from '../loyalty/customers.js'
 import { creditOrderPoints, dropOrderPoints, reverseOrderPoints } from '../loyalty/points.js'
+import { extendActiveVisit } from '../loyalty/visits.js'
 import type { Applied } from './apply.js'
 
 type Tx = postgres.TransactionSql
@@ -28,6 +29,7 @@ async function lockOrder(tx: Tx, orderId: string): Promise<OrderRow | undefined>
 /**
  * The till linked a Kennko card to a counter sale. Online orders link only at checkout. Points are credited here when
  * the sale is already paid (a counter sale always is), so whichever of the link and the payment comes second credits.
+ * A visit to the wall that is still on is extended (Ruling 8); the link never starts one.
  */
 export async function applyCustomerLinked(
   tx: Tx,
@@ -50,6 +52,7 @@ export async function applyCustomerLinked(
   if (!(await lockCustomer(tx, found.id))) return flagged('unknown_customer')
   await tx`update orders set customer_id = ${found.id}, updated_at = ${now} where id = ${orderId}`
   await creditOrderPoints(tx, orderId, now)
+  await extendActiveVisit(tx, found.id, now)
   return applied()
 }
 

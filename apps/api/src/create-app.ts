@@ -5,6 +5,7 @@ import type { AppEnv } from './auth.js'
 import { apiError } from './http.js'
 import type { AuthAdmin } from './auth-admin.js'
 import { attentionRoutes } from './routes/attention.js'
+import { checkinRoutes } from './routes/checkin.js'
 import { cosmeticRoutes } from './routes/cosmetics.js'
 import { customerRoutes, stampCardRoutes, stampRoutes } from './routes/customers.js'
 import { deviceRoutes } from './routes/devices.js'
@@ -63,6 +64,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   })
 
   app.route('/v1/attention', attentionRoutes(deps))
+  app.route('/v1/checkin', checkinRoutes(deps))
   app.route('/v1/cosmetics', cosmeticRoutes(deps))
   app.route('/v1/customers', customerRoutes(deps))
   app.route('/v1/devices', deviceRoutes(deps))

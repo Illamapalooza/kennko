@@ -579,3 +579,62 @@ describe('online payments', () => {
     expect(await ledgerOf(orderId)).toHaveLength(0)
   })
 })
+
+describe('a linked counter sale and the wall visit (Ruling 8)', () => {
+  const MIN = 60_000
+  const later = (m: number) => new Date(NOW.getTime() + m * MIN)
+  /** A customer with a cat (on the wall unless `showOnWall` is false) and, when `endsAt` is given, a visit. */
+  async function visitor(o: { endsAt?: Date; showOnWall?: boolean } = {}) {
+    const c = await customer()
+    await db.sql`insert into cats (customer_id, name, equipped, show_on_wall, updated_at)
+      values (${c.id}, 'Mochi', ${db.sql.json({ coat: 'ginger' })}, ${o.showOnWall ?? true}, ${NOW})`
+    if (o.endsAt) {
+      await db.sql`insert into visits (customer_id, visit_key, source, started_at, ends_at)
+        values (${c.id}, ${randomUUID()}, 'checkin', ${later(-100)}, ${o.endsAt})`
+    }
+    return c
+  }
+  const visitOf = async (id: string) =>
+    (await db.sql<{ visit_key: string; started_at: Date; ends_at: Date }[]>`
+      select visit_key, started_at, ends_at from visits where customer_id = ${id}`)[0]
+  async function link(code: string) {
+    const s = sale()
+    const res = await api.push(token, [s, customerLinked({ orderId: s.payload.orderId, publicCode: code }, { staffId: bea })])
+    expect(answers(res)).toEqual([
+      ['applied', null],
+      ['applied', null],
+    ])
+  }
+
+  test('an active visit is extended to now + 90 minutes, keeping its key and start', async () => {
+    const c = await visitor({ endsAt: later(10) })
+    const before = (await visitOf(c.id))!
+    await link(c.code)
+    expect(await visitOf(c.id)).toEqual({ ...before, ends_at: later(90) })
+  })
+
+  test('a visit already ending later than now + 90 minutes is not shortened', async () => {
+    const c = await visitor({ endsAt: later(100) })
+    await link(c.code)
+    expect((await visitOf(c.id))!.ends_at).toEqual(later(100))
+  })
+
+  test('with no visit, none is created', async () => {
+    const c = await visitor()
+    await link(c.code)
+    expect(await visitOf(c.id)).toBeUndefined()
+  })
+
+  test('with "Show me on the wall" off, nothing is extended', async () => {
+    const c = await visitor({ endsAt: later(10), showOnWall: false })
+    await link(c.code)
+    expect((await visitOf(c.id))!.ends_at).toEqual(later(10))
+  })
+
+  test('an ended visit (an offline backlog) changes nothing', async () => {
+    const c = await visitor({ endsAt: later(-1) })
+    const before = await visitOf(c.id)
+    await link(c.code)
+    expect(await visitOf(c.id)).toEqual(before)
+  })
+})

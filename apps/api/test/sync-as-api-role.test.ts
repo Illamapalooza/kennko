@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto'
-import { formatPublicCode, makePublicCode, type CounterOrderPayload, type ImportOrder, type ImportShift, type PushResponse } from '@kennko/core'
+import { formatPublicCode, makePublicCode, wallCode, wallMinute, type CounterOrderPayload, type ImportOrder, type ImportShift, type PushResponse } from '@kennko/core'
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose'
 import type { Hono } from 'hono'
 import type postgres from 'postgres'
@@ -725,6 +725,39 @@ describe('every route as kennko_api', () => {
     })
     const gapView = await ok('GET', '/v1/me', await signFor(gap))
     expect((gapView.customer as { cat: { look: { coat: string } } }).cat.look.coat).toMatch(/^(ginger|tabby|black|cream)$/)
+  })
+
+  it('wall check-in: a pull that creates the secret, a check-in, visitors and a counter link that extends the visit as kennko_api', async () => {
+    // Start with no secret, so the pull below inserts it as kennko_api.
+    await asSuper(() => db.sql`delete from shop_secrets where id = 1`)
+    const first = await ok('GET', '/v1/sync/pull', deviceToken)
+    const [row] = await asSuper(() => db.sql<{ checkin_secret: string }[]>`select checkin_secret from shop_secrets where id = 1`)
+    expect(first.checkin).toEqual({ secret: row!.checkin_secret, url: 'https://kennko.vercel.app/here' })
+
+    const scanner = '00000000-0000-4000-8000-0000000000a8'
+    await asSuper(() => db.sql`insert into auth.users (id, email) values (${scanner}, 'scan@x.test')`)
+    auth.users[scanner] = { email: 'scan@x.test', emailConfirmed: true, createdAt: '2026-11-01T00:00:00Z' }
+    const jwt = await signFor(scanner)
+    await ok('POST', '/v1/me/join', jwt, { ageConfirmed: true, privacyVersion: '2026-11' })
+    // A customer from before the cats deploy: check-in gives them a cat too.
+    await asSuper(() => db.sql`delete from cats where customer_id = ${scanner}`)
+    const code = await wallCode(row!.checkin_secret, wallMinute(NOW.getTime()))
+    const end = new Date(NOW.getTime() + 90 * 60_000).toISOString()
+    expect(await ok('POST', '/v1/checkin', jwt, { code })).toEqual({ endsAt: end, onWall: true })
+    const [visit] = await asSuper(() => db.sql<{ visit_key: string }[]>`select visit_key from visits where customer_id = ${scanner}`)
+    const state = await ok('GET', '/v1/sync/pull', deviceToken)
+    expect((state.visitors as { key: string; endsAt: string }[]).find((v) => v.key === visit!.visit_key)?.endsAt).toBe(end)
+
+    // A counter sale linked to the card extends the visit.
+    const bare = (await asSuper(() => db.sql<{ public_code: string }[]>`select public_code from customers where id = ${scanner}`))[0]!
+      .public_code
+    await asSuper(() => db.sql`update visits set ends_at = ${new Date(NOW.getTime() + 10 * 60_000)} where customer_id = ${scanner}`)
+    const [open] = await asSuper(() => db.sql<{ id: string }[]>`select id from shifts where device_id = ${deviceId} and closed_at is null`)
+    const sale = orderCreated({ shiftId: open!.id, ticketNumber: 61, menuVersion: null }, { staffId: BARISTA })
+    const res = await push([sale, customerLinked({ orderId: sale.payload.orderId, publicCode: formatPublicCode(bare) }, { staffId: BARISTA })])
+    expect(res.results.map((r) => r.result)).toEqual(['flagged', 'applied'])
+    const [after] = await asSuper(() => db.sql<{ ends_at: Date }[]>`select ends_at from visits where customer_id = ${scanner}`)
+    expect(after!.ends_at.toISOString()).toBe(end)
   })
 
   it('till customers: lookup, claim, release and a pull with customers and online card state as kennko_api', async () => {
