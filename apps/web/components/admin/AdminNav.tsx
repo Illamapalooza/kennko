@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import type { StaffRole } from '@/lib/auth/types'
 
@@ -26,9 +27,16 @@ const visible = (link: NavLink, role: StaffRole) => !link.minRole || RANK[role] 
 
 export function AdminNav({ ordersToCheck, role, attentionCount = 0 }: AdminNavProps) {
   const pathname = usePathname()
+  const navRef = useRef<HTMLElement>(null)
+
+  // On a phone the tabs scroll sideways; keep the current one in view.
+  useEffect(() => {
+    const current = navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')
+    current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [pathname])
 
   return (
-    <nav className="admin-nav" aria-label="Admin">
+    <nav ref={navRef} className="admin-nav" aria-label="Admin">
       {LINKS.filter((l) => visible(l, role)).map((link) => {
         const active = link.exact
           ? pathname === link.href

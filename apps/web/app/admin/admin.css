@@ -512,3 +512,50 @@
   .guide-badge, .guide-badge-owner, .guide-topic > .guide-badges .guide-badge { background: #fff; color: #000; border: 1px solid #000; }
   .guide-box { background: #fff; border: 1px solid #000; border-left-width: 4px; }
 }
+
+/* Guide FAQ. */
+.guide-card-faq { margin-bottom: 12px; border-left: 4px solid var(--blue); }
+.admin-main .guide-results-title { margin: 8px 0 10px; font-size: 1rem; }
+.guide-list + .guide-results-title { margin-top: 20px; }
+.guide-faq-groups { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.guide-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.guide-chip:focus-visible, .guide-faq-link:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+.guide-faq { margin: 0; display: grid; gap: 14px; }
+.guide-faq-item { scroll-margin-top: 16px; }
+.guide-faq-item:target { background: var(--blue-wash); border-radius: var(--radius-md); padding: 8px; margin: -8px; }
+.guide-faq dt { font-weight: 700; margin-bottom: 4px; }
+.guide-faq dd { margin: 0; line-height: 1.45; }
+.guide-faq-link { display: flex; width: fit-content; align-items: center; min-height: 44px; color: var(--blue); font-weight: 700; }
+@media print {
+  .guide-faq-item:target { background: #fff; padding: 0; margin: 0; }
+  .guide-faq-item { break-inside: avoid; }
+}
+
+/* Phone tabs: scroll sideways when the role has more links than fit (the owner has ten). A soft blue shadow
+   shows at whichever edge has more to scroll to. */
+@media (max-width: 919px) {
+  .admin-nav {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    background:
+      linear-gradient(to right, var(--white) 30%, rgba(255, 255, 255, 0)) left center / 40px 100% no-repeat local,
+      linear-gradient(to left, var(--white) 30%, rgba(255, 255, 255, 0)) right center / 40px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(0, 85, 255, 0.35), rgba(0, 85, 255, 0)) left center / 14px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(0, 85, 255, 0.35), rgba(0, 85, 255, 0)) right center / 14px 100% no-repeat scroll,
+      var(--white);
+  }
+  .admin-nav::-webkit-scrollbar { display: none; }
+  .admin-nav-link { flex: 1 0 auto; padding: 0 14px; white-space: nowrap; }
+}

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { GuideTopic } from './content'
 import { TOPICS } from './content'
-import { filterTopics } from './search'
+import { filterFaq, filterTopics } from './search'
+import { FAQ_ITEMS } from './faq'
 
 const t = (slug: string, extra: Partial<GuideTopic> = {}): GuideTopic => ({
   slug,
@@ -45,5 +46,26 @@ describe('filterTopics', () => {
 
   it('finds the real free drink topic', () => {
     expect(filterTopics(TOPICS, 'free drink').map((x) => x.slug)).toContain('kennko-card')
+  })
+})
+
+describe('filterFaq', () => {
+  const items = [
+    { id: 'a', question: 'Someone forgot their PIN', answer: 'Tap New PIN' },
+    { id: 'b', question: 'A drink ran out', answer: 'Mark sold out' },
+  ]
+
+  it('matches nothing for an empty query', () => {
+    expect(filterFaq(items, '  ')).toEqual([])
+  })
+
+  it('matches questions and answers, ignoring case, needing every word', () => {
+    expect(filterFaq(items, 'forgot').map((i) => i.id)).toEqual(['a'])
+    expect(filterFaq(items, 'SOLD out').map((i) => i.id)).toEqual(['b'])
+    expect(filterFaq(items, 'pin sold')).toEqual([])
+  })
+
+  it('finds real FAQ answers', () => {
+    expect(filterFaq(FAQ_ITEMS, 'disconnected in admin').map((i) => i.id)).toContain('reconnect-till')
   })
 })
