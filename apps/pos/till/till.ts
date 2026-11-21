@@ -32,7 +32,10 @@ const isDay = (text: string | null): text is string => Boolean(text && /^\d{4}-\
 
 export function createTill(host: TillHost) {
   const now = host.now ?? Date.now
-  const timers = host.timers ?? { set: setTimeout, clear: clearTimeout }
+  const timers = host.timers ?? {
+    set: ((fn: (...a: any[]) => void, ms?: number) => setTimeout(fn, ms)) as typeof setTimeout,
+    clear: ((id: any) => clearTimeout(id)) as typeof clearTimeout,
+  }
   const log = host.log ?? (() => {})
   const { files, config, baseMenu, fetch: fetchFn } = host
 

@@ -33,8 +33,8 @@ function offlineCopy(): Plugin {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), offlineCopy()],
-  build: { outDir: 'dist', emptyOutDir: true },
+export default defineConfig(({ mode }) => ({
+  plugins: mode === 'app' ? [react()] : [react(), offlineCopy()],
+  build: { outDir: mode === 'app' ? 'dist-app' : 'dist', emptyOutDir: true },
   test: { environment: 'node', include: ['test/**/*.test.ts'] },
-})
+}))

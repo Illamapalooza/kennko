@@ -7,6 +7,8 @@
     "dev": "tsx server/index.ts --dev",
     "build": "tsc --noEmit && vite build",
     "start": "tsx server/index.ts",
+    "app:build": "vite build --mode app && npx cap sync android",
+    "app:apk": "node ../../scripts/build-pos-app.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

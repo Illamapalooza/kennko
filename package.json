@@ -13,8 +13,10 @@
     "pos": "npm run dev -w @kennko/pos",
     "pos:build": "npm run build -w @kennko/pos",
     "pos:start": "npm start -w @kennko/pos",
+    "pos:apk": "node scripts/build-pos-app.mjs",
     "wall": "node wall/server.mjs",
     "wall:pos": "node wall/server.mjs --pos",
+    "wall:apk": "npm run apk -w @kennko/wall-app",
     "test": "npm test --workspaces --if-present && node --test wall/test/*.test.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }

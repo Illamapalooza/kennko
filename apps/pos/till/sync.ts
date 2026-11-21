@@ -107,7 +107,10 @@ export function createSync(opts: {
   const { store, sessions, pins, files } = opts
   const fetchFn = opts.fetchFn ?? fetch
   const now = opts.now ?? Date.now
-  const timers = opts.timers ?? { set: setTimeout, clear: clearTimeout }
+  const timers = opts.timers ?? {
+    set: ((fn: (...a: any[]) => void, ms?: number) => setTimeout(fn, ms)) as typeof setTimeout,
+    clear: ((id: any) => clearTimeout(id)) as typeof clearTimeout,
+  }
   const api = base(opts.apiUrl)
 
   let failures = 0

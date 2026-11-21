@@ -7,10 +7,19 @@ import './styles.css'
 import { App } from './App.tsx'
 import { startPwa } from './pwa.ts'
 
-if (import.meta.env.VITE_TILL !== 'app') startPwa()
+async function main() {
+  if (import.meta.env.VITE_TILL === 'app') {
+    const { bootApp } = await import('./app/boot.ts')
+    await bootApp()
+  } else {
+    startPwa()
+  }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}
+
+main()
