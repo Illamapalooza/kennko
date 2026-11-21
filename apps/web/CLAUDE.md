@@ -126,8 +126,8 @@ Order status flow differs by fulfilment: pickup runs
 `confirmed -> preparing -> ready -> completed`; delivery runs
 `confirmed -> preparing -> out_for_delivery -> completed`.
 
-Ordering is gated by `NEXT_PUBLIC_ORDERING_ENABLED`. It stays `false` until the
-real GCash QR replaces `public/gcash-qr-placeholder.png`.
+Ordering is gated by `NEXT_PUBLIC_ORDERING_ENABLED` (on in production). The pay step shows the shop's real GCash
+QR, `public/gcash-qr.png` (cropped from the GCash app's QR screen).
 
 ### Delivery pricing
 

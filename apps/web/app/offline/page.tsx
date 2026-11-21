@@ -18,7 +18,7 @@ export default function OfflinePage() {
       <style>{css}</style>
       <div className="offline-card k-sticker">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/wordmark-blue.png" alt="Kennko Coffee" width={536} height={163} />
+        <img src="/brand/wordmark-blue.png" alt="Kennko Coffee" width={895} height={497} />
         <h1>You&apos;re offline</h1>
         <p>Kennko will be right here when you&apos;re back online.</p>
       </div>

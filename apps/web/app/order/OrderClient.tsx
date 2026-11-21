@@ -628,7 +628,7 @@ function PayStep({
       <h1>Pay {formatPesos(total)} with GCash</h1>
 
       <div className="order-card">
-        <img className="order-qr" src="/gcash-qr-placeholder.png" alt="GCash QR code" />
+        <img className="order-qr" src="/gcash-qr.png" alt="GCash QR code" />
         <p className="order-note">
           <strong>This is a sample QR, not a real one.</strong> Ordering is still
           being set up — do not send money to this code.

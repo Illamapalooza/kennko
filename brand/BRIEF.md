@@ -48,7 +48,8 @@ Loyalty program — collect stamps, get free upsize at 4 stamps and free drink a
 - **Background options:** Blue (#0055FF) or White (#FFFFFF) — no dark/black themes
 
 ## Typography
-- Logo font: Custom rounded/bubble style, bold, playful — all caps "KENNKO" with "COFFEE" below
+- Logo: hand-drawn lowercase "kennko", white on blue (`assets/kennko-logo-2026.png`, since November 2026). The
+  older all-caps bubble "KENNKO COFFEE" logo is retired.
 - Body: Clean, rounded sans-serif to match the playful brand personality
 - All headings in uppercase/bold
 

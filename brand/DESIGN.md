@@ -205,8 +205,10 @@ animation is the point.
 
 | File | Use |
 |---|---|
-| `public/brand/kennko.png` | Logo, blue on white. |
-| `public/brand/word-logo.jpg` | Logo, white on blue. |
+| `brand/assets/kennko-logo-2026.png` | **The logo since November 2026**: lowercase hand-drawn "kennko", white on blue. Source for everything below. |
+| `public/brand/wordmark-blue.png`, `wordmark-white.png` (website, till, wall) | The 2026 logo cut out on transparent, blue or white. |
+| `public/icons/*`, `app/favicon.ico`, `app/icon.png`, till and wall `brand/icon.png` | App and tab icons: the 2026 logo square on blue. |
+| `public/brand/kennko.png`, `public/brand/word-logo.jpg` | Old bubble "KENNKO COFFEE" logo. Retired; don't use for new work. |
 | `public/brand/kennko_1.png` | Alternate wordmark, blue on white. |
 | `public/brand/kennco-banner_2.png` | Repeating banner, white on blue. |
 | `badge.png`, `icon.png`, `wordmark-blue.png`, `wordmark-white.png` (in `apps/pos` and `wall`) | App header, favicon, receipts. |

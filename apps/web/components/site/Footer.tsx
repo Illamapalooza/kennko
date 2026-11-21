@@ -6,7 +6,7 @@ export function Footer() {
       <div className="container">
         <div className="k-sticker footer-shell">
           <div>
-            <img className="footer-logo" src="/brand/wordmark-white.png" alt="Kennko Coffee" width={536} height={163} />
+            <img className="footer-logo" src="/brand/wordmark-white.png" alt="Kennko Coffee" width={895} height={497} />
             <p>Premium coffee, playful drinks and snacks in Villa Kananga, Butuan City.</p>
           </div>
           <nav className="footer-links" aria-label="Kennko on social media">

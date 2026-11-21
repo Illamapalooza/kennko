@@ -7,7 +7,7 @@ export function Nav() {
     <header className="nav">
       <div className="container nav-inner">
         <a className="brand" href="#top" aria-label="Kennko Coffee home">
-          <img src="/brand/wordmark-blue.png" alt="Kennko Coffee" width={536} height={163} />
+          <img src="/brand/wordmark-blue.png" alt="Kennko Coffee" width={895} height={497} />
         </a>
 
         <nav className="nav-links" aria-label="Primary navigation">

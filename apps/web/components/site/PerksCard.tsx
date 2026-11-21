@@ -32,7 +32,7 @@ export function PerksCard({ slots, freeDrinkReady = false, label }: { slots: Per
   return (
     <figure className={styles.card} aria-label={label}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className={styles.wordmark} src="/brand/wordmark-white.png" alt="Kennko" width={536} height={163} />
+      <img className={styles.wordmark} src="/brand/wordmark-white.png" alt="Kennko" width={895} height={497} />
       <ol className={styles.grid}>
         {cups.slice(0, 4).map(cell)}
         <li className={styles.spacer} aria-hidden="true" />
