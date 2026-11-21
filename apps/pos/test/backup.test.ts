@@ -64,6 +64,30 @@ describe('daily backup', () => {
     store.close()
   })
 
+  it('keeps no visiting cats and no check-in secret in the backup copy (Plan 8)', () => {
+    const dir = tempDir()
+    const store = createStore(path.join(dir, 'pos.db'))
+    const secret = 'q'.repeat(43)
+    store.setCheckin({ secret, url: 'https://kennko.vercel.app/here' })
+    store.kvSet('checkin_skew', '1200')
+    store.replaceVisitors([{ key: 'v-1', name: 'Mochi', look: { coat: 'ginger' }, endsAt: new Date(T + 3_600_000).toISOString() }])
+
+    const { file, copy } = backupDay((to) => store.snapshot(to), path.join(dir, 'backups'), '2026-11-17', path.join(dir, 'usb'))
+    for (const f of [file, copy!]) {
+      expect(fs.readFileSync(f).includes(secret)).toBe(false)
+      expect(fs.readFileSync(f).includes('Mochi')).toBe(false)
+      const restored = createStore(f)
+      expect(restored.checkinConfig()).toBeNull()
+      expect(restored.kvGet('checkin_secret')).toBeNull()
+      expect(restored.activeVisitors(T)).toEqual([])
+      restored.close()
+    }
+    // The live till keeps both.
+    expect(store.checkinConfig()?.secret).toBe(secret)
+    expect(store.activeVisitors(T)).toHaveLength(1)
+    store.close()
+  })
+
   it('replaces the same day and picks up later sales', () => {
     const dir = tempDir()
     const store = createStore(path.join(dir, 'pos.db'))

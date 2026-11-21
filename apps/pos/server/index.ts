@@ -18,7 +18,9 @@ import { fetchApiMenu, loadMenu, loadSnapshot, saveSnapshot, splitSoldOut, tillD
 import { createStore } from './store.ts'
 import { chargeWithFreeDrink, lookupCustomer } from './kennko-api.ts'
 import { createPinDirectory } from './pins.ts'
-import { checkPinFresh, createPinRefresh, forgetDevice, loadDevice, pairWithApi, saveDevice } from './device.ts'
+import { checkPinFresh, createPinRefresh, forgetConnection, loadDevice, pairWithApi, saveDevice } from './device.ts'
+import { currentCheckin, msToNextMinute, storedSkew } from './checkin.ts'
+import { tabletSnapshot } from './tablet-feed.ts'
 import { createSync, syncReady } from './sync.ts'
 import { bounded } from './wait.ts'
 import { createSessions, readSessionCookie, sessionCookie, type Who } from './sessions.ts'
@@ -103,16 +105,26 @@ function shopDetails(): typeof config.shop {
 const clients = new Map<http.ServerResponse, string | undefined>()
 let version = 0
 // menuKey changes whenever the menu or a sold-out mark does, so every tablet knows to fetch it again.
-const snapshot = () => JSON.stringify({
-  version, now: Date.now(), day: manilaDay(Date.now()), active: store.activeOrders(), shift: store.openShift(),
-  // Paid online orders being made or out for delivery (Plan 5), kept apart from the till's own tickets.
-  online: store.activeOnlineOrders(),
+const snapshot = () => JSON.stringify(tabletSnapshot(store, {
+  version, now: Date.now(),
   menuKey: `${loadedSnapshot?.version ?? 0}:${baseMenu.updatedAt}:${store.soldOut().sort().join(',')}`,
   sync: sync.status(),
-})
-// The projector wall follows the till through its own feed: drink names and steps only, so it needs no PIN.
+}))
+// The projector wall follows the till through its own feed: drink names and steps only, so it needs no PIN. Plan 8
+// adds the check-in QR (link and modules, made here from the secret, which never leaves this process) and the cats.
 const wallClients = new Set<http.ServerResponse>()
-const wallSnapshot = () => JSON.stringify(wallFeed(store, menu(), Date.now()))
+async function wallSnapshot(): Promise<string> {
+  const now = Date.now()
+  let checkin = null
+  try { checkin = await currentCheckin(store, now) } catch { console.error('  The wall check-in QR could not be made; the wall runs without it.') }
+  return JSON.stringify(wallFeed(store, menu(), now, checkin))
+}
+const wallFailed = (err: any) => console.error(`  The wall feed failed: ${err?.message ?? err}`)
+/** Sends one fresh frame to every wall. Never throws. */
+function sendWall(): void {
+  if (!wallClients.size) return
+  wallSnapshot().then((frame) => { for (const res of wallClients) res.write(`data: ${frame}\n\n`) }, wallFailed)
+}
 function broadcast() {
   version += 1
   const frame = `data: ${snapshot()}\n\n`
@@ -122,12 +134,16 @@ function broadcast() {
     if (!open && !sessions.get(token)) { clients.delete(res); res.end(); continue }
     res.write(frame)
   }
-  const wallFrame = `data: ${wallSnapshot()}\n\n`
-  for (const res of wallClients) res.write(wallFrame)
+  sendWall()
 }
 setInterval(() => { for (const res of clients.keys()) res.write(': keepalive\n\n') }, 20000).unref()
 // Re-sent on a timer too, so a finished order drops off the wall once its cat has had time to leave.
-setInterval(() => { if (wallClients.size) { const frame = `data: ${wallSnapshot()}\n\n`; for (const res of wallClients) res.write(frame) } }, 20000).unref()
+setInterval(sendWall, 20000).unref()
+// And at each server minute (Ruling 6), 50 ms after it turns, so the QR's code changes with the minute.
+function eachServerMinute(): void {
+  setTimeout(() => { sendWall(); eachServerMinute() }, msToNextMinute(Date.now(), storedSkew(store) ?? 0) + 50).unref()
+}
+eachServerMinute()
 
 // ---------- helpers ----------
 const MIME: Record<string, string> = {
@@ -249,9 +265,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (req.method === 'GET' && route === '/api/wall/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
-    res.write(`retry: 2000\n\ndata: ${wallSnapshot()}\n\n`)
+    res.write('retry: 2000\n\n')
     wallClients.add(res)
     req.on('close', () => wallClients.delete(res))
+    wallSnapshot().then((frame) => { if (wallClients.has(res)) res.write(`data: ${frame}\n\n`) }, wallFailed)
     return
   }
   if (req.method === 'GET' && route === '/api/wall/menu') return json(res, 200, { menu: wallMenu(menu()) })
@@ -416,9 +433,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (route === '/api/device/forget') {
     await checkPin(req, body.managerPin, 'manager')
-    forgetDevice(DATA) // the staff cache stays, so the same PINs keep working
-    store.clearOnlineOrders() // customer phone and address do not stay on a disconnected computer (Plan 5 Ruling 10)
-    store.clearCustomerCache()
+    // The staff cache stays, so the same PINs keep working; customer details and the wall check-in go (device.ts).
+    forgetConnection(store, DATA)
     broadcast() // the tablets' sync status now says not connected
     return json(res, 200, { ok: true })
   }

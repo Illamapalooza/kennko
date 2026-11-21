@@ -72,6 +72,14 @@ const isPullState = (b: any): b is PullState =>
   && (b.onlineOrders === undefined || isOnlineList(b.onlineOrders))
   // Entries are checked one by one when stored (a bad one is skipped); a `customers` that is not a list is garbled.
   && (b.customers === undefined || Array.isArray(b.customers))
+  // Plan 8: visitors are checked one by one when stored (a bad one is skipped); a `visitors` that is not a list is garbled.
+  && (b.checkin === undefined || b.checkin === null || isCheckin(b.checkin))
+  && (b.visitors === undefined || Array.isArray(b.visitors))
+
+/** The wall's check-in from the pull: a secret of at least 40 characters (32 bytes base64url) and an https link. */
+const isCheckin = (c: any): boolean =>
+  Boolean(c) && typeof c === 'object' && typeof c.secret === 'string' && c.secret.length >= 40
+  && typeof c.url === 'string' && /^https:\/\/[^\s]+$/.test(c.url)
 
 /** Every entry a well-formed online order, no id twice. Anything else garbles the whole pull (Plan 5 Ruling 9). */
 const isOnlineList = (list: unknown): boolean =>
@@ -144,6 +152,8 @@ export function createSync(opts: {
         : { kind: 'failed', problem: err?.name === 'TimeoutError' || err?.name === 'AbortError' ? SLOW : UNREACHABLE, offline: true }
     }
     clockSkewMs = clockSkew(res, sentAt, now())
+    // Kept for the wall's minute code, so a restart while offline still knows the server's minute (Ruling 6).
+    if (clockSkewMs !== null) store.kvSet('checkin_skew', String(clockSkewMs))
     const body: any = await res.json().catch(() => undefined)
     if (loadDevice(dataDir)?.token !== device.token) return { kind: 'stale' }
     // Only the API's own codes mean revoked; any other 401 (a hosting protection page, say) is just offline.
@@ -263,6 +273,9 @@ export function createSync(opts: {
       }
       // No key = an API from before the loyalty plan: keep the cached customers.
       if (state.customers !== undefined) store.replaceCustomerCache(state.customers, now())
+      // No key = an API from before Plan 8: keep the secret and the visiting cats the till has (Ruling 9).
+      if (state.checkin !== undefined) store.setCheckin(state.checkin === null ? null : { secret: state.checkin.secret, url: state.checkin.url })
+      if (state.visitors !== undefined) store.replaceVisitors(state.visitors)
     }
 
     if (failure) {

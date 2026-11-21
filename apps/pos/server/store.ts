@@ -5,7 +5,7 @@ import {
   formatPublicCode, hasDrink, manilaDay, nextPrepStatus, nextStatus, normalisePublicCode, prevStatus, priceLines, summarise, totals,
   type CashMove, type CounterOrderPayload, type Discount, type LineInput, type Menu, type OnlineQueueOrder, type Order, type OrderStatus,
   type OrderType, type PaymentMethod, type PrepStatus, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
-  type TillCustomer,
+  type TillCustomer, type WallVisitor, MAX_VISITORS, isWallVisitor, parseLook,
 } from '@kennko/core'
 import type { CachedStaff } from './pins.ts'
 
@@ -95,6 +95,7 @@ const SCHEMA = `
   create table if not exists customer_cache (code text primary key, data text not null, updated_at integer not null);
   create table if not exists online_stamps (order_id text primary key, stamp_uid text not null, at integer not null);
   create table if not exists pending_releases (claim_id text primary key, claimed_at integer not null);
+  create table if not exists visitors (key text primary key, data text not null, ends_at integer not null);
 `
 
 /** Columns added to tables that already exist on tills from before Plan 4 (SQLite cannot add a unique column). */
@@ -449,7 +450,8 @@ export function createStore(file: string) {
     /**
      * Writes a complete, consistent copy of the database to a new file. Safe while the till is in use. The copy keeps
      * no online orders: they carry customer phones and addresses (Ruling P5-3), and the next pull fetches them again.
-     * Nor the customer cache: the next pull or lookup fills it again.
+     * Nor the customer cache: the next pull or lookup fills it again. Nor the visiting cats or the wall's check-in
+     * secret (Plan 8): the secret stays in this database alone.
      */
     snapshot(to: string) {
       db.prepare('vacuum into ?').run(to)
@@ -457,6 +459,9 @@ export function createStore(file: string) {
       try {
         copy.exec('delete from online_orders')
         copy.exec('delete from customer_cache')
+        // Plan 8: the wall's check-in secret never leaves this computer, and visiting cats are refetched by the pull.
+        copy.exec('delete from visitors')
+        copy.exec("delete from kv where key = 'checkin_secret'")
         copy.exec('vacuum')
       } finally {
         copy.close()
@@ -783,6 +788,61 @@ export function createStore(file: string) {
     },
 
     cachedCustomer,
+
+    /**
+     * The wall check-in pulled from Kennko (Plan 8). The secret is read only by checkin.ts, inside this server process;
+     * it is never sent to a tablet, the wall, a log or the backup. null drops the secret and the URL.
+     */
+    setCheckin(c: { secret: string; url: string } | null): void {
+      tx(() => {
+        if (c === null) {
+          db.prepare("delete from kv where key in ('checkin_secret', 'checkin_url')").run()
+          return
+        }
+        kvSet('checkin_secret', c.secret)
+        kvSet('checkin_url', c.url)
+      })
+    },
+
+    checkinConfig(): { secret: string; url: string } | null {
+      const secret = kvGet('checkin_secret')
+      const url = kvGet('checkin_url')
+      return secret !== null && url !== null ? { secret, url } : null
+    },
+
+    /** Forgets the secret, the URL and the visiting cats (the till was revoked or forgotten). */
+    clearCheckin(): void {
+      tx(() => {
+        db.prepare("delete from kv where key in ('checkin_secret', 'checkin_url')").run()
+        db.prepare('delete from visitors').run()
+      })
+    },
+
+    /**
+     * The visiting cats from the pull, in its order (rowid keeps it). Each is rebuilt field by field; one that is not a
+     * visitor, or has no readable end time, is skipped, a repeated key keeps the first, and at most MAX_VISITORS stay.
+     */
+    replaceVisitors(list: WallVisitor[]): void {
+      tx(() => {
+        db.prepare('delete from visitors').run()
+        const add = db.prepare('insert or ignore into visitors (key, data, ends_at) values (?, ?, ?)')
+        let kept = 0
+        for (const x of Array.isArray(list) ? list : []) {
+          if (kept >= MAX_VISITORS) break
+          if (!isWallVisitor(x)) continue
+          const endsAt = Date.parse(x.endsAt)
+          const look = parseLook(x.look)
+          if (!Number.isFinite(endsAt) || !look) continue
+          const v: WallVisitor = { key: x.key, name: x.name, look, endsAt: x.endsAt }
+          if (Number(add.run(v.key, JSON.stringify(v), endsAt).changes) > 0) kept++
+        }
+      })
+    },
+
+    /** Cats whose visit ends after `now` (the server's clock: the times are the server's), in pull order. */
+    activeVisitors(now: number): WallVisitor[] {
+      return (db.prepare('select data from visitors where ends_at > ? order by rowid').all(now) as any[]).map((r) => JSON.parse(r.data))
+    },
 
     /**
      * Takes the pulled list of customers linked through this till lately (Ruling 15). Only `TillCustomer` fields are

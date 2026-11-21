@@ -1,4 +1,5 @@
-import { manilaDay, type Menu, type OnlineQueueOrder, type Order, type OrderStatus, type PrepStatus } from '@kennko/core'
+import { manilaDay, type CatLook, type Menu, type OnlineQueueOrder, type Order, type OrderStatus, type PrepStatus } from '@kennko/core'
+import { storedSkew, type WallCheckin } from './checkin.ts'
 import type { Store } from './store.ts'
 
 /**
@@ -66,12 +67,25 @@ export function wallOnlineOrders(orders: OnlineQueueOrder[]): WallOrder[] {
   }))
 }
 
+/** A visiting cat as the wall gets it (Plan 8): the per-visit key, the name, the look, and when the visit ends. */
+export type WallFeedVisitor = { key: string; name: string; look: CatLook; endsAt: number }
+
 /**
  * What `/api/wall/events` sends: the menu's drink names and the orders being made or just finished, built field by
- * field above, so no price, payment, Kennko card code or stamp can reach the projector.
+ * field above, so no price, payment, Kennko card code or stamp can reach the projector. Plan 8 adds the check-in QR
+ * (`checkin`, precomputed by `currentCheckin`: the link and its modules, never the secret) and the visiting cats, built
+ * field by field. A visit's end is the server's time; `endsAt` is turned to the till's clock (minus the skew) so the
+ * wall walks a cat out on time, and an ended visit is dropped here even while the till is offline.
  */
-export function wallSnapshot(store: Store, menu: Menu, now: number) {
+export function wallSnapshot(store: Store, menu: Menu, now: number, checkin: WallCheckin | null) {
   const since = now - WALL_LINGER_MS
+  const skew = storedSkew(store) ?? 0
+  const visitors: WallFeedVisitor[] = store.activeVisitors(now + skew).map((v) => ({
+    key: v.key,
+    name: v.name,
+    look: wallLook(v.look),
+    endsAt: Date.parse(v.endsAt) - skew,
+  }))
   return {
     now, day: manilaDay(now),
     menu: wallMenu(menu),
@@ -79,7 +93,16 @@ export function wallSnapshot(store: Store, menu: Menu, now: number) {
       ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)]),
       ...wallOnlineOrders([...store.activeOnlineOrders(), ...store.recentlyFinishedOnline(since)]),
     ],
+    checkin: checkin ? { url: checkin.url, modules: checkin.modules } : null,
+    visitors,
   }
+}
+
+/** Only the slots, slot by slot. */
+function wallLook(look: CatLook): CatLook {
+  const out: CatLook = { coat: look.coat }
+  for (const slot of ['hat', 'face', 'neck', 'held'] as const) if (typeof look[slot] === 'string') out[slot] = look[slot]
+  return out
 }
 
 /** The drink names the barista cats show: category, name and bestseller star. Never a price, id or stock. */

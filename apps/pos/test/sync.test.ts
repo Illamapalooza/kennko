@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { BACKOFF_MS, KICK_DEBOUNCE_MS, SYNC_EVERY_MS, makePublicCode, type MenuSnapshot, type OnlineQueueOrder, type PullState, type PushResult, type SyncEvent } from '@kennko/core'
 import { hashStaffPin } from '@kennko/core/staff-pin'
-import { loadDevice, saveDevice } from '../server/device.ts'
+import { forgetConnection, loadDevice, saveDevice } from '../server/device.ts'
 import { builtInMenu, loadSnapshot, saveSnapshot } from '../server/menu.ts'
 import { createPinDirectory, type CachedStaff } from '../server/pins.ts'
 import { createSessions } from '../server/sessions.ts'
@@ -759,5 +759,127 @@ describe('syncReady', () => {
     expect(syncReady(device, '  ')).toBe(false)
     expect(syncReady(null, API)).toBe(false)
     expect(syncReady({ ...device, revokedAt: T }, API)).toBe(false)
+  })
+})
+
+describe('the wall check-in from the pull (Plan 8)', () => {
+  const SECRET = 's'.repeat(43)
+  const URL_ = 'https://kennko.vercel.app/here'
+  const look = { coat: 'ginger', hat: 'beanie' }
+  const mochi = { key: 'v-1', name: 'Mochi', look, endsAt: new Date(T + 3_600_000).toISOString() }
+  const kape = { key: 'v-2', name: 'Kape', look: { coat: 'tabby' }, endsAt: new Date(T + 1_800_000).toISOString() }
+  const base = { menu: null, soldOut: [], staff: [], shop: SHOP }
+
+  it('a pull with checkin and visitors stores them, in pull order', async () => {
+    const t = till()
+    t.api.onPull(() => json(200, { ...base, checkin: { secret: SECRET, url: URL_ }, visitors: [mochi, kape] }))
+    await t.sync.runOnce()
+    expect(t.sync.status().offline).toBe(false)
+    expect(t.store.checkinConfig()).toEqual({ secret: SECRET, url: URL_ })
+    expect(t.store.activeVisitors(T)).toEqual([mochi, kape])
+  })
+
+  it('a pull without the keys keeps both (an API from before Plan 8)', async () => {
+    const t = till()
+    t.api.onPull(() => json(200, { ...base, checkin: { secret: SECRET, url: URL_ }, visitors: [mochi] }))
+    await t.sync.runOnce()
+    t.api.onPull(() => json(200, base))
+    await t.sync.runOnce()
+    expect(t.store.checkinConfig()).toEqual({ secret: SECRET, url: URL_ })
+    expect(t.store.activeVisitors(T)).toEqual([mochi])
+  })
+
+  it('checkin null clears the secret; an empty visitors list clears the cats', async () => {
+    const t = till()
+    t.api.onPull(() => json(200, { ...base, checkin: { secret: SECRET, url: URL_ }, visitors: [mochi] }))
+    await t.sync.runOnce()
+    t.api.onPull(() => json(200, { ...base, checkin: null, visitors: [] }))
+    await t.sync.runOnce()
+    expect(t.store.checkinConfig()).toBeNull()
+    expect(t.store.activeVisitors(T)).toEqual([])
+  })
+
+  it('a malformed checkin or visitors garbles the pull and keeps what the till has', async () => {
+    for (const bad of [
+      { checkin: { secret: 'short', url: URL_ } },
+      { checkin: { secret: SECRET, url: 'http://kennko.vercel.app/here' } },
+      { checkin: { secret: SECRET } },
+      { checkin: 'yes' },
+      { visitors: { 0: mochi } },
+    ]) {
+      const t = till()
+      t.store.setCheckin({ secret: SECRET, url: URL_ })
+      t.api.onPull(() => json(200, { ...base, ...bad }))
+      await t.sync.runOnce()
+      expect(t.sync.status()).toMatchObject({ offline: true })
+      expect(t.store.checkinConfig()).toEqual({ secret: SECRET, url: URL_ })
+    }
+  })
+
+  it('a visitor that is not one is skipped, and at most 12 are kept', async () => {
+    const t = till()
+    const many = Array.from({ length: 14 }, (_, i) => ({ ...mochi, key: `v-${i}` }))
+    t.api.onPull(() => json(200, { ...base, visitors: [{ ...mochi, key: 'bad', email: 'ana@x.ph' }, { ...mochi, key: 'bad2', endsAt: 'soon' }, ...many] }))
+    await t.sync.runOnce()
+    const kept = t.store.activeVisitors(T)
+    expect(kept.map((v) => v.key)).toEqual(many.slice(0, 12).map((v) => v.key))
+    expect(JSON.stringify(kept)).not.toContain('ana@x.ph')
+  })
+
+  it('visitors drop out by endsAt on the till alone, offline', async () => {
+    const t = till()
+    t.api.onPull(() => json(200, { ...base, visitors: [mochi, kape] }))
+    await t.sync.runOnce()
+    t.api.onPull(() => json(503, {}))
+    await t.sync.runOnce()
+    expect(t.sync.status().offline).toBe(true)
+    expect(t.store.activeVisitors(T + 1_800_000).map((v) => v.key)).toEqual(['v-1'])
+    expect(t.store.activeVisitors(T + 3_600_000)).toEqual([])
+  })
+
+  it('revoke clears the secret, the URL and the visitors', async () => {
+    const t = till()
+    t.api.onPull(() => json(200, { ...base, checkin: { secret: SECRET, url: URL_ }, visitors: [mochi] }))
+    await t.sync.runOnce()
+    t.api.onPull(() => json(401, { code: 'DEVICE_REVOKED', message: 'gone' }))
+    await t.sync.runOnce()
+    expect(t.store.checkinConfig()).toBeNull()
+    expect(t.store.kvGet('checkin_url')).toBeNull()
+    expect(t.store.activeVisitors(T)).toEqual([])
+  })
+
+  it('forgetting the connection clears them too, with the device file', async () => {
+    const t = till()
+    t.api.onPull(() => json(200, { ...base, checkin: { secret: SECRET, url: URL_ }, visitors: [mochi] }))
+    await t.sync.runOnce()
+    forgetConnection(t.store, t.dataDir)
+    expect(loadDevice(t.dataDir)).toBeNull()
+    expect(t.store.checkinConfig()).toBeNull()
+    expect(t.store.activeVisitors(T)).toEqual([])
+  })
+
+  it('persists the skew from each answer that carried a Date, so a restart offline can still make the code', async () => {
+    const t = till()
+    t.api.onPull(() => json(200, base, { date: new Date(T + 90_000).toUTCString() }))
+    await t.sync.runOnce()
+    expect(t.store.kvGet('checkin_skew')).toBe('90000')
+    t.api.onPull(() => json(200, base)) // no Date header: the last measured skew stays
+    await t.sync.runOnce()
+    expect(t.store.kvGet('checkin_skew')).toBe('90000')
+  })
+
+  it('never logs the secret, nor puts it in the sync status the tablets get', async () => {
+    const t = till()
+    const lines: string[] = []
+    const spies = (['log', 'warn', 'error', 'info', 'debug'] as const)
+      .map((m) => vi.spyOn(console, m).mockImplementation((...a: unknown[]) => { lines.push(a.map(String).join(' ')) }))
+    t.api.onPull(() => json(200, { ...base, checkin: { secret: SECRET, url: URL_ }, visitors: [mochi] }))
+    await t.sync.runOnce()
+    t.api.onPull(() => json(401, { code: 'DEVICE_REVOKED', message: 'gone' }))
+    await t.sync.runOnce()
+    for (const s of spies) s.mockRestore()
+    expect(lines.join('\n')).not.toContain(SECRET)
+    expect(JSON.stringify(t.sync.status())).not.toContain(SECRET)
+    expect(JSON.stringify(t.changes)).not.toContain(SECRET)
   })
 })

@@ -49,6 +49,18 @@ export function forgetDevice(dataDir: string): void {
   fs.rmSync(path.join(dataDir, FILE), { force: true })
 }
 
+/**
+ * `POST /api/device/forget`: the device file goes, and with it what belongs to the connection: customer phones and
+ * addresses (Plan 5 Ruling 10), cached customers, the wall's check-in secret and visiting cats (Plan 8). The staff cache
+ * stays, so the same PINs keep working.
+ */
+export function forgetConnection(store: Store, dataDir: string): void {
+  forgetDevice(dataDir)
+  store.clearOnlineOrders()
+  store.clearCustomerCache()
+  store.clearCheckin()
+}
+
 /** Swaps a 6-digit code from admin › Tills for this till's token. Besides the card lookup and free-drink claim (kennko-api.ts), the only call that waits on the API. */
 export async function pairWithApi(apiUrl: string, code: string, now: number, fetchFn: typeof fetch = fetch): Promise<DeviceFile> {
   if (!apiUrl.trim()) throw new Error('The website connection is not set up on this computer.')
@@ -108,6 +120,7 @@ export function applyDeviceInfo(store: Store, sessions: Sessions, pins: PinDirec
     // Customer phone and address do not stay on a disconnected computer (Plan 5 Ruling 10), even on a repeat answer.
     store.clearOnlineOrders()
     store.clearCustomerCache()
+    store.clearCheckin() // the wall's check-in secret and visiting cats go too (Plan 8)
     const device = loadDevice(dataDir)
     if (!device || device.revokedAt !== null) return false
     saveDevice(dataDir, { ...device, revokedAt: now })

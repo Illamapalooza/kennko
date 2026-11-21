@@ -34,6 +34,27 @@ queue and calls each order when it is marked Ready. The wall reads `/api/wall/ev
 only order numbers, first names, drink names and steps, plus the menu's drink names and bestseller stars (never a
 price) so the wall needs no menu of its own; `/api/wall/menu` serves the same list. See `wall/README.md`.
 
+## Cats on the wall
+
+Customers who have a Kennko card can bring their own cat (named and dressed on the website) onto the projector wall.
+The wall shows a QR code in the bottom-right corner, "Scan to bring your cat in"; scanning it checks them in for 90
+minutes, and their cat walks in at the next sync (about 15 seconds).
+
+- **The QR appears once the till has synced at least once.** It needs the check-in secret and the website's clock,
+  both from the sync. A till that has never been connected, or was disconnected in admin or forgotten, shows no QR;
+  the wall carries on as before.
+- **It changes every minute**, on the website's clock (not this computer's), so a photo of the QR stops working after
+  a minute or two.
+- **Offline:** the till keeps making the QR from what it last synced, even after a restart, but new check-ins wait
+  until the internet is back (the phone checks in with the website). Cats already on the wall stay until their visit
+  ends, then walk out.
+- **What the wall gets:** the QR's link and its squares, and for each visiting cat only a random per-visit key, the
+  cat's name, its look and when the visit ends. Never a customer's name, email, card code or points.
+- **The secret stays on this computer.** The till keeps it in `data/pos.db` and uses it only to make the code; it is not
+  sent to the tablets or the wall, not logged, and not in the daily backup. If it ever leaks, delete the
+  `shop_secrets` row in Supabase; the next sync brings a new one.
+- On the till, a customer line shows the cat's name first: "Mochi · KC-7F3-…-XAM · 5 of 8 stamps".
+
 ## Install it as an app
 
 The till is an installable app (a PWA): it gets its own icon on the home screen, opens full screen, keeps the screen on, and opens even when the till computer is unreachable (it then says it can't reach the till and reconnects by itself). Sales are never stored on the tablet; they always live on the till computer.

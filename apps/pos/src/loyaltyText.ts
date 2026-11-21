@@ -7,12 +7,13 @@ export function maskCode(code: string): string {
   return `KC-${bare.slice(0, 3)}-…-${bare.slice(6)}`
 }
 
-/** What the till shows once a code has been looked up (or could not be). */
+/** What the till shows once a code has been looked up (or could not be). It leads with the cat's name when there is one. */
 export function customerLine(c: TillCustomer | null, note?: string): string {
   if (!c) return note || 'Will confirm when back online'
   if (c.stampMode === 'paper') return 'Paper card: stamp their paper card'
   const ready = c.fullCards > 0 ? ` · ${c.fullCards === 1 ? 'Free drink ready' : `${c.fullCards} free drinks ready`}` : ''
-  return `Card ${maskCode(c.code)} · ${c.stamps} of ${STAMPS_PER_CARD} stamps${ready}`
+  const lead = c.catName ? `${c.catName} ·` : 'Card'
+  return `${lead} ${maskCode(c.code)} · ${c.stamps} of ${STAMPS_PER_CARD} stamps${ready}`
 }
 
 /** The code field as it is typed: upper case, `KC-` in front, grouped in threes, at most nine symbols. */

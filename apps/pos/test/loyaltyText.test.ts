@@ -14,6 +14,10 @@ describe('maskCode', () => {
 
 describe('customerLine', () => {
   it('shows the stamps', () => expect(customerLine(cust())).toBe('Card KC-7F3-…-XAM · 5 of 8 stamps'))
+  it('leads with the cat name when there is one', () => {
+    expect(customerLine(cust({ catName: 'Mochi' }))).toBe('Mochi · KC-7F3-…-XAM · 5 of 8 stamps')
+    expect(customerLine(cust({ catName: null }))).toBe('Card KC-7F3-…-XAM · 5 of 8 stamps')
+  })
   it('says when a free drink is ready', () => expect(customerLine(cust({ stamps: 0, fullCards: 1 }))).toBe('Card KC-7F3-…-XAM · 0 of 8 stamps · Free drink ready'))
   it('counts several free drinks', () => expect(customerLine(cust({ fullCards: 2 }))).toMatch(/· 2 free drinks ready$/))
   it('says paper cards are stamped by hand', () => expect(customerLine(cust({ stampMode: 'paper' }))).toBe('Paper card: stamp their paper card'))
