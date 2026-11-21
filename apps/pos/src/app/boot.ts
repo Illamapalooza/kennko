@@ -1,4 +1,5 @@
-import { CapacitorHttp } from '@capacitor/core'
+import { App } from '@capacitor/app'
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { manilaDay } from '@kennko/core'
 import { builtInMenu } from '../../till/menu.ts'
 import { createStore } from '../../till/store.ts'
@@ -6,8 +7,10 @@ import { createTill } from '../../till/till.ts'
 import { setTransport } from '../transport.ts'
 import { appFiles } from './app-files.ts'
 import { inAppTransport } from './inapp-transport.ts'
+import { appBackup, wireLifecycle } from './lifecycle.ts'
 import { nativeFetch } from './native-fetch.ts'
 import { runSelfTest } from './selftest.ts'
+import { shareFile, shareText } from './share.ts'
 import { bridgeBackupPath, openBridgeSqlite } from './sqlite-bridge.ts'
 
 export async function bootApp(): Promise<void> {
@@ -43,18 +46,33 @@ export async function bootApp(): Promise<void> {
     },
     baseMenu: builtInMenu(now),
     host: 'android',
-    backup: (snapshot) => {
-      try {
-        snapshot(bridgeBackupPath(manilaDay(Date.now())))
-        return 'saved'
-      } catch (err: any) {
-        console.error(`Backup failed: ${err?.message ?? err}`)
-        return `FAILED (${err?.message ?? err})`
-      }
-    },
+    backup: (snapshot) => appBackup(snapshot, Date.now()),
     log: console.log,
   })
 
   till.start()
-  setTransport(inAppTransport(till))
+  wireLifecycle(till, App)
+
+  let askedBattery = false
+  const baseTransport = inAppTransport(till, {
+    shareText,
+    exportBackup: async () => {
+      const path = bridgeBackupPath(manilaDay(Date.now()))
+      till.store.snapshot(path)
+      await shareFile(path, 'Kennko POS backup')
+    },
+  })
+
+  setTransport({
+    ...baseTransport,
+    async call(method, path, body, signal) {
+      const res = await baseTransport.call(method, path, body, signal)
+      if (!askedBattery && method === 'POST' && path === '/api/session' && res.status === 200) {
+        askedBattery = true
+        const kiosk = (Capacitor as any).Plugins?.KennkoKiosk
+        kiosk?.askBatteryOnce?.().catch(() => {})
+      }
+      return res
+    },
+  })
 }

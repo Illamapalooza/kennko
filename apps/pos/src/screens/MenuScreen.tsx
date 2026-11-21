@@ -60,6 +60,14 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
         {!device || device.revoked ? (
           <button type="button" className="btn btn-outline" onClick={() => setConnecting(true)}>Connect this till</button>
         ) : null}
+        {boot.host === 'android' ? (
+          <div style={{ marginTop: 12 }}>
+            <button type="button" className="btn btn-outline" onClick={() => api.exportBackup().catch((err) => notify(err.message))}>
+              Export backup
+            </button>
+            <p className="muted" style={{ marginTop: 6 }}>Keep it private: it has staff PINs (scrambled) and sales.</p>
+          </div>
+        ) : null}
       </section>
       {menu.categories.map((category) => (
         <section className="card" key={category.id}>
