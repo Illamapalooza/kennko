@@ -72,6 +72,7 @@ export default async function AdminLayout({
           <span>
             {staff.fullName} · {staff.role}
           </span>
+          <a className="admin-user-link" href="/admin/password">Set a password</a>
           <SignOutButton />
         </div>
       </aside>

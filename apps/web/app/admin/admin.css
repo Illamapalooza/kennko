@@ -17,6 +17,8 @@
 }
 .admin-wordmark { height: 28px; width: auto; display: block; }
 .admin-user { display: flex; align-items: center; gap: var(--space-3); font-size: 0.9rem; }
+.admin-user-link { color: var(--white); text-decoration: underline; min-height: 44px; display: inline-flex; align-items: center; }
+.admin-user-link:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .admin-user .btn-secondary {
   background: rgba(255, 255, 255, 0.16);
   color: var(--white);
