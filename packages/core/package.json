@@ -8,12 +8,17 @@
   "exports": {
     ".": "./src/index.ts",
     "./seed-menu": "./src/seed-menu.ts",
-    "./staff-pin": "./src/staff-pin.ts"
+    "./staff-pin": "./src/staff-pin.ts",
+    "./staff-pin-check": "./src/staff-pin-check.ts",
+    "./portable-crypto": "./src/portable-crypto.ts"
   },
   "scripts": {
     "test": "vitest run"
   },
   "devDependencies": {
     "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0"
   }
 }
