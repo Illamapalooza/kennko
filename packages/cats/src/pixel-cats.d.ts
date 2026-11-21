@@ -1,12 +1,12 @@
 // Types for pixel-cats.js (plain JavaScript so the wall can carry a byte-identical copy).
 
 export type CatSlot = 'coat' | 'hat' | 'face' | 'neck' | 'held'
-export type CosmeticSlot = Exclude<CatSlot, 'coat'>
+export type OverlaySlot = Exclude<CatSlot, 'coat'>
 
 export type CatLook = { coat: string; hat?: string; face?: string; neck?: string; held?: string }
 
 export type Cosmetic = {
-  slot: CosmeticSlot
+  slot: OverlaySlot
   /** Character map, '.' is clear. Every row has the same length. */
   rows: string[]
   /** Top-left of the map against the cat's top-left; dy < 0 rises above the cat. */

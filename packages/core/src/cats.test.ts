@@ -1,5 +1,6 @@
+import { COAT_KEYS, SLOTS } from '@kennko/cats/pixel'
 import { describe, expect, it } from 'vitest'
-import { checkCatName, checkinLink, CHECKIN_URL, isWallVisitor, parseLook, wallCode, wallMinute } from './index.ts'
+import { COSMETIC_SLOTS, STARTER_COATS, checkCatName, normaliseCatName, checkinLink, CHECKIN_URL, isWallVisitor, parseLook, wallCode, wallMinute } from './index.ts'
 
 const ok = (raw: string) => {
   const r = checkCatName(raw)
@@ -20,6 +21,37 @@ describe('checkCatName', () => {
     expect(checkCatName('Cat 2025')).toEqual({ ok: false, message: 'Too many numbers in a row.' })
     expect(ok('R2 D2 C3')).toBe('R2 D2 C3')
     expect(checkCatName('091 712 345')).toEqual({ ok: false, message: 'No more than 4 numbers.' })
+  })
+})
+
+describe('checkCatName unicode', () => {
+  it('accepts exactly 16, refuses 17', () => {
+    expect(ok('a'.repeat(16))).toBe('a'.repeat(16))
+    expect(checkCatName('a'.repeat(17)).ok).toBe(false)
+  })
+  it('treats precomposed and combining ñ the same', () => {
+    const pre = 'Ni\u00f1o'
+    const comb = 'Nin\u0303o'
+    expect(ok(pre)).toBe(pre)
+    expect(ok(comb)).toBe(pre)
+    expect(normaliseCatName(comb)).toBe(pre)
+    expect(ok('N' + 'n\u0303'.repeat(15))).not.toBeNull()
+    expect(ok('a'.repeat(15) + 'n\u0303')).not.toBeNull()
+    // a + combining tilde composes to one character, so 16 a's and a tilde are still 16
+    expect(checkCatName('a'.repeat(16) + '\u0303').ok).toBe(true)
+  })
+  it('refuses mark-only and punctuation-only names', () => {
+    for (const bad of ['\u0301', '...', '---', '! ?', '&']) expect(checkCatName(bad).ok).toBe(false)
+  })
+})
+
+describe('core and cats agree', () => {
+  it('has the same slots, in the same order', () => expect([...COSMETIC_SLOTS]).toEqual(SLOTS))
+  it('starter coats are real coats', () => {
+    for (const c of STARTER_COATS) expect(COAT_KEYS).toContain(c)
+  })
+  it('non-coat slots match', () => {
+    expect(COSMETIC_SLOTS.filter((s) => s !== 'coat')).toEqual(SLOTS.filter((s) => s !== 'coat'))
   })
 })
 

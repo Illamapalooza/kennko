@@ -30,12 +30,19 @@ export function parseLook(x: unknown): CatLook | null {
 
 export type CatNameResult = { ok: true; name: string } | { ok: false; message: string }
 
+/** The stored form of a cat name: NFC, trimmed, runs of spaces collapsed. */
+export function normaliseCatName(raw: string): string {
+  return raw.normalize('NFC').trim().replace(/ {2,}/g, ' ')
+}
+
+/** `name` in an ok result is the normalised form: store that, not the raw input. */
 export function checkCatName(raw: string): CatNameResult {
-  const name = raw.trim().replace(/ {2,}/g, ' ')
+  const name = normaliseCatName(raw)
   if (name.length === 0 || [...name].length > CAT_NAME_MAX) return { ok: false, message: 'Up to 16 letters or numbers.' }
   if (!/^[\p{L}\p{M}\p{Nd} .,'!?&-]+$/u.test(name)) {
     return { ok: false, message: "Letters, numbers, spaces and . , ' ! ? & - only." }
   }
+  if (!/[\p{L}\p{Nd}]/u.test(name)) return { ok: false, message: 'Up to 16 letters or numbers.' }
   if (/\p{Nd}{4,}/u.test(name)) return { ok: false, message: 'Too many numbers in a row.' }
   if ((name.match(/\p{Nd}/gu) ?? []).length > 4) return { ok: false, message: 'No more than 4 numbers.' }
   return { ok: true, name }
