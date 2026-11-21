@@ -1,5 +1,5 @@
 import { randomUuid } from '@kennko/core/portable-crypto'
-import type { SqlOpen } from './sql.ts'
+import type { SqlDb, SqlOpen } from './sql.ts'
 import {
   ADDON_LIMIT_MESSAGE, MAX_MODIFIERS, MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, canMovePrep, cleanDiscount, isOnlineQueueOrder,
   formatPublicCode, hasDrink, manilaDay, nextPrepStatus, nextStatus, normalisePublicCode, prevStatus, priceLines, summarise, totals,
@@ -260,8 +260,8 @@ const money = (value: unknown, what: string, min = 0): number => {
 }
 
 /** Everything the till remembers. One SQLite file; every write is a single transaction, its outbox row included. */
-export function createStore(file: string, open: SqlOpen) {
-  const db = open(file)
+export function createStore(file: string | SqlDb, open: SqlOpen) {
+  const db = typeof file === 'string' ? open(file) : file
   db.exec('pragma journal_mode = wal; pragma synchronous = full; pragma foreign_keys = on;')
   db.exec(SCHEMA)
 

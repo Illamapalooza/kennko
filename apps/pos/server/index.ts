@@ -9,25 +9,17 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { OrderError, formatPesos, manilaDay, type Menu, type PrepStatus } from '@kennko/core'
+import { OrderError, formatPesos, manilaDay, type Menu } from '@kennko/core'
 import { backupDay } from './backup.ts'
-import { ensureCertificate, tillNames, type Certificate } from './secure.ts'
-import { setupPage } from './setup-page.ts'
 import { loadConfig } from './config.ts'
 import { nodeFiles } from './node-files.ts'
 import { openNodeSqlite } from './node-sqlite.ts'
-import { fetchApiMenu, loadMenu, loadSnapshot, saveSnapshot, splitSoldOut, tillDiscounts, tillMenu } from '../till/menu.ts'
-import { createStore } from '../till/store.ts'
-import { chargeWithFreeDrink, lookupCustomer } from '../till/kennko-api.ts'
-import { createPinDirectory } from '../till/pins.ts'
-import { checkPinFresh, createPinRefresh, forgetConnection, loadDevice, pairWithApi, saveDevice } from '../till/device.ts'
-import { currentCheckin, msToNextMinute, storedSkew } from '../till/checkin.ts'
-import { tabletSnapshot } from '../till/tablet-feed.ts'
-import { createSync, syncReady } from '../till/sync.ts'
-import { bounded } from '../till/wait.ts'
-import { createSessions, readSessionCookie, sessionCookie, type Who } from '../till/sessions.ts'
-import { reportCsv } from '../till/report.ts'
-import { wallMenu, wallSnapshot as wallFeed } from '../till/wall-feed.ts'
+import { ensureCertificate, tillNames, type Certificate } from './secure.ts'
+import { setupPage } from './setup-page.ts'
+import { loadDevice } from '../till/device.ts'
+import { loadMenu } from '../till/menu.ts'
+import { readSessionCookie, sessionCookie } from '../till/sessions.ts'
+import { createTill } from '../till/till.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
@@ -41,122 +33,53 @@ const port = portArg >= 0 && Number(args[portArg + 1]) > 0 ? Number(args[portArg
 
 fs.mkdirSync(DATA, { recursive: true })
 const files = nodeFiles(DATA)
-const store = createStore(path.join(DATA, 'pos.db'), openNodeSqlite)
-// The menu.json from before sync (or the built-in menu): used only until a snapshot has been pulled.
+const sql = openNodeSqlite(path.join(DATA, 'pos.db'))
 const baseMenu: Menu = loadMenu(files, Date.now())
-// The snapshot pulled from the website (data/menu-snapshot.json); reloaded whenever the sync saves a newer one.
-let loadedSnapshot = loadSnapshot(files)
-// The PIN is typed once per browser and swapped for a session cookie; sessions live in pos.db and survive a restart.
-const sessions = createSessions(store.db, () => Date.now())
-// Each person's own PIN, checked against the staff cache in pos.db (filled by the sync's pull below).
-const pins = createPinDirectory({ staffPin: config.staffPin, managerPin: config.managerPin, staff: () => store.staffCache() })
 
-/** Copies the sales database to data/backups (and to config.backupDir when set). Never throws: a failed backup must not stop a sale. */
-let lastBackup = ''
-function backup(): void {
-  try {
-    const result = backupDay((file) => store.snapshot(file), path.join(DATA, 'backups'), manilaDay(Date.now()), config.backupDir)
-    lastBackup = result.copyError ? `saved here, but the second copy failed (${result.copyError})` : result.copy ? `saved here and to ${config.backupDir}` : 'saved in data/backups'
-    if (result.copyError) console.warn(`  Backup: the copy to ${config.backupDir} failed: ${result.copyError}`)
-  } catch (err: any) {
-    lastBackup = `FAILED (${err.message})`
-    console.error(`  Backup failed: ${err.message}`)
-  }
-}
-backup()
-setInterval(backup, 60 * 60 * 1000).unref()
-
-/**
- * The sync with the Kennko API (sync.ts): imports old history once, pushes the outbox, pulls the menu, sold-out marks,
- * staff, shop details and paid online orders. It runs in the background. Only pairing (5 s), "Check now" (10 s) and the wrong-PIN refresh
- * (2.5 s) wait on it, and only that long (Ruling P4-7); a longer run lands by itself. Every write kicks it after answering.
- * Outside it, only the card lookup and the free-drink claim call the API (kennko-api.ts, 5 s each); linking and
- * stamping go through the outbox.
- */
-const sync = createSync({
-  store, sessions, pins, files, apiUrl: config.api.url,
-  onChange: ({ menu: menuChanged }) => {
-    if (menuChanged) loadedSnapshot = loadSnapshot(files)
-    broadcast()
+const till = createTill({
+  sql,
+  open: openNodeSqlite,
+  files,
+  fetch,
+  config: {
+    staffPin: config.staffPin,
+    managerPin: config.managerPin,
+    shop: config.shop,
+    discounts: config.discounts,
+    apiUrl: config.api.url,
+    firstRun: 'pins',
   },
+  baseMenu,
+  host: 'node',
+  backup: (snapshot) => {
+    try {
+      const result = backupDay(snapshot, path.join(DATA, 'backups'), manilaDay(Date.now()), config.backupDir)
+      if (result.copyError) console.warn(`  Backup: the copy to ${config.backupDir} failed: ${result.copyError}`)
+      return result.copyError
+        ? `saved here, but the second copy failed (${result.copyError})`
+        : result.copy
+          ? `saved here and to ${config.backupDir}`
+          : 'saved in data/backups'
+    } catch (err: any) {
+      console.error(`  Backup failed: ${err.message}`)
+      return `FAILED (${err.message})`
+    }
+  },
+  timers: {
+    set: ((fn: (...a: any[]) => void, ms?: number) => setTimeout(fn, ms).unref()) as typeof setTimeout,
+    clear: clearTimeout,
+  },
+  log: console.log,
 })
-// A PIN that matches no one runs one sync (paired, not revoked, at most every 30 s, waiting at most 2.5 s; Ruling P4-1).
-const pinRefresh = createPinRefresh({ files, refresh: sync.runOnce })
-const PAIR_WAIT_MS = 5_000
-const CHECK_WAIT_MS = 10_000
-/** Paired, not revoked and the website address set: "Check now" is one sync with no PIN. */
-const canSync = () => syncReady(loadDevice(files), config.api.url)
 
-/** The menu the till sells from: the pulled snapshot (else the old menu) with the sold-out marks applied. */
-const menu = (): Menu => tillMenu(loadedSnapshot, baseMenu, new Set(store.soldOut()), Date.now())
-
-/** True when a drink id is on the till's menu, sold out or not. */
-const onMenu = (id: string): boolean => loadedSnapshot
-  ? loadedSnapshot.categories.some((c) => c.kind === 'drink' && c.items.some((i) => i.id === id))
-  : baseMenu.categories.some((c) => c.items.some((i) => i.id === id))
-
-/** The shop details: config.json's, with name, address and phone from the website once pulled (Ruling 12). */
-function shopDetails(): typeof config.shop {
-  let pulled: any = null
-  try { pulled = JSON.parse(store.kvGet('shop') ?? 'null') } catch { /* a broken value: config only */ }
-  if (!pulled || typeof pulled.name !== 'string' || typeof pulled.address !== 'string') return config.shop
-  return { ...config.shop, name: pulled.name, address: pulled.address, phone: typeof pulled.phone === 'string' ? pulled.phone : '' }
-}
-
-// ---------- live updates ----------
-// Each tablet's feed remembers its session token, so a feed whose session has ended is closed (see broadcast).
-const clients = new Map<http.ServerResponse, string | undefined>()
-let version = 0
-// menuKey changes whenever the menu or a sold-out mark does, so every tablet knows to fetch it again.
-const snapshot = () => JSON.stringify(tabletSnapshot(store, {
-  version, now: Date.now(),
-  menuKey: `${loadedSnapshot?.version ?? 0}:${baseMenu.updatedAt}:${store.soldOut().sort().join(',')}`,
-  sync: sync.status(),
-}))
-// The projector wall follows the till through its own feed: drink names and steps only, so it needs no PIN. Plan 8
-// adds the check-in QR (link and modules, made here from the secret, which never leaves this process) and the cats.
-const wallClients = new Set<http.ServerResponse>()
-async function wallSnapshot(): Promise<string> {
-  const now = Date.now()
-  let checkin = null
-  try { checkin = await currentCheckin(store, now) } catch { console.error('  The wall check-in QR could not be made; the wall runs without it.') }
-  return JSON.stringify(wallFeed(store, menu(), now, checkin))
-}
-const wallFailed = (err: any) => console.error(`  The wall feed failed: ${err?.message ?? err}`)
-/** Sends one fresh frame to every wall. Never throws. */
-function sendWall(): void {
-  if (!wallClients.size) return
-  wallSnapshot().then((frame) => { for (const res of wallClients) res.write(`data: ${frame}\n\n`) }, wallFailed)
-}
-function broadcast() {
-  version += 1
-  const frame = `data: ${snapshot()}\n\n`
-  const open = pins.mode() === 'off'
-  for (const [res, token] of clients) {
-    // A session ended by Lock elsewhere or by a staff refresh: close the feed so that tablet asks for a PIN.
-    if (!open && !sessions.get(token)) { clients.delete(res); res.end(); continue }
-    res.write(frame)
-  }
-  sendWall()
-}
-setInterval(() => { for (const res of clients.keys()) res.write(': keepalive\n\n') }, 20000).unref()
-// Re-sent on a timer too, so a finished order drops off the wall once its cat has had time to leave.
-setInterval(sendWall, 20000).unref()
-// And at each server minute (Ruling 6), 50 ms after it turns, so the QR's code changes with the minute.
-function eachServerMinute(): void {
-  setTimeout(() => { sendWall(); eachServerMinute() }, msToNextMinute(Date.now(), storedSkew(store) ?? 0) + 50).unref()
-}
-eachServerMinute()
-
-// ---------- helpers ----------
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json',
 }
 
-const json = (res: http.ServerResponse, code: number, body: unknown) => {
-  res.writeHead(code, { 'content-type': MIME['.json'], 'cache-control': 'no-store' })
+const json = (res: http.ServerResponse, code: number, body: unknown, extra: Record<string, string> = {}) => {
+  res.writeHead(code, { 'content-type': MIME['.json'], 'cache-control': 'no-store', ...extra })
   res.end(JSON.stringify(body))
 }
 
@@ -176,61 +99,6 @@ function readBody(req: http.IncomingMessage): Promise<any> {
   })
 }
 
-// PINs are short, so wrong guesses lock that device out for a while.
-class PinError extends Error {
-  constructor(message: string, readonly code: number) { super(message) }
-}
-const strikes = new Map<string, { count: number; until: number }>()
-const MAX_STRIKES = 8
-const LOCK_MS = 5 * 60000
-
-/**
- * Checks a typed PIN: the one that opens the till, or the manager PIN. A PIN that matches no one first runs one sync
- * for the staff list (throttled, at most 2.5 s) and is checked once more; the whole try counts as one wrong guess.
- */
-async function checkPin(req: http.IncomingMessage, given: unknown, need: 'staff' | 'manager'): Promise<Who> {
-  const ip = req.socket.remoteAddress ?? '?'
-  const s = strikes.get(ip)
-  if (s && s.until > Date.now()) throw new PinError('Too many wrong PINs. Try again in 5 minutes.', 429)
-  const pin = typeof given === 'string' ? given : ''
-  const who = await checkPinFresh(() => (need === 'manager' ? pins.checkManager(pin) : pins.checkGate(pin)), pinRefresh.soon)
-  if (who) {
-    strikes.delete(ip)
-    return who
-  }
-  const latest = strikes.get(ip)
-  if (latest && latest.until > Date.now()) throw new PinError('Too many wrong PINs. Try again in 5 minutes.', 429)
-  const count = (latest && latest.until === 0 ? latest.count : 0) + 1
-  strikes.set(ip, count >= MAX_STRIKES ? { count: 0, until: Date.now() + LOCK_MS } : { count, until: 0 })
-  throw new PinError(need === 'manager' ? 'Wrong manager PIN.' : 'Wrong PIN.', need === 'manager' ? 403 : 401)
-}
-
-/**
- * A person's own PIN for crediting an action (a sold-out mark, Ruling 14), on top of the session. Wrong answers 403,
- * not 401: a 401 would lock the tablet as if its session had ended. A missing PIN is no guess and takes no strike.
- */
-async function personalPin(req: http.IncomingMessage, given: unknown): Promise<Who> {
-  if (typeof given !== 'string' || given === '') throw new PinError('Enter your own PIN to mark a drink sold out.', 403)
-  try {
-    return await checkPin(req, given, 'staff')
-  } catch (err) {
-    if (err instanceof PinError && err.code === 401) throw new PinError('Wrong PIN.', 403)
-    throw err
-  }
-}
-
-/**
- * The session this request carries, or a 401 so the device shows the PIN screen. Off mode needs none and gives null.
- * Its `staffId` is who a sale, shift open, cash in or prep step is credited to (null in shared mode; Ruling 15).
- */
-function needSession(req: http.IncomingMessage): Who | null {
-  if (pins.mode() === 'off') return null
-  const who = sessions.get(readSessionCookie(req.headers.cookie, cameInSecure(req)))
-  if (!who) throw new PinError('Enter your PIN to open the till.', 401)
-  return who
-}
-
-/** Secure cookies only on the https port, or plain-http tablets would never send them back. */
 const cameInSecure = (req: http.IncomingMessage) => req.socket instanceof tls.TLSSocket
 
 function inside(base: string, rel: string): string | null {
@@ -249,216 +117,86 @@ function sendFile(res: http.ServerResponse, file: string, cache: string) {
   })
 }
 
-const isDay = (text: string | null): text is string => Boolean(text && /^\d{4}-\d{2}-\d{2}$/.test(text))
-
-// ---------- api ----------
 async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
   const route = url.pathname
-  const now = Date.now()
+  const secure = cameInSecure(req)
+  const session = readSessionCookie(req.headers.cookie, secure)
 
-  if (req.method === 'GET' && route === '/api/bootstrap') {
-    const device = loadDevice(files)
-    return json(res, 200, {
-      shop: shopDetails(), discounts: tillDiscounts(loadedSnapshot, config.discounts), pinMode: pins.mode(),
-      websiteConfigured: Boolean(config.api.url), secureUrl: secureUrlFor(req),
-      device: device ? { name: device.name, revoked: device.revokedAt !== null } : null,
-      // Paired, not revoked and the website address set: the menu screen offers "Check now" (one sync, no PIN).
-      syncConfigured: canSync(),
-    })
-  }
   if (req.method === 'GET' && route === '/api/wall/events') {
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
+    res.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-store',
+      connection: 'keep-alive',
+      'access-control-allow-origin': '*',
+    })
     res.write('retry: 2000\n\n')
-    wallClients.add(res)
-    req.on('close', () => wallClients.delete(res))
-    wallSnapshot().then((frame) => { if (wallClients.has(res)) res.write(`data: ${frame}\n\n`) }, wallFailed)
+    const stop = till.followWall((frame) => res.write(`data: ${frame}\n\n`))
+    req.on('close', stop)
     return
   }
-  if (req.method === 'GET' && route === '/api/wall/menu') return json(res, 200, { menu: wallMenu(menu()) })
-  if (route === '/api/session') {
-    if (req.method === 'GET') {
-      const who = sessions.get(readSessionCookie(req.headers.cookie, cameInSecure(req)))
-      if (who) return json(res, 200, { role: who.role, name: who.name })
-      if (pins.mode() === 'off') return json(res, 200, { role: 'staff', name: null })
-      throw new PinError('Enter your PIN to open the till.', 401)
+
+  if (req.method === 'GET' && route === '/api/wall/menu') {
+    res.writeHead(200, {
+      'content-type': MIME['.json'],
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*',
+    })
+    res.end(`{"menu":${till.wallMenuJson()}}`)
+    return
+  }
+
+  if (req.method === 'GET' && route === '/api/events') {
+    if (!till.canFollow(session)) {
+      return json(res, 401, { error: 'Enter your PIN to open the till.' })
     }
-    if (req.method === 'POST') {
-      const body = await readBody(req)
-      const who = await checkPin(req, body.pin, 'staff')
-      sessions.end(readSessionCookie(req.headers.cookie, cameInSecure(req)))
-      const token = sessions.start(who)
-      res.setHeader('set-cookie', sessionCookie(token, cameInSecure(req)))
-      return json(res, 200, { role: who.role, name: who.name })
-    }
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
+    res.write('retry: 2000\n\n')
+    let stop = () => {}
+    const keepalive = setInterval(() => res.write(': keepalive\n\n'), 20_000).unref()
+    stop = till.followTablet(
+      session,
+      (frame) => res.write(`data: ${frame}\n\n`),
+      () => {
+        clearInterval(keepalive)
+        res.end()
+      },
+    )
+    req.on('close', () => {
+      clearInterval(keepalive)
+      stop()
+    })
+    return
+  }
+
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return json(res, 405, { error: 'Method not allowed.' })
   }
-  if (req.method === 'POST' && route === '/api/session/end') {
-    sessions.end(readSessionCookie(req.headers.cookie, cameInSecure(req)))
-    res.setHeader('set-cookie', sessionCookie(null, cameInSecure(req)))
-    return json(res, 200, { ok: true })
-  }
 
-  // Everything below needs a session (the cookie rides along on fetch, EventSource and the CSV link alike).
-  const session = needSession(req)
-  const by = session?.staffId ?? null
+  const body = req.method === 'POST' ? await readBody(req) : undefined
+  const reply = await till.request({
+    method: req.method,
+    path: `${url.pathname}${url.search}`,
+    body,
+    session,
+    client: req.socket.remoteAddress ?? '?',
+    secureUrl: secureUrlFor(req),
+  })
 
-  if (req.method === 'GET') {
-    if (route === '/api/events') {
-      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
-      res.write(`retry: 2000\n\ndata: ${snapshot()}\n\n`)
-      clients.set(res, readSessionCookie(req.headers.cookie, cameInSecure(req)))
-      req.on('close', () => clients.delete(res))
-      return
-    }
-    if (route === '/api/menu') return json(res, 200, menu())
-    // A Kennko card by code (Plan 7): a typo is a 400 here; the one lookup that waits on the API, for at most 5 s.
-    const lookup = /^\/api\/customers\/([^/]{1,120})$/.exec(route)
-    if (lookup) {
-      let code = ''
-      try { code = decodeURIComponent(lookup[1]!) } catch { /* refused as a typo below */ }
-      return json(res, 200, await lookupCustomer(store, files, config.api.url, code))
-    }
-    if (route === '/api/orders') {
-      const day = url.searchParams.get('day')
-      return json(res, 200, store.ordersForDay(isDay(day) ? day : manilaDay(now)))
-    }
-    if (route === '/api/till') {
-      const shift = store.openShift()
-      return json(res, 200, {
-        shift,
-        summary: shift ? store.shiftSummary(shift) : null,
-        moves: shift ? store.cashMoves(shift.id) : [],
-        recent: store.recentShifts(),
-      })
-    }
-    if (route === '/api/report') {
-      const day = url.searchParams.get('day')
-      const d = isDay(day) ? day : manilaDay(now)
-      return json(res, 200, { day: d, summary: store.daySummary(d) })
-    }
-    if (route === '/api/report.csv') {
-      const day = url.searchParams.get('day')
-      const d = isDay(day) ? day : manilaDay(now)
-      res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="kennko-sales-${d}.csv"`, 'cache-control': 'no-store' })
-      return res.end(reportCsv(store.ordersForDay(d).reverse()))
-    }
-    return json(res, 404, { error: 'Not found.' })
+  if (reply.session !== undefined) {
+    res.setHeader('set-cookie', sessionCookie(reply.session, secure))
   }
-
-  if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed.' })
-  const body = await readBody(req)
-  // Every successful write: tell the tablets, answer, then nudge the sync (it never runs on the request's time).
-  const done = (payload: unknown) => { broadcast(); json(res, 200, payload); sync.kick() }
-
-  if (route === '/api/orders') {
-    // The free drink (Ruling 10): a manager PIN, then the claim online (5 s at most), then the sale. Anything short of
-    // a successful claim saves nothing. Without `reward`, a free-drink line is refused by the store.
-    if (body.reward) {
-      const manager = await checkPin(req, body.managerPin, 'manager')
-      return done(await chargeWithFreeDrink({
-        store, menu: menu(), files, apiUrl: config.api.url, input: body, reward: body.reward, now, by, managerStaffId: manager.staffId,
-        kick: () => sync.kick(),
-      }))
-    }
-    return done(store.createOrder(menu(), body, now, by))
+  if (reply.csv) {
+    res.writeHead(reply.status, {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="${reply.csv.filename}"`,
+      'cache-control': 'no-store',
+    })
+    return res.end(reply.csv.text)
   }
-
-  // Kennko cards on counter sales (Plan 7): local writes plus outbox rows, never waiting on the network.
-  const customerAction = /^\/api\/orders\/(\d+)\/(customer|customer\/remove|stamp)$/.exec(route)
-  if (customerAction) {
-    const id = Number(customerAction[1])
-    if (customerAction[2] === 'customer') return done(store.linkCustomer(id, body.code, now, by))
-    if (customerAction[2] === 'customer/remove') return done(store.unlinkCustomer(id, now, by))
-    return done(store.stampOrder(id, now, by))
-  }
-
-  const orderAction = /^\/api\/orders\/(\d+)\/(advance|undo|void)$/.exec(route)
-  if (orderAction) {
-    const id = Number(orderAction[1])
-    if (orderAction[2] === 'advance') return done(store.advance(id, now, by))
-    if (orderAction[2] === 'undo') return done(store.undo(id, now, by))
-    const manager = await checkPin(req, body.managerPin, 'manager')
-    return done(store.voidOrder(id, body.reason, now, manager.staffId))
-  }
-
-  // An online order's next prep step (Plan 5): a local write plus an outbox row, credited to the session's person;
-  // Kennko hears about it on the next sync. No Back and no Void here: the customer was told, and admin cancels.
-  const onlineAction = /^\/api\/online\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/(advance|stamp)$/i.exec(route)
-  // "Stamp at pickup" for an online order the pull marked to stamp (Plan 7), through the outbox like a step.
-  if (onlineAction?.[2] === 'stamp') return done(store.stampOnline(onlineAction[1]!, now, by))
-  if (onlineAction) {
-    // The step the barista saw: a second tap on the same ticket (or a second tablet) is refused, not a second step.
-    if (typeof body.from !== 'string') throw new OrderError('Reload the till, then try again.')
-    return done(store.advanceOnline(onlineAction[1]!, now, by, body.from as PrepStatus))
-  }
-
-  if (route === '/api/menu/availability') {
-    if (typeof body.itemId !== 'string' || !onMenu(body.itemId)) throw new OrderError('That drink is not on the menu.')
-    // Per-person mode asks for the person's own PIN (any role) and credits them; otherwise the session (Ruling 14/15).
-    const credited = pins.mode() === 'per-person' ? (await personalPin(req, body.pin)).staffId : by
-    // Sent to Kennko only while connected and not disconnected in admin (Ruling 14).
-    store.setAvailable(body.itemId, Boolean(body.available), now, credited, { outbox: loadDevice(files)?.revokedAt === null })
-    return done(menu())
-  }
-  if (route === '/api/menu/sync') {
-    if (canSync()) {
-      // "Check now" (Ruling 11): one sync, no PIN, waited on for at most 10 s (P4-7). A pulled menu has already been
-      // applied by onChange. No kick afterwards: the run just happened.
-      const finished = await bounded(sync.runOnce(), CHECK_WAIT_MS)
-      if (!finished) { broadcast(); return json(res, 200, { ...menu(), notice: 'Still checking — the menu updates by itself.' }) }
-      const problem = sync.status().problem
-      if (problem) throw new OrderError(problem)
-      broadcast()
-      return json(res, 200, menu())
-    }
-    // Not connected: the manager-PIN pull of the published menu, saved as the snapshot.
-    await checkPin(req, body.managerPin, 'manager')
-    let pulled
-    try { pulled = await fetchApiMenu(config.api.url, now) } catch (err: any) { throw new OrderError(err.message) }
-    // Sold-out goes into the till's own list, never baked into the saved snapshot (staff can put an item back).
-    const { snapshot: clean, soldOut } = splitSoldOut(pulled)
-    saveSnapshot(files, clean)
-    for (const id of soldOut) store.setAvailable(id, false, now, null, { outbox: false })
-    loadedSnapshot = clean
-    return done(menu())
-  }
-
-  if (route === '/api/device/pair') {
-    await checkPin(req, body.managerPin, 'manager')
-    if (typeof body.code !== 'string' || !/^\d{6}$/.test(body.code)) throw new OrderError('The code is 6 digits.')
-    let device
-    try { device = await pairWithApi(config.api.url, body.code, now) } catch (err: any) { throw new OrderError(err.message) }
-    saveDevice(files, device)
-    // The first sync (staff, menu, history) gets 5 s; a longer one carries on and lands through onChange (P4-7).
-    await bounded(sync.runOnce(), PAIR_WAIT_MS)
-    broadcast()
-    return json(res, 200, { name: device.name })
-  }
-  if (route === '/api/device/forget') {
-    await checkPin(req, body.managerPin, 'manager')
-    // The staff cache stays, so the same PINs keep working; customer details and the wall check-in go (device.ts).
-    forgetConnection(store, files)
-    broadcast() // the tablets' sync status now says not connected
-    return json(res, 200, { ok: true })
-  }
-
-  if (route === '/api/till/open') return done(store.startShift(body.floatCentavos, now, by))
-  if (route === '/api/till/cash') {
-    // Cash in is credited to the session; cash out to the manager who approved it (Ruling 15).
-    const credited = body.kind === 'out' ? (await checkPin(req, body.managerPin, 'manager')).staffId : by
-    return done(store.cashMove(body.kind, body.amountCentavos, body.reason, now, credited))
-  }
-  if (route === '/api/till/close') {
-    const manager = await checkPin(req, body.managerPin, 'manager')
-    const closed = store.endShift(body.countedCentavos, body.note, now, manager.staffId)
-    backup()
-    return done(closed)
-  }
-  return json(res, 404, { error: 'Not found.' })
+  return json(res, reply.status, reply.body)
 }
 
 // ---------- pages ----------
-// In development Vite serves the screens with live reload; in the shop the built files are served as they are.
 const vite = DEV
   ? await (await import('vite')).createServer({ root: ROOT, server: { middlewareMode: true, hmr: { port: port + 1 } }, appType: 'spa' })
   : null
@@ -468,8 +206,6 @@ if (!DEV && !fs.existsSync(path.join(DIST, 'index.html'))) {
 }
 
 // ---------- the secure address ----------
-// Installing the till as an app only works over https, so the till makes its own certificate (see secure.ts).
-// Not in development: Vite's live reload talks over plain ws, which a secure page refuses.
 const LAN = () => Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i!.address)
 let certificate: Certificate | null = null
 let secureProblem = ''
@@ -482,7 +218,6 @@ else {
 }
 let secureUp = false
 
-/** The https address for whoever is asking, using the same name they reached the till by. */
 function secureUrlFor(req: http.IncomingMessage): string | null {
   if (!certificate || !secureUp) return null
   let host = ''
@@ -506,7 +241,6 @@ const handle = async (req: http.IncomingMessage, res: http.ServerResponse) => {
     try {
       await api(req, res, url)
     } catch (err: any) {
-      if (err instanceof PinError) return json(res, err.code, { error: err.message })
       if (err instanceof OrderError) return json(res, 400, { error: err.message })
       console.error(err)
       if (!res.headersSent) json(res, 500, { error: 'Something went wrong on the till computer.' })
@@ -541,9 +275,9 @@ server.on('error', (err: any) => {
 })
 
 server.listen(port, '0.0.0.0', () => {
-  sync.start()
+  till.start()
   const lan = LAN().map((address) => `http://${address}:${port}/`)
-  const shift = store.openShift()
+  const shift = till.store.openShift()
   console.log(`\n  KENNKO POS${DEV ? '  (development)' : ''}`)
   console.log(`  This computer:   http://localhost:${port}/`)
   console.log(lan.length ? `  Tablets (wifi):  ${lan.join('   ')}` : '  Tablets: no network found.')
@@ -552,19 +286,19 @@ server.listen(port, '0.0.0.0', () => {
     console.log(`  Install as app:  open ${lan[0] ?? `http://localhost:${port}/`}setup on each tablet, once`)
     console.log(`  Secure address:  ${[...(named ? [named] : []), ...LAN()].map((n) => `https://${n}:${config.securePort}/`).join('   ') || `https://localhost:${config.securePort}/`}`)
   } else if (!DEV) console.log(`  Install as app:  not available. ${secureProblem}`)
-  const startMenu = menu()
-  console.log(`  Menu:            ${loadedSnapshot ? `from the website, version ${loadedSnapshot.version}` : startMenu.source === 'website' ? 'from the website (saved before sync)' : 'built-in'}, ${startMenu.categories.reduce((n, c) => n + c.items.length, 0)} drinks`)
-  console.log(`  Till:            ${shift ? `open, expecting ${formatPesos(store.shiftSummary(shift).expectedCashCentavos)} in the drawer` : 'closed'}`)
-  console.log(`  Backup:          ${lastBackup}`)
+  const snap = till.loadedSnapshot()
+  console.log(`  Menu:            ${snap ? `from the website, version ${snap.version}` : baseMenu.source === 'website' ? 'from the website (saved before sync)' : 'built-in'}, ${baseMenu.categories.reduce((n, c) => n + c.items.length, 0)} drinks`)
+  console.log(`  Till:            ${shift ? `open, expecting ${formatPesos(till.store.shiftSummary(shift).expectedCashCentavos)} in the drawer` : 'closed'}`)
+  console.log(`  Backup:          ${till.lastBackup()}`)
   const device = loadDevice(files)
   console.log(`  Kennko account:  ${device ? (device.revokedAt !== null ? `disconnected in admin (was "${device.name}")` : `connected as "${device.name}"`) : 'not connected (Menu › This till)'}`)
-  const s = sync.status()
+  const s = till.status()
   const waiting = s.pendingEvents ? `, ${s.pendingEvents} change${s.pendingEvents === 1 ? '' : 's'} waiting to send` : ''
   const importing = s.importing ? `, ${s.importing} old record${s.importing === 1 ? '' : 's'} to copy to Kennko` : ''
-  const online = store.activeOnlineOrders().length
+  const online = till.store.activeOnlineOrders().length
   const queued = online ? `, ${online} online order${online === 1 ? '' : 's'} in the queue` : ''
   console.log(`  Sync:            ${!s.paired ? 'pending (not connected yet)' : s.revoked ? 'stopped (disconnected in admin)' : config.api.url ? 'paired, every 15 s' : 'paired, but the website address is not set'}${waiting}${importing}${queued}`)
-  console.log(`  PINs:            ${({ off: 'off', shared: 'shared, from config.json', 'per-person': "each person's own" } as const)[pins.mode()]}`)
-  if (pins.mode() !== 'per-person' && (config.staffPin === '1234' || config.managerPin === '0000')) console.log('  PINs are still the defaults (staff 1234, manager 0000). Change them in config.json before real use.')
+  console.log(`  PINs:            ${({ off: 'off', shared: 'shared, from config.json', 'per-person': "each person's own" } as const)[till.pinMode()]}`)
+  if (till.pinMode() !== 'per-person' && (config.staffPin === '1234' || config.managerPin === '0000')) console.log('  PINs are still the defaults (staff 1234, manager 0000). Change them in config.json before real use.')
   console.log('  Press Ctrl+C to stop.\n')
 })

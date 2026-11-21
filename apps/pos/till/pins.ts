@@ -24,7 +24,7 @@ function same(given: string, expected: string): boolean {
  * Answers "whose PIN is this?" for the till. Async so per-person mode can check scrypt hashes; nothing here waits
  * on the network. The strike lockout lives in index.ts and wraps both checks.
  */
-export function createPinDirectory(opts: { staffPin: string; managerPin: string; staff: () => CachedStaff[] }) {
+export function createPinDirectory(opts: { staffPin: string; managerPin: string; staff: () => CachedStaff[]; perPersonOnly?: boolean }) {
   const sharedWho = (role: Who['role']): Who => ({ staffId: null, name: null, role })
   const leads = (s: CachedStaff) => s.role === 'owner' || s.role === 'manager'
   const personWho = (s: CachedStaff): Who => ({ staffId: s.id, name: s.fullName, role: s.role === 'barista' ? 'staff' : 'manager' })
@@ -36,7 +36,7 @@ export function createPinDirectory(opts: { staffPin: string; managerPin: string;
     return null
   }
 
-  const mode = (staff: CachedStaff[]): PinMode => (staff.some(leads) ? 'per-person' : opts.staffPin ? 'shared' : 'off')
+  const mode = (staff: CachedStaff[]): PinMode => (opts.perPersonOnly || staff.some(leads) ? 'per-person' : opts.staffPin ? 'shared' : 'off')
 
   return {
     mode: (): PinMode => mode(opts.staff()),

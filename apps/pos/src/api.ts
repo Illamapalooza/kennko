@@ -12,6 +12,9 @@ export type Bootstrap = {
   device: { name: string; revoked: boolean } | null
   /** Paired, not revoked and the website address set: "Check now" runs one sync with no PIN. */
   syncConfigured: boolean
+  host: 'node' | 'android'
+  firstRun: 'pins' | 'connect'
+  noLeads: boolean
 }
 
 /** The till's connection to the website, as the server's sync.ts reports it (copied here: the screens import no server code). */
