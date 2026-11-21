@@ -9,10 +9,10 @@ import { catLabel } from '@/app/account/cat'
 import { CatCanvas } from '@/components/account/CatCanvas'
 
 /** The cat and one button. The visit starts only when the customer taps it, never on page load. */
-export function HereCheckin({ code, name, look }: { code: string; name: string; look: CatLook }) {
+export function HereCheckin({ code, name, look, hidden = false }: { code: string; name: string; look: CatLook; hidden?: boolean }) {
   const [result, setResult] = useState<CheckinResult | null>(null)
   const [pending, start] = useTransition()
-  const message = result ? checkinMessage(result, name, code) : null
+  const message = result ? checkinMessage(result, name, code, hidden) : null
   const done = result?.status === 'ok'
 
   return (

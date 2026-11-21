@@ -4,9 +4,13 @@ import type { NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
   // The admin layout cannot read the current path, so hand it over explicitly.
-  const requestHeaders = new Headers(request.headers)
-  requestHeaders.set('x-pathname', request.nextUrl.pathname)
-  const response = NextResponse.next({ request: { headers: requestHeaders } })
+  // Built from the request's headers at call time, so cookies set on the request below are forwarded.
+  const forward = () => {
+    const requestHeaders = new Headers(request.headers)
+    requestHeaders.set('x-pathname', request.nextUrl.pathname)
+    return NextResponse.next({ request: { headers: requestHeaders } })
+  }
+  let response = forward()
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -16,9 +20,11 @@ export async function proxy(request: NextRequest) {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (items) => {
-        items.forEach(({ name, value, options }) =>
-          response.cookies.set(name, value, options),
-        )
+        // Supabase's pattern: the refreshed token goes on the request too, so the page rendered
+        // from this request sees it, and on the response, so the browser keeps it.
+        items.forEach(({ name, value }) => request.cookies.set(name, value))
+        response = forward()
+        items.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
       },
     },
   })
@@ -32,5 +38,5 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // Scoped deliberately: the marketing page and the catalog must stay
   // statically cacheable, so they are not listed here.
-  matcher: ['/admin/:path*', '/orders/:path*', '/account/:path*', '/auth/:path*'],
+  matcher: ['/admin/:path*', '/orders/:path*', '/account/:path*', '/auth/:path*', '/here/:path*'],
 }

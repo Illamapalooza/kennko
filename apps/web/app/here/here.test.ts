@@ -39,6 +39,12 @@ describe('checkinMessage', () => {
     expect(m.title).toBe('Checked in. Your cat is set to stay home.')
     expect(m.link).toEqual({ href: '/account', label: 'Turn on "Show me on the wall"' })
   })
+  it('hidden by Kennko: no link to turn the wall on', () => {
+    const m = checkinMessage({ status: 'ok', onWall: false, endsAt: at }, 'Mochi', undefined, true)
+    expect(m.tone).toBe('good')
+    expect(m.title).toBe('Checked in. Kennko has paused your cat on the wall for now.')
+    expect(m.link).toBeUndefined()
+  })
   it('a changed code', () => {
     expect(checkinMessage({ status: 'error', reason: 'BAD_WALL_CODE' }, 'Mochi').title).toBe('That code has changed. Scan the wall again.')
   })

@@ -85,7 +85,7 @@ either, since both roles share the `authenticated` database role. Never rely on
 a hidden button as a permission check.
 
 **`proxy.ts`, not `middleware.ts`.** `middleware.ts` is deprecated in Next 16.
-The proxy only refreshes the Supabase session cookie, scoped to `/admin/:path*`
+The proxy only refreshes the Supabase session cookie, scoped to the routes that read the session (`/admin`, `/orders`, `/account`, `/auth`, `/here`)
 so the public page stays statically cached; the auth guard lives in
 `app/admin/layout.tsx`.
 

@@ -81,7 +81,7 @@ export default async function HerePage({ searchParams }: { searchParams: Promise
         {cat.hiddenByAdmin ? (
           <p className="account-note" role="status">Kennko has paused your cat on the wall for now.</p>
         ) : null}
-        <HereCheckin code={code} name={cat.name} look={cat.look} />
+        <HereCheckin code={code} name={cat.name} look={cat.look} hidden={cat.hiddenByAdmin} />
       </div>
     </Shell>
   )
