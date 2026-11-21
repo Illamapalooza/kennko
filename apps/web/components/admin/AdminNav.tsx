@@ -14,6 +14,7 @@ const LINKS: NavLink[] = [
   { href: '/admin/customers', label: 'Customers', minRole: 'manager' },
   { href: '/admin/reports', label: 'Reports', minRole: 'manager' },
   { href: '/admin/menu', label: 'Menu' },
+  { href: '/admin/cosmetics', label: 'Cosmetics', minRole: 'owner' },
   { href: '/admin/staff', label: 'Staff', minRole: 'owner' },
   { href: '/admin/devices', label: 'Tills', minRole: 'owner' },
   { href: '/admin/attention', label: 'Needs a look', minRole: 'owner' },

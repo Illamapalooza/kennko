@@ -65,6 +65,8 @@ public signup).
 | Day report (Reports screen, `/v1/reports/day/:date`) | no | yes | yes |
 | Look up customers, switch a card between digital and paper, apply or discard "stamps to check" (Customers screen) | no | yes | yes |
 | Adjust a customer's points | no | no | yes |
+| Hide a cat from the wall, or show it again (Customers screen, `/v1/customers/:id/cat/hidden`) | no | yes | yes |
+| Cosmetics catalogue: rename, reprice in points, switch off, reorder; starters stay free and on (Cosmetics screen, `/v1/cosmetics`) | no | no | yes |
 | Needs a look: set aside held till receipts, mark flagged ones seen, close a stuck shift, retry a till | no | no | yes |
 
 A manager has barista-level access on the website; owner-only stays owner-only. Staff are
@@ -194,6 +196,13 @@ only so a returning customer can see their history at `/orders`.
 **Google OAuth must be enabled in the Supabase dashboard** with a Google Cloud
 client ID and secret, and the callback `/auth/callback` allow-listed. Without
 it, sign-in fails and the page tells the customer to order as a guest.
+
+### Wall check-in (`/here`)
+
+The wall's QR opens `/here?c=<code>`. The page load never checks in (a link preview could trigger it): the customer
+taps "Walk my cat in", which calls the `checkIn` server action (`POST /v1/checkin`). Signed out → sign in with
+`/account?next=/here?c=<code>` (encoded; `safeNextPath` guards it). The code expires in about two minutes; it is
+validated (`parseWallCode`) and never logged. The page sets `referrer: no-referrer` and `noindex`.
 
 ### Email
 

@@ -37,6 +37,15 @@ export async function setStampMode(customerId: string, mode: 'digital' | 'paper'
   return { ok: true }
 }
 
+/** Manager or owner: take a customer's cat off the wall (it stays theirs), or put it back. */
+export async function setCatHidden(customerId: string, hidden: boolean): Promise<Result> {
+  await requireManager()
+  const out = await send(`/v1/customers/${id(customerId)}/cat/hidden`, { hidden }, 'Only a manager or the owner can do that.')
+  if (!out.ok) return out
+  refresh(customerId)
+  return { ok: true }
+}
+
 /** Owner only: add or take off points, with the reason kept on the ledger. */
 export async function adjustPoints(customerId: string, deltaText: string, note: string): Promise<PointsResult> {
   await requireOwner()

@@ -122,3 +122,23 @@ describe('applyStamp and discardStamp', () => {
     expect(sent()).toMatchObject({ path: '/v1/stamps/S1/discard', method: 'POST' })
   })
 })
+
+import { setCatHidden } from './actions'
+
+describe('setCatHidden', () => {
+  it('posts the flag as a manager and refreshes the customer', async () => {
+    staffFetch.mockResolvedValue(json(200, {}))
+    const r = await setCatHidden('0b7c1f0e-1111-4222-8333-444455556666', true)
+    expect(r).toEqual({ ok: true })
+    expect(requireManager).toHaveBeenCalled()
+    expect(sent().path).toBe('/v1/customers/0b7c1f0e-1111-4222-8333-444455556666/cat/hidden')
+    expect(sent().method).toBe('POST')
+    expect(sent().body).toEqual({ hidden: true })
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/customers/0b7c1f0e-1111-4222-8333-444455556666')
+  })
+  it('shows the forbidden wording for a barista-level answer', async () => {
+    staffFetch.mockResolvedValue(json(403, {}))
+    const r = await setCatHidden('0b7c1f0e-1111-4222-8333-444455556666', false)
+    expect(r).toEqual({ ok: false, message: 'Only a manager or the owner can do that.' })
+  })
+})

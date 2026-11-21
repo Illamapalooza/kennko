@@ -422,3 +422,19 @@
 
 /* Customers. Amber only marks "Free drink waiting" and the paper pill (.report-pill). */
 .points-negative { color: #b3261e; font-weight: 700; }
+
+/* Cat preview (customer page, cosmetics catalogue): crisp pixels. */
+.cosmetic-preview { display: grid; place-items: center; min-width: 64px; }
+.cosmetic-preview canvas { image-rendering: pixelated; max-width: 100%; height: auto; }
+.cosmetic-row { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; }
+.cosmetic-fields { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cosmetic-fields .admin-field { margin-bottom: 0; }
+.cosmetic-name { grid-column: 1 / -1; }
+.cosmetic-check { display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 700; }
+.cosmetic-check input { width: 24px; height: 24px; }
+.cosmetic-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+@media (min-width: 920px) {
+  .cosmetic-fields { grid-template-columns: 2fr 1fr 1fr auto; align-items: end; }
+  .cosmetic-name { grid-column: auto; }
+  .cosmetic-actions { grid-column: auto; }
+}

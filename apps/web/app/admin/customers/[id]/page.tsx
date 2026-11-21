@@ -7,6 +7,9 @@ import { isNoSuchOrder } from '@/lib/api/not-found'
 import { CardModeSwitch } from '@/components/admin/CardModeSwitch'
 import { PaperStampRow } from '@/components/admin/PaperStampRow'
 import { PointsForm } from '@/components/admin/PointsForm'
+import { HideCatButton } from '@/components/admin/HideCatButton'
+import { CatCanvas } from '@/components/account/CatCanvas'
+import { catLabel } from '@/app/account/cat'
 import { manilaStamp } from '../../reports/dates'
 import { LEDGER_REASON, cardState, signed } from '../format'
 
@@ -84,6 +87,32 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
             {customer.paperStamps.map((s) => (
               <PaperStampRow key={s.id} stamp={s} showCustomer={false} />
             ))}
+          </div>
+        </section>
+      ) : null}
+
+      {customer.cat ? (
+        <section aria-labelledby="cat">
+          <h2 id="cat">Cat</h2>
+          <div className="section-card attention-row">
+            <div className="cosmetic-preview">
+              <CatCanvas look={customer.cat.look} label={catLabel(customer.cat.name, customer.cat.look, {})} scale={6} />
+            </div>
+            <p>
+              <strong>{customer.cat.name}</strong>
+              {' · '}
+              {customer.cat.hiddenByAdmin ? (
+                <span className="report-pill">Hidden from the wall</span>
+              ) : customer.cat.showOnWall ? (
+                'Shows on the wall'
+              ) : (
+                'Set to stay home'
+              )}
+            </p>
+            {customer.cat.hiddenByAdmin ? (
+              <p className="report-note">The customer sees: Kennko has paused your cat on the wall for now.</p>
+            ) : null}
+            <HideCatButton customerId={customer.id} hidden={customer.cat.hiddenByAdmin} />
           </div>
         </section>
       ) : null}
