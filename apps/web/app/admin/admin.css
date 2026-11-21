@@ -438,3 +438,77 @@
   .cosmetic-name { grid-column: auto; }
   .cosmetic-actions { grid-column: auto; }
 }
+
+/* Guide (/admin/guide): the staff manual. Plain text, printable. */
+.guide { max-width: 760px; }
+.guide-intro, .guide-summary { margin: 0 0 16px; color: var(--ink-soft); }
+.guide-search { max-width: 520px; }
+.guide-search input { min-height: 44px; }
+.guide-count { margin: 0 0 12px; font-size: 0.85rem; color: var(--ink-soft); }
+.guide-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.guide-card {
+  display: grid;
+  gap: 6px;
+  min-height: 44px;
+  padding: 14px 16px;
+  background: var(--white);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: 0 1px 3px rgba(0, 85, 255, 0.12);
+}
+.guide-card:hover { box-shadow: 0 2px 10px rgba(0, 85, 255, 0.2); }
+.guide-card:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+.guide-card-title { color: var(--blue); font-size: 1.05rem; }
+.guide-card-summary { font-size: 0.95rem; }
+.guide-badges { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.guide-card .guide-badges { margin: 2px 0 0; }
+.guide-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.guide-topic > .guide-badges .guide-badge { background: var(--white); }
+.guide-badge-owner, .guide-topic > .guide-badges .guide-badge-owner { background: var(--amber-soft); color: var(--ink); border: 1px solid var(--amber); }
+.guide-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+.guide-toolbar .btn, .guide-pager .btn { min-height: 44px; display: inline-flex; align-items: center; }
+.guide-print-brand { display: none; }
+.guide-section {
+  background: var(--white);
+  border-radius: var(--radius-md);
+  padding: 4px 16px 16px;
+  margin-bottom: 16px;
+}
+.admin-main .guide-section h2 { margin: 16px 0 10px; font-size: 1.15rem; color: var(--blue); }
+.guide-steps { margin: 0 0 12px; padding-left: 1.6em; display: grid; gap: 8px; }
+.guide-steps li { padding-left: 4px; line-height: 1.45; }
+.guide-box { border-radius: var(--radius-md); padding: 10px 14px; margin-top: 12px; }
+.guide-box h3 { margin: 0 0 6px; font-size: 0.95rem; }
+.guide-box ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.guide-tips { background: var(--blue-wash); border-left: 4px solid var(--blue); }
+.guide-problems { background: var(--amber-soft); border-left: 4px solid var(--amber); }
+.guide-problems dl { margin: 0; display: grid; gap: 8px; }
+.guide-problems dt { font-weight: 700; }
+.guide-problems dd { margin: 2px 0 0; }
+.guide-pager { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 8px; }
+@media (min-width: 641px) {
+  .guide-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .guide-section { padding: 4px 24px 20px; }
+}
+
+/* Print: only the content, black on white. Hides the admin chrome on any admin page. */
+@media print {
+  .admin-side, .admin-nav, .publish-bar, .guide-noprint { display: none !important; }
+  .admin-shell { display: block; background: #fff; color: #000; }
+  .admin-column { padding: 0; min-height: 0; }
+  .admin-main { padding: 0; }
+  .guide { max-width: none; color: #000; }
+  .guide-print-brand { display: block; margin: 0 0 4px; font-size: 0.8rem; }
+  .admin-main h1, .admin-main .guide-section h2, .guide-summary { color: #000; }
+  .guide-section { padding: 0; margin: 0 0 14px; break-inside: avoid; }
+  .guide-badge, .guide-badge-owner, .guide-topic > .guide-badges .guide-badge { background: #fff; color: #000; border: 1px solid #000; }
+  .guide-box { background: #fff; border: 1px solid #000; border-left-width: 4px; }
+}

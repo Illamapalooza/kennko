@@ -91,4 +91,16 @@ describe('AdminNav', () => {
     render(<AdminNav ordersToCheck={0} role="owner" attentionCount={0} />)
     expect(screen.getByRole('link', { name: 'Needs a look' }).textContent).toBe('Needs a look')
   })
+
+  it.each(['barista', 'manager', 'owner'] as const)('shows Guide to a %s', (role) => {
+    path = '/admin'
+    render(<AdminNav ordersToCheck={0} role={role} />)
+    expect(screen.getByRole('link', { name: 'Guide' }).getAttribute('href')).toBe('/admin/guide')
+  })
+
+  it('marks Guide active on a topic page', () => {
+    path = '/admin/guide/troubleshooting'
+    render(<AdminNav ordersToCheck={0} role="barista" />)
+    expect(screen.getByRole('link', { name: 'Guide' }).getAttribute('aria-current')).toBe('page')
+  })
 })

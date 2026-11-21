@@ -18,6 +18,7 @@ const LINKS: NavLink[] = [
   { href: '/admin/staff', label: 'Staff', minRole: 'owner' },
   { href: '/admin/devices', label: 'Tills', minRole: 'owner' },
   { href: '/admin/attention', label: 'Needs a look', minRole: 'owner' },
+  { href: '/admin/guide', label: 'Guide' },
 ]
 
 const RANK: Record<StaffRole, number> = { barista: 0, manager: 1, owner: 2 }
