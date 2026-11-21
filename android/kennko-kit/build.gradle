@@ -1,0 +1,34 @@
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+android {
+    namespace = 'coffee.kennko.kit'
+    compileSdk = rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        minSdk = rootProject.ext.minSdkVersion
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    kotlinOptions {
+        jvmTarget = '21'
+    }
+}
+
+configurations.matching { it.name.endsWith('UnitTestRuntimeClasspath') }.configureEach {
+    exclude group: 'androidx.sqlite', module: 'sqlite-android'
+    exclude group: 'androidx.sqlite', module: 'sqlite-bundled-android'
+}
+
+dependencies {
+    implementation 'androidx.sqlite:sqlite-bundled:2.5.1'
+    implementation project(':capacitor-android')
+    testImplementation 'androidx.sqlite:sqlite-bundled-jvm:2.5.1'
+    testImplementation 'androidx.sqlite:sqlite-jvm:2.5.1'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}

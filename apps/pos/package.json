@@ -11,6 +11,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3",
     "@fontsource-variable/nunito": "^5.2.7",
     "@kennko/cats": "*",
     "@kennko/core": "*",
@@ -22,6 +27,7 @@
     "tsx": "^4.23.12"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.2",
     "@types/node": "^24",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",

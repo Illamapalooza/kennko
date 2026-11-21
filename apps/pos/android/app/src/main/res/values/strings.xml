@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Kennko POS</string>
+    <string name="title_activity_main">Kennko POS</string>
+    <string name="package_name">coffee.kennko.pos</string>
+    <string name="custom_url_scheme">coffee.kennko.pos</string>
+</resources>
