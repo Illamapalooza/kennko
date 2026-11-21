@@ -795,6 +795,98 @@ describe('every route as kennko_api', () => {
     expect(state.mode[0]!.stamp_mode_set_by).not.toBeNull()
   })
 
+  it('stranded claims are swept by lookup, pull, claim, /v1/me, attention and admin reads; a late sale re-claims; a free line earns no stamp, as kennko_api', async () => {
+    const member = '00000000-0000-4000-8000-0000000000b5'
+    const bare = makePublicCode(randomInt)
+    const code = formatPublicCode(bare)
+    const longAgo = new Date(NOW.getTime() - 40 * 60_000)
+    await asSuper(async () => {
+      await db.sql`insert into auth.users (id, email) values (${member}, 'strand@x.test')`
+      await db.sql`insert into customers (id, public_code, display_name, stamp_mode, age_confirmed_at, privacy_accepted_at,
+          privacy_version, created_at)
+        values (${member}, ${bare}, 'Stranded', 'digital', ${NOW}, ${NOW}, '2026-11', ${NOW})`
+    })
+    let strandTicket = 1000
+    /** A full card of 8 stamps for `who`, claimed 40 minutes ago with no sale. */
+    const strand = (who: string) =>
+      asSuper(async () => {
+        const claimId = randomUUID()
+        const [card] = await db.sql`insert into stamp_cards (customer_id, started_at, filled_at, claimed_at, claim_id)
+          values (${who}, ${longAgo}, ${longAgo}, ${longAgo}, ${claimId}) returning id`
+        for (let i = 0; i < 8; i++) {
+          strandTicket += 1
+          const [o] = await db.sql`
+            insert into orders (channel, fulfilment, prep_status, payment_status, business_day, ticket_series, ticket_number,
+              customer_name, subtotal_centavos, total_centavos, device_id, customer_id)
+            values ('counter', 'dine_in', 'completed', 'paid', '2026-11-20', 'C', ${strandTicket}, 'Walk-in', 12000, 12000,
+              ${deviceId}, ${who})
+            returning id`
+          await db.sql`insert into stamps (id, customer_id, card_id, order_id, stamped_at, received_at)
+            values (${randomUUID()}, ${who}, ${card!.id}, ${o!.id}, ${longAgo}, ${longAgo})`
+        }
+        return claimId
+      })
+    const stillClaimed = async (claimId: string) =>
+      (await asSuper(() => db.sql`select count(*)::int as n from stamp_cards where claim_id = ${claimId}`))[0]!.n as number
+
+    // Lookup sweeps.
+    const first = await strand(member)
+    expect(await ok('GET', `/v1/customers/by-code/${code}`, deviceToken)).toMatchObject({ fullCards: 1 })
+    expect(await stillClaimed(first)).toBe(0)
+
+    // A late sale for the swept claim re-claims the full card; its free line earns no stamp.
+    const [open] = await asSuper(() => db.sql<{ id: string }[]>`select id from shifts where device_id = ${deviceId} and closed_at is null`)
+    const free = {
+      menuItemId: latteId,
+      name: 'Latte',
+      size: 'M' as const,
+      basePriceCentavos: 0,
+      modifiers: [],
+      quantity: 1,
+      iceLevel: 'regular' as const,
+      iceServe: 'mixed' as const,
+      note: '',
+      lineTotalCentavos: 0,
+      reward: true as const,
+    }
+    const sale = orderCreated(
+      { shiftId: open!.id, ticketNumber: 80, menuVersion: version, lines: [free], subtotalCentavos: 0, totalCentavos: 0,
+        payment: { id: randomUUID(), method: 'cash', tenderedCentavos: 0, changeCentavos: 0, reference: null } },
+      { staffId: BARISTA },
+    )
+    const res = await push([
+      sale,
+      customerLinked({ orderId: sale.payload.orderId, publicCode: code }, { staffId: BARISTA }),
+      rewardUsed({ claimId: first, orderId: sale.payload.orderId }, { staffId: BARISTA }),
+      stampAdded({ orderId: sale.payload.orderId }, { staffId: BARISTA }),
+    ])
+    expect(res.results.map((r) => r.reason).slice(1)).toEqual([null, 'reclaimed', 'no_drink'])
+    expect(await stillClaimed(first)).toBe(1)
+
+    // The pull (this customer was linked on this till just now) and a new claim sweep.
+    const second = await strand(member)
+    expect((await ok('GET', '/v1/sync/pull', deviceToken)).customers).toContainEqual(expect.objectContaining({ code, fullCards: 1 }))
+    expect(await stillClaimed(second)).toBe(0)
+    const third = await strand(member)
+    await ok('POST', '/v1/stamp-cards/claim', deviceToken, { claimId: randomUUID(), code, staffId: BARISTA })
+    expect(await stillClaimed(third)).toBe(0)
+
+    // Admin search, admin detail and Needs a look sweep; so does the customer's own /v1/me.
+    const managerJwt = await signFor(MANAGER_LOGIN)
+    const viaSearch = await strand(member)
+    await ok('GET', '/v1/customers?q=stranded', managerJwt)
+    expect(await stillClaimed(viaSearch)).toBe(0)
+    const viaDetail = await strand(member)
+    await ok('GET', `/v1/customers/${member}`, managerJwt)
+    expect(await stillClaimed(viaDetail)).toBe(0)
+    const viaAttention = await strand(member)
+    await ok('GET', '/v1/attention', ownerJwt)
+    expect(await stillClaimed(viaAttention)).toBe(0)
+    const viaMe = await strand(CUSTOMER)
+    await ok('GET', '/v1/me', customerJwt)
+    expect(await stillClaimed(viaMe)).toBe(0)
+  })
+
   it('publishMenu from the deploy helper also works as kennko_api', async () => {
     await asSuper(() => db.sql`update menu_variants set price_centavos = 13000 where item_id = ${latteId}`)
     const r = await publishMenu(db.sql, OWNER)

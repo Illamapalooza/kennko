@@ -1,5 +1,6 @@
 import { LINKED_RECENT_MS, normalisePublicCode, type PullState, type TillCustomer } from '@kennko/core'
 import type postgres from 'postgres'
+import { sweepStrandedClaimsFor } from '../loyalty/cards.js'
 import { tillCustomer } from '../loyalty/customers.js'
 import { readMenuVersion } from '../menu/read.js'
 import { readPinRoster } from '../staff/pin-roster.js'
@@ -12,6 +13,7 @@ export const RECENT_CUSTOMERS_MAX = 50
  * The customers linked through this till in the last 30 minutes (`LINKED_RECENT_MS`), newest link first, each once,
  * as `TillCustomer` and nothing more. Found by the code in this device's applied `customer.linked` receipts; codes are
  * compared after `normalisePublicCode`, never as raw text. A customer deleted since the link is simply left out.
+ * Their stranded free-drink claims are swept first (Ruling P7-6), so a stuck claim shows as a full card again.
  */
 export async function readRecentCustomers(sql: postgres.Sql, deviceId: string, now: Date): Promise<TillCustomer[]> {
   const since = new Date(now.getTime() - LINKED_RECENT_MS)
@@ -26,6 +28,12 @@ export async function readRecentCustomers(sql: postgres.Sql, deviceId: string, n
     if (codes.length === RECENT_CUSTOMERS_MAX) break
   }
   if (codes.length === 0) return []
+  const ids = await sql<{ id: string }[]>`select id from customers where public_code in ${sql(codes)}`
+  await sweepStrandedClaimsFor(
+    sql,
+    now,
+    ids.map((r) => r.id),
+  )
   // One snapshot, so a customer found here is still there for tillCustomer.
   return (await sql.begin('isolation level repeatable read read only', async (tx) => {
     const rows = await tx<{ id: string; public_code: string }[]>`

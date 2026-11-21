@@ -502,6 +502,28 @@ describe('free drink', () => {
     expect(card).toMatchObject({ claimed_at: null, claimed_order_id: null })
   })
 
+  test('the free line earns no stamp: a sale whose only drink is free is no_drink; with a paid drink it is stamped (Ruling P7-5)', async () => {
+    const c = await customer('digital')
+    const free = () => latte({ basePriceCentavos: 0, lineTotalCentavos: 0, reward: true })
+    const onlyFree = sale([free(), ensaymada()])
+    const withPaid = sale([free(), latte()])
+    const events = [onlyFree, withPaid].flatMap((s) => [
+      s,
+      customerLinked({ orderId: s.payload.orderId, publicCode: c.code }),
+      stampAdded({ orderId: s.payload.orderId }),
+    ])
+    expect(answers(await api.push(token, events))).toEqual([
+      ['applied', null],
+      ['applied', null],
+      ['flagged', 'no_drink'],
+      ['applied', null],
+      ['applied', null],
+      ['applied', null],
+    ])
+    expect(await stampsOf(onlyFree.payload.orderId)).toHaveLength(0)
+    expect(await stampsOf(withPaid.payload.orderId)).toHaveLength(1)
+  })
+
   test('reward.used with an unknown claim is flagged unknown_claim', async () => {
     const s = sale([latte()])
     const res = await api.push(token, [s, rewardUsed({ claimId: randomUUID(), orderId: s.payload.orderId })])

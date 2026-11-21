@@ -13,7 +13,7 @@ import {
   setStampMode,
   type Failure,
 } from '../loyalty/admin.js'
-import { claimFreeDrink, unclaim } from '../loyalty/cards.js'
+import { claimFreeDrink, sweepStrandedClaims, sweepStrandedClaimsFor, unclaim } from '../loyalty/cards.js'
 import { customerByCode, lockCustomer, tillCustomer } from '../loyalty/customers.js'
 import { hit } from '../rate-limit.js'
 
@@ -69,7 +69,9 @@ export function customerRoutes(deps: AppDeps): Hono<AppEnv> {
     if (bare === null) throw badCode()
     const found = await deps.sql.begin(async (tx) => {
       const customer = await customerByCode(tx, bare)
-      return customer ? await tillCustomer(tx, customer.id) : null
+      if (!customer) return null
+      await sweepStrandedClaims(tx, customer.id, deps.now())
+      return await tillCustomer(tx, customer.id)
     })
     if (!found) throw unknownCustomer()
     c.header('Cache-Control', 'no-store')
@@ -78,12 +80,15 @@ export function customerRoutes(deps: AppDeps): Hono<AppEnv> {
 
   // Admin (Ruling 17): lookup, detail and card mode for owners and managers; point adjustments for the owner.
   app.get('/', requireStaff(deps, 'manager'), async (c) => {
+    await sweepStrandedClaimsFor(deps.sql, deps.now())
     c.header('Cache-Control', 'no-store')
     return c.json(await searchCustomers(deps.sql, c.req.query('q') ?? ''))
   })
 
   app.get('/:id', requireStaff(deps, 'manager'), async (c) => {
-    const found = await customerDetail(deps.sql, uuidParam(c, 'id'))
+    const id = uuidParam(c, 'id')
+    await sweepStrandedClaimsFor(deps.sql, deps.now(), [id])
+    const found = await customerDetail(deps.sql, id)
     if (!found) throw apiError(404, 'NOT_FOUND', 'Not found')
     c.header('Cache-Control', 'no-store')
     return c.json(found)
@@ -152,6 +157,7 @@ export function stampCardRoutes(deps: AppDeps): Hono<AppEnv> {
       if (locked.stamp_mode === 'paper') {
         throw apiError(409, 'PAPER_CARD', 'This customer uses a paper card. Use the paper card for the free drink.')
       }
+      await sweepStrandedClaims(tx, locked.id, now)
       const [staff] = staffId ? await tx`select id from staff where id = ${staffId}` : []
       const out = await claimFreeDrink(tx, {
         customerId: locked.id,

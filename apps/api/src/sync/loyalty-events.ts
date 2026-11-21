@@ -16,7 +16,8 @@ type OrderRow = { channel: string; customer_id: string | null; prep_status: stri
 
 /**
  * The order row, locked. Every loyalty event takes the order's lock first and the customer's second (the global lock
- * order, which account deletion follows too), so a link, a stamp and a deletion can never deadlock.
+ * order, which account deletion follows too). That keeps deadlocks rare, not impossible: under contention Postgres may
+ * still abort one side (for example a multi-event push meeting an admin action). No data is lost; the till retries.
  */
 async function lockOrder(tx: Tx, orderId: string): Promise<OrderRow | undefined> {
   const [row] = await tx<OrderRow[]>`
@@ -77,13 +78,16 @@ export async function applyCustomerUnlinked(
   return applied()
 }
 
-/** The menu kind of each line: food, drink, or null for an item the server does not know (counted as a drink). */
+/**
+ * The menu kind of each paid line: food, drink, or null for an item the server does not know (counted as a drink).
+ * The free-drink line is left out: it earns no stamp (Ruling P7-5).
+ */
 async function lineKinds(tx: Tx, orderId: string): Promise<{ kind: 'drink' | 'food' | null }[]> {
   return tx<{ kind: 'drink' | 'food' | null }[]>`
     select c.kind from order_lines l
     left join menu_items i on i.id = l.item_id
     left join menu_categories c on c.id = i.category_id
-    where l.order_id = ${orderId}`
+    where l.order_id = ${orderId} and not l.is_reward`
 }
 
 /**
@@ -125,14 +129,44 @@ export async function applyStampAdded(
 }
 
 /**
+ * A claim the server no longer knows (most often one swept as stranded, Ruling P7-6, before its sale arrived): the
+ * sale claims the oldest full, unclaimed card of the customer the order is linked to (Ruling P7-8), so a late sale
+ * never leaves the customer with a free drink and a full card. Flagged `unknown_claim` only when there is none.
+ * The caller holds the order lock.
+ */
+async function reclaim(
+  tx: Tx,
+  order: OrderRow,
+  ids: { orderId: string; claimId: string; deviceId: string; staffId: string | null },
+  now: Date,
+): Promise<Applied> {
+  if (order.prep_status === 'cancelled') return applied('already_cancelled')
+  if (order.customer_id === null) return flagged('unknown_claim')
+  if (!(await lockCustomer(tx, order.customer_id))) return flagged('unknown_claim')
+  const [recorded] = await tx`select id from stamp_cards where claimed_order_id = ${ids.orderId}`
+  if (recorded) return applied('already_recorded')
+  const [card] = await tx`
+    update stamp_cards set claimed_at = ${now}, claim_id = ${ids.claimId}, claimed_order_id = ${ids.orderId},
+      claimed_by_staff = ${ids.staffId}, claimed_device_id = ${ids.deviceId}
+    where id = (
+      select id from stamp_cards
+      where customer_id = ${order.customer_id} and filled_at is not null and claimed_at is null
+      order by filled_at, started_at, id
+      limit 1
+    ) and claimed_at is null
+    returning id`
+  return card ? applied('reclaimed') : flagged('unknown_claim')
+}
+
+/**
  * The sale that used a free-drink claim made online at charge time (Ruling 10): the claimed card records the order.
- * A claim for an order that was voided first is released (Ruling 12).
+ * A claim for an order that was voided first is released (Ruling 12). An unknown claim re-claims (above).
  */
 export async function applyRewardUsed(
   tx: Tx,
-  _deviceId: string,
+  deviceId: string,
   event: EventOf<'reward.used'>,
-  _staffId: string | null,
+  staffId: string | null,
   now: Date,
 ): Promise<Applied> {
   const { orderId, claimId } = event.payload
@@ -141,12 +175,13 @@ export async function applyRewardUsed(
   const cardOf = () =>
     tx<{ id: string; customer_id: string; claimed_order_id: string | null }[]>`
       select id, customer_id, claimed_order_id from stamp_cards where claim_id = ${claimId}`
+  const ids = { orderId, claimId, deviceId, staffId }
   const [found] = await cardOf()
-  if (!found) return flagged('unknown_claim')
+  if (!found) return reclaim(tx, order, ids, now)
   await lockCustomer(tx, found.customer_id)
   // Read again under the customer lock: the claim may have been released in between.
   const [card] = await cardOf()
-  if (!card) return flagged('unknown_claim')
+  if (!card) return reclaim(tx, order, ids, now)
   if (card.claimed_order_id !== null && card.claimed_order_id !== orderId) return flagged('claim_reused')
   if (order.prep_status === 'cancelled') {
     await unclaim(tx, { claimId }, now)

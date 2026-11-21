@@ -415,3 +415,114 @@ describe('the pull', () => {
     expect(state.onlineOrders!.find((o) => o.id === guestOrder)!.card).toBeNull()
   })
 })
+
+describe('stranded claims (Ruling P7-6) and late sales (Ruling P7-8)', () => {
+  const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000)
+  /** Claims a free drink on this till as if `m` minutes ago. */
+  async function claimAgo(code: string, m: number, claimId = randomUUID()) {
+    api.setNow(minutesAgo(m))
+    try {
+      expect((await claim({ claimId, code, staffId: bea })).status).toBe(200)
+    } finally {
+      api.setNow(NOW)
+    }
+    return claimId
+  }
+  const claimRow = (claimId: string) =>
+    db.sql<{ id: string; claimed_order_id: string | null }[]>`
+      select id, claimed_order_id from stamp_cards where claim_id = ${claimId}`
+  /** A sale linked to `code`, with a free-drink line, and its reward.used for `claimId`. */
+  async function lateSale(code: string, claimId: string) {
+    const s = sale()
+    const orderId = s.payload.orderId
+    const res = await api.push(token, [
+      s,
+      customerLinked({ orderId, publicCode: code }, { staffId: bea }),
+      rewardUsed({ claimId, orderId }, { staffId: bea }),
+    ])
+    return { orderId, answers: res.results.map((r) => [r.result, r.reason]) }
+  }
+
+  test('a claim older than 30 minutes with no sale is swept by a lookup: the card is full again', async () => {
+    const c = await customer({ stamps: 8 })
+    const claimId = await claimAgo(c.code, 31)
+    const res = await lookup(c.code)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ stamps: 0, fullCards: 1 })
+    const cards = await cardsOf(c.id)
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toMatchObject({ claimed_at: null, claim_id: null, claimed_by_staff: null, claimed_device_id: null })
+    expect(cards[0]!.filled_at).not.toBeNull()
+    expect(await claimRow(claimId)).toEqual([])
+    // The stamps stay on the card.
+    const [n] = await db.sql`select count(*)::int as n from stamps where customer_id = ${c.id}`
+    expect(n!.n).toBe(8)
+  })
+
+  test('a claim younger than 30 minutes is never swept', async () => {
+    const c = await customer({ stamps: 8 })
+    const claimId = await claimAgo(c.code, 29)
+    expect(await lookup(c.code).then((r) => r.json())).toMatchObject({ fullCards: 0 })
+    expect((await pull()).state).toBeDefined()
+    expect(await claimRow(claimId)).toHaveLength(1)
+  })
+
+  test('a claim whose sale arrived is never swept, however old', async () => {
+    const c = await customer({ stamps: 8 })
+    const claimId = await claimAgo(c.code, 60)
+    const { orderId, answers } = await lateSale(c.code, claimId)
+    expect(answers).toEqual([
+      ['applied', null],
+      ['applied', null],
+      ['applied', null],
+    ])
+    await lookup(c.code)
+    expect((await claimRow(claimId))[0]!.claimed_order_id).toBe(orderId)
+  })
+
+  test('the pull and a new claim sweep too; the new claim takes the swept card', async () => {
+    const viaPull = await customer({ stamps: 8 })
+    await linkOnTill(viaPull.code)
+    const stuck = await claimAgo(viaPull.code, 31)
+    expect((await pull()).state.customers!.find((x) => x.code === viaPull.code)).toMatchObject({ fullCards: 1 })
+    expect(await claimRow(stuck)).toEqual([])
+
+    const viaClaim = await customer({ stamps: 8 })
+    await claimAgo(viaClaim.code, 45)
+    const fresh = randomUUID()
+    const res = await claim({ claimId: fresh, code: viaClaim.code, staffId: bea })
+    expect(res.status).toBe(200)
+    expect(await claimRow(fresh)).toHaveLength(1)
+  })
+
+  test('a late reward.used after a sweep re-claims the oldest full card for its sale (applied reclaimed)', async () => {
+    const c = await customer({ stamps: 16 })
+    const claimId = await claimAgo(c.code, 40)
+    expect(await lookup(c.code).then((r) => r.json())).toMatchObject({ fullCards: 2 })
+    const { orderId, answers } = await lateSale(c.code, claimId)
+    expect(answers).toEqual([
+      ['applied', null],
+      ['applied', null],
+      ['applied', 'reclaimed'],
+    ])
+    const [card] = await claimRow(claimId)
+    expect(card!.claimed_order_id).toBe(orderId)
+    expect(await lookup(c.code).then((r) => r.json())).toMatchObject({ fullCards: 1 })
+    // The receipt is kept; a retry of it is answered from the receipt.
+    const [receipt] = await db.sql`select result, reason from sync_events where kind = 'reward.used' and payload->>'claimId' = ${claimId}`
+    expect(receipt).toEqual({ result: 'applied', reason: 'reclaimed' })
+  })
+
+  test('a late reward.used after a sweep, with no full card left, is flagged unknown_claim', async () => {
+    const c = await customer({ stamps: 8 })
+    const old = await claimAgo(c.code, 40)
+    // Swept, then claimed again by another sale's claim.
+    expect((await claim({ claimId: randomUUID(), code: c.code, staffId: bea })).status).toBe(200)
+    const { answers } = await lateSale(c.code, old)
+    expect(answers).toEqual([
+      ['applied', null],
+      ['applied', null],
+      ['flagged', 'unknown_claim'],
+    ])
+  })
+})

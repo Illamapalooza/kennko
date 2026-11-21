@@ -186,3 +186,43 @@ export async function unclaim(tx: Tx, target: UnclaimTarget, now: Date): Promise
   await repackCards(tx, card.customer_id, now)
   return 'unclaimed'
 }
+
+/** A free-drink claim whose sale has not reached the server after this long is stranded (Ruling P7-6). */
+export const CLAIM_STRANDED_MS = 30 * 60_000
+
+/**
+ * Unclaims this customer's stranded claims (Ruling P7-6): cards claimed more than 30 minutes ago whose sale never
+ * arrived (`claimed_order_id` still null), so the card is full again. Covers a till that crashed during the claim or
+ * was re-paired before its release went through. A sale that arrives later re-claims (see `applyRewardUsed`).
+ * Takes the customer lock only when there is something to sweep. The caller holds no order lock it took after a
+ * customer lock (the global order is order, then customer); holding the customer lock already is fine.
+ */
+export async function sweepStrandedClaims(tx: Tx, customerId: string, now: Date): Promise<number> {
+  const before = new Date(now.getTime() - CLAIM_STRANDED_MS)
+  const stranded = () => tx<{ id: string }[]>`
+    select id from stamp_cards
+    where customer_id = ${customerId} and claimed_at is not null and claimed_at < ${before} and claimed_order_id is null`
+  if ((await stranded()).length === 0) return 0
+  if (!(await lockCustomer(tx, customerId))) return 0
+  // Read again under the customer lock: a reward.used may have recorded the sale meanwhile.
+  const cards = await stranded()
+  for (const card of cards) await unclaim(tx, { cardId: card.id }, now)
+  return cards.length
+}
+
+/**
+ * Sweeps stranded claims (above) for these customers, or for every customer with one when `customerIds` is omitted.
+ * One query when there is nothing to sweep; otherwise one transaction per customer, so no two customer locks are
+ * ever held together.
+ */
+export async function sweepStrandedClaimsFor(sql: postgres.Sql, now: Date, customerIds?: string[]): Promise<number> {
+  if (customerIds?.length === 0) return 0
+  const before = new Date(now.getTime() - CLAIM_STRANDED_MS)
+  const rows = await sql<{ customer_id: string }[]>`
+    select distinct customer_id from stamp_cards
+    where claimed_at is not null and claimed_at < ${before} and claimed_order_id is null
+      ${customerIds ? sql`and customer_id in ${sql(customerIds)}` : sql``}`
+  let swept = 0
+  for (const r of rows) swept += (await sql.begin((tx) => sweepStrandedClaims(tx, r.customer_id, now))) as number
+  return swept
+}
