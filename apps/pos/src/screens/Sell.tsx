@@ -5,7 +5,9 @@ import {
 } from '@kennko/core'
 import type { Bootstrap, Live } from '../api.ts'
 import { EMPTY_CART, type Cart, type CartLine } from '../App.tsx'
+import { AddCustomer } from '../components/AddCustomer.tsx'
 import { Modal } from '../components/Modal.tsx'
+import { customerLine, maskCode, splitReward } from '../loyaltyText.ts'
 import { CatToon } from '@kennko/cats'
 import { Customise } from './Customise.tsx'
 import { Pay } from './Pay.tsx'
@@ -26,7 +28,7 @@ const newKey = () => `l${Date.now()}-${keySeq++}`
 
 /** Same choices on two lines means one line with a bigger number, like a barista would write it. */
 const sameDrink = (a: LineInput, b: LineInput) =>
-  a.menuItemId === b.menuItemId && a.size === b.size && a.iceLevel === b.iceLevel && a.iceServe === b.iceServe && a.note === b.note
+  !a.reward && !b.reward && a.menuItemId === b.menuItemId && a.size === b.size && a.iceLevel === b.iceLevel && a.iceServe === b.iceServe && a.note === b.note
   && a.modifierIds.length === b.modifierIds.length && a.modifierIds.every((id) => b.modifierIds.includes(id))
 
 export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props) {
@@ -36,6 +38,8 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
   const [discounting, setDiscounting] = useState(false)
   const [paying, setPaying] = useState(false)
   const [cartOpen, setCartOpen] = useState(false)
+  const [addingCustomer, setAddingCustomer] = useState(false)
+  const [pickingFree, setPickingFree] = useState(false)
 
   const tabs = useMemo(() => {
     const stars = menu.categories.flatMap((c) => c.items.filter((i) => i.isBestseller))
@@ -63,7 +67,7 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
     setAdding(null)
   }
   const updateLine = (key: string, line: LineInput) => {
-    setCart((c) => ({ ...c, lines: c.lines.map((l) => (l.key === key ? { ...line, key } : l)) }))
+    setCart((c) => ({ ...c, lines: c.lines.map((l) => (l.key === key ? { ...line, key, ...(l.reward && line.quantity === 1 ? { reward: true } : {}) } : l)) }))
     setEditing(null)
   }
   const removeLine = (key: string) => {
@@ -72,8 +76,19 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
   }
   const bump = (key: string, by: number) => setCart((c) => ({
     ...c,
-    lines: c.lines.flatMap((l) => (l.key !== key ? [l] : l.quantity + by < 1 ? [] : [{ ...l, quantity: Math.min(20, l.quantity + by) }])),
+    lines: c.lines.flatMap((l) => (l.key !== key ? [l] : l.reward && by > 0 ? [l] : l.quantity + by < 1 ? [] : [{ ...l, quantity: Math.min(20, l.quantity + by) }])),
   }))
+
+  const customer = cart.customer
+  const hasFree = cart.lines.some((l) => l.reward)
+  // A free drink is offered only when the online lookup said a card is full (the claim itself needs the internet).
+  const freeReady = Boolean(customer?.info && customer.info.fullCards > 0 && customer.info.stampMode !== 'paper')
+  const setCustomer = (next: Cart['customer']) => setCart((c) => {
+    const keepsFree = Boolean(next?.info && next.info.fullCards > 0 && next.info.stampMode !== 'paper')
+    return { ...c, customer: next, lines: keepsFree ? c.lines : c.lines.map(({ reward: _reward, ...l }) => l) }
+  })
+  const makeFree = (key: string) => { setCart((c) => ({ ...c, lines: splitReward(c.lines, key, newKey) })); setPickingFree(false) }
+  const notFree = (key: string) => setCart((c) => ({ ...c, lines: c.lines.map((l) => (l.key === key ? { ...l, reward: false } : l)) }))
 
   const cartPanel = (
     <aside className={`cart${cartOpen ? ' open' : ''}`} aria-label="Current order">
@@ -91,6 +106,20 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
       </div>
       <input className="input" value={cart.customerName} maxLength={24} placeholder="Customer name (optional)" aria-label="Customer name" onChange={(e) => setCart((c) => ({ ...c, customerName: e.target.value }))} />
 
+      {customer ? (
+        <div className="customer-chip">
+          <span><b>{customer.info ? customerLine(customer.info) : `Card ${maskCode(customer.code)} · ${customerLine(null, customer.note)}`}</b></span>
+          <button type="button" className="link" onClick={() => setCustomer(null)}>Remove</button>
+        </div>
+      ) : (
+        <button type="button" className="btn btn-quiet btn-block add-customer" onClick={() => setAddingCustomer(true)}>Add Kennko card</button>
+      )}
+      {freeReady && !hasFree && cart.lines.length > 0 ? (
+        <button type="button" className="btn btn-amber btn-block" onClick={() => (cart.lines.length === 1 ? makeFree(cart.lines[0]!.key) : setPickingFree(true))}>
+          Make one drink free
+        </button>
+      ) : null}
+
       <ul className="cart-lines">
         {priced.length === 0 ? <li className="empty"><CatToon coat="cream" pose="sit" className="empty-cat" />Tap a drink to start an order.</li> : null}
         {priced.map(({ line, priced: p, problem }) => {
@@ -101,8 +130,10 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
               <button type="button" className="cart-line" onClick={() => (item && !problem ? setEditing(line) : removeLine(line.key))}>
                 <span className="cart-name">{p?.name ?? item?.name ?? 'Removed drink'} <i>{line.size}</i></span>
                 {extras ? <small>{extras}</small> : null}
+                {line.reward ? <small className="free-note">Free drink: base ₱0, add-ons charged</small> : null}
                 {problem ? <small className="error">{problem} Tap to remove.</small> : null}
               </button>
+              {line.reward ? <button type="button" className="link" onClick={() => notFree(line.key)}>Not free</button> : null}
               <div className="stepper stepper-small" role="group" aria-label={`Quantity of ${p?.name ?? 'drink'}`}>
                 <button type="button" onClick={() => bump(line.key, -1)} aria-label="One fewer">−</button>
                 <b>{line.quantity}</b>
@@ -178,6 +209,23 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
           onPick={(discount) => { setCart((c) => ({ ...c, discount })); setDiscounting(false) }}
           onClose={() => setDiscounting(false)}
         />
+      ) : null}
+      {addingCustomer ? (
+        <AddCustomer
+          onClose={() => setAddingCustomer(false)}
+          onConfirm={(found) => { setCustomer({ code: found.code, info: found.info, note: found.note }); setAddingCustomer(false) }}
+        />
+      ) : null}
+      {pickingFree ? (
+        <Modal title="Which drink is free?" onClose={() => setPickingFree(false)}>
+          <div className="stack">
+            {priced.map(({ line, priced: p }) => (
+              <button type="button" key={line.key} className="btn btn-outline btn-block" disabled={!p} onClick={() => makeFree(line.key)}>
+                {p?.name ?? 'Drink'} {line.size}{line.quantity > 1 ? ` (1 of ${line.quantity})` : ''}
+              </button>
+            ))}
+          </div>
+        </Modal>
       ) : null}
       {paying ? (
         <Pay

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { PAYMENT_LABELS, formatPesos, quickCash, type Order, type PaymentMethod } from '@kennko/core'
+import { customerLine, maskCode, stampButtonLabel } from '../loyaltyText.ts'
+import { PinPrompt } from '../components/PinPrompt.tsx'
 import { api, type Bootstrap } from '../api.ts'
-import type { Cart } from '../App.tsx'
+import type { Cart, CartCustomer } from '../App.tsx'
 import { Keypad } from '../components/Keypad.tsx'
 import { Modal } from '../components/Modal.tsx'
 import { Receipt } from '../components/Receipt.tsx'
@@ -17,7 +19,7 @@ type Props = {
   notify: (message: string) => void
 }
 
-export function Pay({ boot, cart, totalCentavos, onPaid, onClose }: Props) {
+export function Pay({ boot, cart, totalCentavos, onPaid, onClose, notify }: Props) {
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [entry, setEntry] = useState('') // pesos as typed, e.g. "200" or "150.5"
   const [ref, setRef] = useState('')
@@ -25,6 +27,11 @@ export function Pay({ boot, cart, totalCentavos, onPaid, onClose }: Props) {
   const [error, setError] = useState('')
   const [order, setOrder] = useState<Order | null>(null)
   const [showReceipt, setShowReceipt] = useState(false)
+  const [askPin, setAskPin] = useState(false)
+  const [stamping, setStamping] = useState(false)
+  // The cart is cleared once the sale is saved; the done screen still needs to know the card's state.
+  const [card, setCard] = useState<CartCustomer | null>(null)
+  const freeIndex = cart.lines.findIndex((l) => l.reward)
 
   const tendered = entry === '' ? null : Math.round(Number(entry) * 100)
   const enough = method === 'gcash' || (tendered !== null && tendered >= totalCentavos)
@@ -40,25 +47,40 @@ export function Pay({ boot, cart, totalCentavos, onPaid, onClose }: Props) {
     })
   }
 
+  const save = async (managerPin?: string) => {
+    const saved = await api.createOrder({
+      lines: cart.lines.map(({ key: _key, ...line }) => line),
+      type: cart.type,
+      customerName: cart.customerName,
+      discount: cart.discount,
+      payment: method === 'cash' ? { method, tenderedCentavos: tendered } : { method, ref },
+      // A free drink is claimed online with a manager's PIN; a plain card is just linked to the sale.
+      ...(freeIndex >= 0 && cart.customer ? { reward: { lineIndex: freeIndex, code: cart.customer.code }, managerPin } : {}),
+      ...(freeIndex < 0 && cart.customer ? { customerCode: cart.customer.code } : {}),
+    })
+    setCard(cart.customer)
+    setOrder(saved)
+    onPaid()
+  }
+
   const confirm = async () => {
     if (!enough || busy) return
+    if (freeIndex >= 0) return setAskPin(true)
     setBusy(true)
     setError('')
     try {
-      const saved = await api.createOrder({
-        lines: cart.lines.map(({ key: _key, ...line }) => line),
-        type: cart.type,
-        customerName: cart.customerName,
-        discount: cart.discount,
-        payment: method === 'cash' ? { method, tenderedCentavos: tendered } : { method, ref },
-      })
-      setOrder(saved)
-      onPaid()
+      await save()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The sale was not saved. Try again.')
     } finally {
       setBusy(false)
     }
+  }
+
+  const stamp = async () => {
+    if (!order || stamping) return
+    setStamping(true)
+    try { setOrder(await api.stampOrder(order.id)) } catch (err) { notify(err instanceof Error ? err.message : 'The stamp was not saved.') } finally { setStamping(false) }
   }
 
   if (order) {
@@ -86,6 +108,14 @@ export function Pay({ boot, cart, totalCentavos, onPaid, onClose }: Props) {
             ) : (
               <div className="paid-change"><span>GCash</span><b>{formatPesos(order.totalCentavos)}</b></div>
             )}
+            {order.customerCode ? (
+              <div className="paid-card">
+                <span>Card {maskCode(order.customerCode)}</span>
+                {card?.info?.stampMode === 'paper' ? <b>{customerLine(card.info)}</b> : stampButtonLabel(order) === 'Stamp card' ? (
+                  <button type="button" className="btn btn-amber" disabled={stamping} onClick={stamp}>{stamping ? 'Stamping…' : 'Stamp card'}</button>
+                ) : stampButtonLabel(order) === 'Stamped' ? <b className="stamped">Stamped</b> : order.freeDrink ? <b>Free drink used</b> : null}
+              </div>
+            ) : null}
             <div className="foot-row">
               <button type="button" className="btn btn-outline grow" onClick={() => setShowReceipt(true)}>Receipt</button>
               <button type="button" className="btn btn-primary grow" onClick={onClose} autoFocus>New order</button>
@@ -130,6 +160,7 @@ export function Pay({ boot, cart, totalCentavos, onPaid, onClose }: Props) {
               <p className="muted">Check the customer's GCash confirmation before you confirm.</p>
             </div>
           )}
+          {freeIndex >= 0 ? <p className="muted">Free drink: needs the internet and a manager PIN.</p> : null}
           <p className="error" role="alert">{error}</p>
         </div>
         <div className="pay-right">
@@ -139,6 +170,14 @@ export function Pay({ boot, cart, totalCentavos, onPaid, onClose }: Props) {
           </button>
         </div>
       </div>
+      {askPin ? (
+        <PinPrompt
+          title="Manager PIN"
+          hint="A manager approves the free drink. It needs the internet."
+          onClose={() => setAskPin(false)}
+          onSubmit={async (pin) => { await save(pin); setAskPin(false) }}
+        />
+      ) : null}
     </Modal>
   )
 }

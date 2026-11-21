@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CatToon } from '@kennko/cats'
-import type { Discount, LineInput, Menu, OrderType } from '@kennko/core'
+import type { Discount, LineInput, Menu, OrderType, TillCustomer } from '@kennko/core'
 import { ApiError, api, setOnLocked, type Bootstrap, type Live, type Session } from './api.ts'
 import { ClockIcon, CupIcon, DrawerIcon, ListIcon, LockIcon, TicketIcon } from './components/Icons.tsx'
 import { Gate } from './screens/Gate.tsx'
@@ -12,8 +12,10 @@ import { MenuScreen } from './screens/MenuScreen.tsx'
 import { clockWarning, offlineBadge, syncProblem } from './syncText.ts'
 
 export type CartLine = LineInput & { key: string }
-export type Cart = { lines: CartLine[]; type: OrderType; customerName: string; discount: Discount | null }
-export const EMPTY_CART: Cart = { lines: [], type: 'dine_in', customerName: '', discount: null }
+/** A Kennko card on the sale: the code (formatted) and what the lookup said, null when it could not be asked. */
+export type CartCustomer = { code: string; info: TillCustomer | null; note: string }
+export type Cart = { lines: CartLine[]; type: OrderType; customerName: string; discount: Discount | null; customer: CartCustomer | null }
+export const EMPTY_CART: Cart = { lines: [], type: 'dine_in', customerName: '', discount: null, customer: null }
 
 type Tab = 'sell' | 'orders' | 'history' | 'till' | 'menu'
 const TABS: { id: Tab; label: string; icon: () => React.JSX.Element }[] = [

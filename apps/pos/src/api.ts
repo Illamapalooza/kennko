@@ -1,4 +1,4 @@
-import type { CashMove, Discount, Menu, OnlineQueueOrder, Order, PrepStatus, Shift, Summary } from '@kennko/core'
+import type { CashMove, Discount, Menu, OnlineQueueOrder, Order, PrepStatus, Shift, Summary, TillCustomer } from '@kennko/core'
 
 export type Bootstrap = {
   shop: { name: string; address: string; phone: string; receiptFooter: string }
@@ -53,13 +53,14 @@ let onLocked: () => void = () => {}
 /** Called when the till no longer knows this browser's session, so the app can ask for the PIN again. */
 export const setOnLocked = (fn: () => void) => { onLocked = fn }
 
-async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response
   try {
     res = await fetch(path, {
       method,
       headers: body === undefined ? {} : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     })
   } catch {
     throw new ApiError("Can't reach the till computer. Check the wifi.", 0)
@@ -85,6 +86,12 @@ export const api = {
   advanceOnline: (id: string, from: PrepStatus) => call<OnlineQueueOrder>('POST', `/api/online/${id}/advance`, { from }),
   advance: (id: number) => call<Order>('POST', `/api/orders/${id}/advance`, {}),
   undo: (id: number) => call<Order>('POST', `/api/orders/${id}/undo`, {}),
+  /** A Kennko card by code. `customer` is null (with a `note`) when the till could not ask Kennko just now. */
+  customer: (code: string, signal?: AbortSignal) => call<{ customer: TillCustomer | null; code: string; note?: string }>('GET', `/api/customers/${encodeURIComponent(code)}`, undefined, signal),
+  linkCustomer: (id: number, code: string) => call<Order>('POST', `/api/orders/${id}/customer`, { code }),
+  unlinkCustomer: (id: number) => call<Order>('POST', `/api/orders/${id}/customer/remove`, {}),
+  stampOrder: (id: number) => call<Order>('POST', `/api/orders/${id}/stamp`, {}),
+  stampOnline: (id: string) => call<OnlineQueueOrder>('POST', `/api/online/${id}/stamp`, {}),
   voidOrder: (id: number, reason: string, managerPin: string) => call<Order>('POST', `/api/orders/${id}/void`, { reason, managerPin }),
   /** `pin`: the person's own PIN, asked for in per-person mode so the change is credited to them. */
   setAvailable: (itemId: string, available: boolean, pin?: string) => call<Menu>('POST', '/api/menu/availability', { itemId, available, pin }),

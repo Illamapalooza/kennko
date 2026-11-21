@@ -137,6 +137,27 @@ Paid orders from the website show up on the Orders board next to counter orders,
 - **Privacy:** the customer's phone and address are deleted from the till when it is disconnected (revoked in admin,
   or forgotten), and orders leave the till once they drop out of the sync.
 
+## Kennko cards
+
+A customer can show their Kennko card (a QR code and a code like `KC-7F3-K9Q-XAM` on their phone). Linking is one scan and
+is never required: **Skip** is always one tap, and a sale never waits for it.
+
+- **Add a card:** in the cart tap **Add Kennko card**, scan the QR or type the code. Typing adds `KC-` and groups the
+  symbols; a mistyped code says "Check the code" (the last symbol is a check). The till shows their stamps, never a name,
+  email, phone or points. It also works afterwards, from **History**, while the till is open.
+- **Scanning needs the https address** (`https://<till address>:4443`, see Install it as an app), because browsers only
+  open the camera there. If the camera is denied or unavailable the window says so and **typing always works**.
+- **Stamp:** after the sale tap **Stamp card** on the paid screen, on the order's ticket in **Orders**, or in **History**.
+  One stamp per sale; a sale of only the free drink earns none. Stamps are saved on the till and sent when the internet is back.
+- **Free drink** needs the internet: once a card has 8 stamps the cart offers **Make one drink free** (base ₱0, add-ons
+  still charged). Charging asks for a manager PIN and claims it with Kennko at once. If that cannot be done nothing is
+  saved; charge the drink normally.
+- **Offline:** a code typed with no internet shows "Will confirm when back online" (the lookup gives up after 3 seconds).
+  The card is still linked and stamped, and Kennko confirms later.
+- **Paper cards** are stamped by hand: the till shows "Paper card: stamp their paper card".
+- **Online orders** with a Kennko card show **Stamp at pickup** on their ticket.
+- Codes are shown as `KC-7F3-…-XAM` everywhere except the add-customer window.
+
 ## Settings
 
 Copy `config.example.json` to `config.json` and edit it. **Change both PINs before real use.**

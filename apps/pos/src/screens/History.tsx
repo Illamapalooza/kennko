@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PAYMENT_LABELS, STATUS_LABELS, formatPesos, type Order } from '@kennko/core'
 import { api, type Bootstrap, type Live } from '../api.ts'
+import { AddCustomer } from '../components/AddCustomer.tsx'
+import { maskCode, stampButtonLabel } from '../loyaltyText.ts'
 import { Modal } from '../components/Modal.tsx'
 import { PinPrompt } from '../components/PinPrompt.tsx'
 import { Receipt } from '../components/Receipt.tsx'
@@ -16,6 +18,8 @@ export function History({ boot, live, notify }: { boot: Bootstrap; live: Live; n
   const [voiding, setVoiding] = useState(false)
   const [reason, setReason] = useState('')
   const [askPin, setAskPin] = useState(false)
+  const [addingCustomer, setAddingCustomer] = useState(false)
+  const [working, setWorking] = useState(false)
 
   const load = useCallback(() => {
     api.orders(day).then(setOrders).catch((err) => notify(err.message))
@@ -23,6 +27,13 @@ export function History({ boot, live, notify }: { boot: Bootstrap; live: Live; n
   useEffect(load, [load, live.version])
 
   const closeOrder = () => { setOpen(null); setVoiding(false); setReason(''); setAskPin(false) }
+  // Cards can change only while the sale's till is still open.
+  const editable = (o: Order) => o.status !== 'voided' && live.shift?.id === o.shiftId
+  const change = async (work: () => Promise<Order>) => {
+    if (working) return
+    setWorking(true)
+    try { setOpen(await work()); load() } catch (err) { notify(err instanceof Error ? err.message : 'That did not work.') } finally { setWorking(false) }
+  }
   const sold = (orders ?? []).filter((o) => o.status !== 'voided')
 
   return (
@@ -67,12 +78,23 @@ export function History({ boot, live, notify }: { boot: Bootstrap; live: Live; n
             </div>
           ) : (
             <div className="foot-row no-print">
+              {open.customerCode ? <span className="pill pill-card">Card {maskCode(open.customerCode)}</span> : null}
+              {editable(open) && !open.customerCode ? <button type="button" className="btn btn-quiet" onClick={() => setAddingCustomer(true)}>Add customer</button> : null}
+              {editable(open) && open.customerCode && !open.freeDrink ? <button type="button" className="btn btn-quiet" disabled={working} onClick={() => change(() => api.unlinkCustomer(open.id))}>Remove customer</button> : null}
+              {editable(open) && stampButtonLabel(open) === 'Stamp card' ? <button type="button" className="btn btn-amber" disabled={working} onClick={() => change(() => api.stampOrder(open.id))}>Stamp card</button> : null}
+              {stampButtonLabel(open) === 'Stamped' ? <span className="pill pill-done">Stamped</span> : null}
               {open.status !== 'voided' ? <button type="button" className="btn btn-ghost-danger" onClick={() => setVoiding(true)}>Void</button> : null}
               <button type="button" className="btn btn-outline grow" onClick={() => window.print()}>Print</button>
               <button type="button" className="btn btn-primary grow" onClick={closeOrder}>Close</button>
             </div>
           )}
         </Modal>
+      ) : null}
+      {open && addingCustomer ? (
+        <AddCustomer
+          onClose={() => setAddingCustomer(false)}
+          onConfirm={async (found) => { const saved = await api.linkCustomer(open.id, found.code); setOpen(saved); setAddingCustomer(false); load() }}
+        />
       ) : null}
       {open && askPin ? (
         <PinPrompt
