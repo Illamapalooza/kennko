@@ -7,6 +7,11 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'http',
   },
+  plugins: {
+    KennkoUpdate: {
+      app: 'wall',
+    },
+  },
 }
 
 export default config

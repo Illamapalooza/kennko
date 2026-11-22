@@ -1,0 +1,14 @@
+import groovy.json.JsonSlurper
+
+def pkgFile = file('../../package.json')
+if (pkgFile.exists()) {
+  def pkg = new JsonSlurper().parse(pkgFile)
+  def parts = pkg.version.toString().split('\\.').collect { it.toInteger() }
+  def code = parts[0] * 10000 + parts[1] * 100 + parts[2]
+  android {
+    defaultConfig {
+      versionCode code
+      versionName pkg.version.toString()
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "pos": {
+    "versionCode": 0,
+    "versionName": "0.0.0",
+    "url": "https://kennko.vercel.app/apps/kennko-pos.apk",
+    "notes": ""
+  },
+  "wall": {
+    "versionCode": 0,
+    "versionName": "0.0.0",
+    "url": "https://kennko.vercel.app/apps/kennko-wall.apk",
+    "notes": ""
+  }
+}

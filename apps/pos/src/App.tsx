@@ -13,6 +13,7 @@ import { MenuScreen } from './screens/MenuScreen.tsx'
 import { bannerText, loadAlertMemory, nextOnlineAlerts, saveAlertMemory } from './onlineAlerts.ts'
 import { playChime } from './chime.ts'
 import { clockWarning, offlineBadge, syncProblem } from './syncText.ts'
+import { UpdateBanner } from './app/UpdateBanner.tsx'
 
 export type CartLine = LineInput & { key: string }
 /** A Kennko card on the sale: the code (formatted) and what the lookup said, null when it could not be asked. */
@@ -212,6 +213,7 @@ export function App() {
         ) : null}
       </nav>
       <main className="main">
+        {boot.host === 'android' ? <UpdateBanner notify={notify} /> : null}
         {!online ? <div className="banner" role="status">Lost touch with the till computer. Trying again…</div> : null}
         {freshBanner.length > 0 ? (
           <button type="button" className="banner order-banner" role="status" onClick={() => setTab('orders')}>

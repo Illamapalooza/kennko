@@ -48,6 +48,7 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+apply from: '../../../../android/kennko-kit/version.gradle'
 
 try {
     def servicesJSON = file('google-services.json')

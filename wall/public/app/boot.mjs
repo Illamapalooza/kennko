@@ -1,6 +1,7 @@
 import { createFollower } from "../follow.mjs";
 import { createFinder } from "./finder.mjs";
 import { loadSfxEnabled, loadTillAddress, wireSettingsShortcut } from "./settings.mjs";
+import { handleWallUpdate } from "./update.mjs";
 
 const SAVED_KEY = "kennko-wall-last-till";
 
@@ -44,6 +45,7 @@ export function bootApp({ apply, setBoot, setSfxMuted, setLink }) {
     version: "0.0.1",
     onRetry: () => finder.retry(),
     onSfxChange: (on) => setSfxMuted(!on),
+    onCheckUpdate: (btn) => handleWallUpdate(btn),
   });
 
   finder.start();
