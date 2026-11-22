@@ -17,6 +17,7 @@ import { pushRoutes } from './routes/push.js'
 import { reportRoutes } from './routes/reports.js'
 import { staffRoutes } from './routes/staff.js'
 import { syncRoutes } from './routes/sync.js'
+import { wallRoutes } from './routes/wall.js'
 import type { PushSender } from './push/send.js'
 import type { ProofStore } from './storage.js'
 
@@ -78,6 +79,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route('/v1/stamp-cards', stampCardRoutes(deps))
   app.route('/v1/stamps', stampRoutes(deps))
   app.route('/v1/sync', syncRoutes(deps))
+  app.route('/v1/wall', wallRoutes(deps))
 
   return app
 }

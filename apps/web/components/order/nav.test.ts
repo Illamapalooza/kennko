@@ -4,21 +4,22 @@ import { navLinks, stepState, backTarget, resolveStep, STEP_LABELS } from './nav
 describe('navLinks', () => {
   it('signed out on the menu', () => {
     const links = navLinks('menu', false)
-    expect(links.map((l) => l.label)).toEqual(['Menu', 'My orders', 'Sign in'])
-    expect(links.map((l) => l.href)).toEqual(['/order', '/account', '/account'])
-    expect(links.map((l) => l.current)).toEqual([true, false, false])
+    expect(links.map((l) => l.label)).toEqual(['Menu', 'Live cafe', 'My orders', 'Sign in'])
+    expect(links.map((l) => l.href)).toEqual(['/order', '/cafe', '/account', '/account'])
+    expect(links.map((l) => l.current)).toEqual([true, false, false, false])
   })
 
   it('signed in shows the first name linking to the account page, and sends history to /orders', () => {
     const links = navLinks('orders', true, 'Julius Baliling')
     expect(links[links.length - 1]).toMatchObject({ label: 'Julius', href: '/account', current: false })
-    expect(navLinks('account', true, 'Julius')[2].current).toBe(true)
-    expect(links[1]).toMatchObject({ label: 'My orders', href: '/orders', current: true })
+    expect(navLinks('account', true, 'Julius')[3].current).toBe(true)
+    expect(links[2]).toMatchObject({ label: 'My orders', href: '/orders', current: true })
     expect(links[0].current).toBe(false)
   })
 
   it('marks sign in current on the account page and nothing on status', () => {
-    expect(navLinks('account', false)[2].current).toBe(true)
+    expect(navLinks('account', false)[3].current).toBe(true)
+    expect(navLinks('cafe', false)[1].current).toBe(true)
     expect(navLinks('status', false).some((l) => l.current)).toBe(false)
   })
 })

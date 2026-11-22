@@ -1,4 +1,4 @@
-export type NavPlace = 'menu' | 'orders' | 'account' | 'status' | 'receipt'
+export type NavPlace = 'menu' | 'orders' | 'account' | 'status' | 'receipt' | 'cafe'
 
 export type NavLink = { label: string; href: string; current: boolean }
 
@@ -6,6 +6,7 @@ export function navLinks(place: NavPlace, signedIn: boolean, customerName?: stri
   const first = customerName?.trim().split(/\s+/)[0] || 'Account'
   return [
     { label: 'Menu', href: '/order', current: place === 'menu' },
+    { label: 'Live cafe', href: '/cafe', current: place === 'cafe' },
     { label: 'My orders', href: signedIn ? '/orders' : '/account', current: place === 'orders' },
     signedIn
       ? { label: first, href: '/account', current: place === 'account' }
