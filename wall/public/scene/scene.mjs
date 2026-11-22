@@ -18,6 +18,7 @@ const TRAY = { x: 160, y: 116 }; // where the server collects drinks
 const SERVER_HOME = { x: 188, y: 102 };
 const WALK = 30; // px per second
 const MAX_TICKETS = 6;
+const RAIL_END = 154; // the ticket rail runs from x 58 to here
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -392,18 +393,23 @@ export function createScene(canvas, tagLayer, opts = {}) {
 
     // tickets waiting on the rail
     const queued = orders.filter((o) => o.status === "queued").sort((a, b) => a.id - b.id).slice(0, MAX_TICKETS);
-    queued.forEach((o, i) => {
-      const x = 61 + i * 15, sway = Math.round(Math.sin(t * 2 + i) * 0.6);
-      ctx.fillStyle = INK; ctx.fillRect(x + sway, 29, 13, 11);
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 1 + sway, 29, 11, 10);
-      ctx.fillStyle = AMBER; ctx.fillRect(x + 5 + sway, 28, 3, 2);
+    // Each ticket is as wide as its number needs, and the row stops where the rail ends (the board lists the rest).
+    let x = 61;
+    for (const [i, o] of queued.entries()) {
+      const label = ambient ? "" : String(o.label ?? o.id % 1000);
+      const w = Math.max(13, textWidth(label) + 4);
+      if (x + w > RAIL_END) break;
+      const sway = Math.round(Math.sin(t * 2 + i) * 0.6);
+      ctx.fillStyle = INK; ctx.fillRect(x + sway, 29, w, 11);
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 1 + sway, 29, w - 2, 10);
+      ctx.fillStyle = AMBER; ctx.fillRect(x + Math.floor(w / 2) - 1 + sway, 28, 3, 2);
       if (ambient) {
         ctx.fillStyle = "#9db6ee"; ctx.fillRect(x + 3 + sway, 32, 7, 1); ctx.fillRect(x + 3 + sway, 34, 5, 1); ctx.fillRect(x + 3 + sway, 36, 6, 1);
       } else {
-        const label = o.label ?? String(o.id % 1000);
-        drawText(ctx, label, x + sway + 7 - Math.floor(textWidth(label) / 2), 32, BLUE);
+        drawText(ctx, label, x + sway + 2, 32, BLUE);
       }
-    });
+      x += w + 2;
+    }
 
     // baristas, then the counter in front of them
     baristas.forEach((b, i) => {

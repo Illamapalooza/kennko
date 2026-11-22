@@ -7,10 +7,16 @@
   padding-bottom: 40px;
 }
 
+/* The shared nav sits on the same left and right edges as the cards below it. */
+.cafe-page .order-main {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
 .cafe-shell {
-  max-width: 1200px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 20px 18px;
+  padding: 20px 16px;
   display: grid;
   gap: 16px;
 }
@@ -39,10 +45,13 @@
 }
 
 .cafe-meta {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #0d1b3d;
-  opacity: 0.8;
+  background: #fff;
+  color: #0055ff;
+  border: 2px solid #0d1b3d;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 0.85rem;
+  font-weight: 800;
 }
 
 .cafe-deliveries {
@@ -112,6 +121,7 @@
 
 .cafe-frame {
   position: relative;
+  container-type: inline-size;
   width: 100%;
   aspect-ratio: 288 / 152;
   border: 4px solid #0d1b3d;
@@ -134,27 +144,35 @@
   pointer-events: none;
 }
 
-.cafe-tag {
+/* Labels are drawn by the scene (lib/cafe/scene/scene.mjs) as .tag, .tag.visitor and .tag.bubble. */
+.cafe-tags .tag {
   position: absolute;
   transform: translate(-50%, -100%);
   background: #fff;
   color: #0055ff;
   border: 2px solid #0d1b3d;
-  padding: 1px 6px;
-  font-size: 0.78rem;
+  padding: 0 0.4em;
+  font-size: max(10px, 1.9cqw);
   font-weight: 900;
-  line-height: 1.2;
+  line-height: 1.25;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.cafe-tag.ready {
+.cafe-tags .tag.visitor {
   background: #ffb830;
   color: #0d1b3d;
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.cafe-tag.bubble {
+.cafe-tags .tag.bubble {
   background: #0055ff;
   color: #fff;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cafe-board {
@@ -279,6 +297,6 @@
 
 @media (max-width: 640px) {
   .cafe-shell {
-    padding: 14px 12px;
+    padding-top: 14px;
   }
 }

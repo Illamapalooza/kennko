@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { CatToon } from '@kennko/cats'
 import { createScene } from '@/lib/cafe/scene/scene.mjs'
 import { boardView, deliveryView, itemsLabel, type WallBoardOrder } from '@/lib/cafe/scene/logic.mjs'
 
@@ -55,45 +56,16 @@ export function LiveCafeWall({ initial }: { initial: WallPayload }) {
 
   const sceneRef = useRef<ReturnType<typeof createScene> | null>(null)
 
+  // The scene runs its own animation loop and draws the labels into the tag layer.
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
-    const scene = createScene(canvas, {
-      ambient: false,
-      clock: () => Date.now() + clockSkewRef.current,
-    })
+    const tagLayer = tagsRef.current
+    if (!canvas || !tagLayer) return
+    const scene = createScene(canvas, tagLayer, { clock: () => Date.now() + clockSkewRef.current })
     sceneRef.current = scene
     scene.sync(initial.orders, initial.baristas, true, initial.visitors)
-
-    let last = performance.now()
-    let raf = 0
-    const frame = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000)
-      last = now
-      scene.tick(dt)
-      scene.draw()
-      const tagsEl = tagsRef.current
-      if (tagsEl) {
-        const all = [
-          ...scene.tags().map((t) => ({ key: `o:${t.id}`, label: t.text, ready: t.ready, bubble: false, x: t.x, y: t.y })),
-          ...scene.visitorTags().map((v) => ({ key: `v:${v.key}`, label: v.name, ready: false, bubble: true, x: v.x, y: v.y })),
-        ]
-        tagsEl.replaceChildren(
-          ...all.map((item) => {
-            const span = document.createElement('span')
-            span.className = `cafe-tag${item.ready ? ' ready' : ''}${item.bubble ? ' bubble' : ''}`
-            span.textContent = item.label
-            span.style.left = `${(item.x / 288) * 100}%`
-            span.style.top = `${(item.y / 152) * 100}%`
-            return span
-          }),
-        )
-      }
-      raf = requestAnimationFrame(frame)
-    }
-    raf = requestAnimationFrame(frame)
     return () => {
-      cancelAnimationFrame(raf)
+      scene.destroy()
       sceneRef.current = null
     }
   }, [initial])
@@ -112,7 +84,7 @@ export function LiveCafeWall({ initial }: { initial: WallPayload }) {
         <span className={`cafe-pill${closed ? ' is-closed' : ''}`}>
           {snap.offline ? 'Live feed unavailable' : closed ? 'Shop closed · Cat nap' : 'Live from Kennko Butuan'}
         </span>
-        <span className="cafe-meta">Updates about every 15s · {snap.visitors.length} visiting cat{snap.visitors.length === 1 ? '' : 's'}</span>
+        <span className="cafe-meta">Updates every {POLL_MS / 1000} seconds · {snap.visitors.length} visiting cat{snap.visitors.length === 1 ? '' : 's'}</span>
       </div>
 
       {deliveries.length > 0 ? (
@@ -140,7 +112,7 @@ export function LiveCafeWall({ initial }: { initial: WallPayload }) {
         <aside className={`cafe-board${closed ? ' is-closed' : ''}`} aria-live="polite">
           {closed ? (
             <div className="cafe-closed">
-              <img src="/brand/cats/nap-calico.svg" alt="" className="cafe-closed-cat" />
+              <CatToon coat="calico" pose="nap" className="cafe-closed-cat" />
               <h2>Cat nap</h2>
               <p>Our baristas are resting. Check back during shop hours!</p>
             </div>

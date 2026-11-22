@@ -12,7 +12,7 @@ export function drawCup(ctx, x, y) {
   ctx.fillStyle = BLUE; ctx.fillRect(x + 1, y + 2, 2, 2);
 }
 
-// Pixel glyphs, 5 rows tall. Most are 3 wide; M and N need more room to read.
+// Pixel glyphs, 5 rows tall. Most are 3 wide; M, N and W need more room to read.
 const g3 = (bits) => [0, 3, 6, 9, 12].map((i) => bits.slice(i, i + 3));
 export const GLYPHS = {
   0: g3("111101101101111"), 1: g3("010110010010111"), 2: g3("111001111100111"), 3: g3("111001111001111"),
@@ -23,6 +23,7 @@ export const GLYPHS = {
   F: g3("111100110100100"), " ": ["00", "00", "00", "00", "00"],
   M: ["10001", "11011", "10101", "10001", "10001"],
   N: ["1001", "1101", "1011", "1001", "1001"],
+  W: ["10001", "10001", "10101", "11011", "10001"],
 };
 const glyph = (ch) => GLYPHS[ch] ?? GLYPHS[" "];
 

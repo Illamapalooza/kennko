@@ -1,13 +1,12 @@
 declare module '@/lib/cafe/scene/scene.mjs' {
   export function createScene(
     canvas: HTMLCanvasElement,
-    options?: { ambient?: boolean; clock?: () => number },
+    tagLayer: HTMLElement,
+    options?: { manilaHour?: () => number; clock?: () => number },
   ): {
     sync(orders: unknown[], baristas: number, initial?: boolean, visitors?: unknown[]): void
-    tick(dt: number): void
-    draw(): void
-    tags(): Array<{ id: number; text: string; name: string; ready: boolean; x: number; y: number }>
-    visitorTags(): Array<{ key: string; name: string; x: number; y: number }>
+    setAmbient(on: boolean): void
+    destroy(): void
   }
 }
 

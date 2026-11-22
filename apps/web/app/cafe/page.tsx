@@ -2,6 +2,7 @@ import { apiBase } from '@/lib/api/client'
 import { getServerClient } from '@/lib/supabase/server'
 import { OrderNav } from '@/components/order/OrderNav'
 import { LiveCafeWall } from '@/components/cafe/LiveCafeWall'
+import '../order/order.css'
 import './cafe.css'
 
 export const dynamic = 'force-dynamic'
@@ -24,7 +25,9 @@ export default async function CafePage() {
 
   return (
     <div className="cafe-page">
-      <OrderNav place="cafe" signedIn={Boolean(data.user)} />
+      <div className="order-main order-main-nav">
+        <OrderNav place="cafe" signedIn={Boolean(data.user)} />
+      </div>
       <LiveCafeWall initial={initial} />
     </div>
   )
