@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { formatPesos, formatSignedPesos, parsePesos, type Summary } from '@kennko/core'
+import { formatPesos, formatSignedPesos, parsePesos, sizeTag, type Summary } from '@kennko/core'
 import { api, type Live, type TillState } from '../api.ts'
 import { Modal } from '../components/Modal.tsx'
 import { PinPrompt } from '../components/PinPrompt.tsx'
@@ -95,13 +95,13 @@ export function Till({ live, notify }: { live: Live; notify: (message: string) =
                 <div><dt>Dine in / Take out</dt><dd>{summary.dineInCount} / {summary.takeoutCount}</dd></div>
                 <div><dt>Voided</dt><dd>{summary.voidCount} · {formatPesos(summary.voidCentavos)}</dd></div>
               </dl>
-              <h3 className="sub">Drinks sold</h3>
+              <h3 className="sub">Sold</h3>
               {summary.items.length === 0 ? <p className="empty">No sales yet.</p> : (
                 <table className="table">
                   <tbody>
                     {summary.items.map((item) => (
                       <tr key={`${item.name}|${item.size}`}>
-                        <td>{item.name} <i>{item.size}</i></td>
+                        <td>{item.name}{sizeTag(item.size) ? <> <i>{sizeTag(item.size)}</i></> : null}</td>
                         <td>{item.quantity}</td>
                         <td>{formatPesos(item.salesCentavos)}</td>
                       </tr>

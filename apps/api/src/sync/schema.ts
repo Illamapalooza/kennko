@@ -51,7 +51,8 @@ export const NAME_MAX = 120
 export const pricedLineShape = z.object({
   menuItemId: z.string().min(1).max(NAME_MAX),
   name: z.string().min(1).max(NAME_MAX),
-  size: z.enum(['M', 'L', 'XL', 'HOT']),
+  // REG: food's one variant (Cookies, Empanada, Fries), sold at the till.
+  size: z.enum(['M', 'L', 'XL', 'HOT', 'REG']),
   basePriceCentavos: orderCentavos,
   modifiers: z
     .array(z.object({ id: z.string().min(1).max(NAME_MAX), name: z.string().max(NAME_MAX), priceCentavos: orderCentavos }))

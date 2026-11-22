@@ -294,6 +294,8 @@ describe('what the till normalises so the API never holds its events as invalid 
       id: 'extras', name: 'Extras', isMultiSelect: true,
       modifiers: Array.from({ length: 21 }, (_, i) => ({ id: `extra-${i}`, name: `Extra ${i}`, priceCentavos: 0, isAvailable: true })),
     })
+    // The built-in drinks list their own groups, so the extra group is linked to the latte by hand.
+    for (const item of many.categories.flatMap((c) => c.items)) if (item.id === latte.id) item.modifierGroupIds = [...(item.modifierGroupIds ?? []), 'extras']
     const store = createStore(':memory:', openNodeSqlite)
     store.startShift(0, T, null)
     const line = (n: number) => ({ menuItemId: latte.id, size: 'M' as const, modifierIds: Array.from({ length: n }, (_, i) => `extra-${i}`), quantity: 1, iceLevel: null, iceServe: null, note: '' })

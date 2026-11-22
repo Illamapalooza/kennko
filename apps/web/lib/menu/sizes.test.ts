@@ -3,7 +3,7 @@ import { SIZE_VOLUMES, sizeWithVolume } from './sizes'
 
 describe('SIZE_VOLUMES', () => {
   it('covers every size the menu offers', () => {
-    expect(Object.keys(SIZE_VOLUMES).sort()).toEqual(['HOT', 'L', 'M', 'XL'])
+    expect(Object.keys(SIZE_VOLUMES).sort()).toEqual(['HOT', 'L', 'M', 'REG', 'XL'])
   })
 
   it('matches the cups Kennko pours', () => {

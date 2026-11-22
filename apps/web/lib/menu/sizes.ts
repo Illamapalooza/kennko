@@ -10,6 +10,7 @@ export const SIZE_VOLUMES: Record<DrinkSize, string> = {
   L: '16oz',
   XL: '22oz',
   HOT: '12oz',
+  REG: 'one size',
 }
 
 export function sizeWithVolume(size: DrinkSize): string {

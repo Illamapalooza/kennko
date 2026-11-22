@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import {
-  ORDER_TYPE_LABELS, OrderError, findItem, findVisitor, formatPesos, iceLabel, parsePesos, priceLine, sameLook, totals,
+  ORDER_TYPE_LABELS, OrderError, findItem, findVisitor, formatPesos, iceLabel, isFoodItem, parsePesos, priceLine, sameLook, sizeTag, totals,
   type Discount, type LineInput, type Menu, type MenuItem, type OrderType, type PricedLine, type WallVisitor,
 } from '@kennko/core'
 import { api, type Bootstrap, type Live } from '../api.ts'
@@ -81,6 +81,8 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
 
   const customer = cart.customer
   const hasFree = cart.lines.some((l) => l.reward)
+  // The free drink is a drink: food lines are never offered.
+  const drinkLines = cart.lines.filter((l) => !isFoodItem(menu, l.menuItemId))
   // A free drink is offered only when the online lookup said a card is full (the claim itself needs the internet).
   const freeReady = Boolean(customer?.info && customer.info.fullCards > 0 && customer.info.stampMode !== 'paper')
   const [visitors, setVisitors] = useState<WallVisitor[]>([])
@@ -176,8 +178,8 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
           {pickedCat ? <small className="muted">This order&apos;s cat: <b>{pickedCat.name}</b>, the one on the wall now.</small> : null}
         </div>
       ) : null}
-      {freeReady && !hasFree && cart.lines.length > 0 ? (
-        <button type="button" className="btn btn-amber btn-block" onClick={() => (cart.lines.length === 1 ? makeFree(cart.lines[0]!.key) : setPickingFree(true))}>
+      {freeReady && !hasFree && drinkLines.length > 0 ? (
+        <button type="button" className="btn btn-amber btn-block" onClick={() => (drinkLines.length === 1 ? makeFree(drinkLines[0]!.key) : setPickingFree(true))}>
           Make one drink free
         </button>
       ) : null}
@@ -190,7 +192,7 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
           return (
             <li key={line.key} className={problem ? 'bad' : ''}>
               <button type="button" className="cart-line" onClick={() => (item && !problem ? setEditing(line) : removeLine(line.key))}>
-                <span className="cart-name">{p?.name ?? item?.name ?? 'Removed drink'} <i>{line.size}</i></span>
+                <span className="cart-name">{p?.name ?? item?.name ?? 'Removed drink'}{sizeTag(line.size) ? <> <i>{sizeTag(line.size)}</i></> : null}</span>
                 {extras ? <small>{extras}</small> : null}
                 {line.reward ? <small className="free-note">Free drink: base ₱0, add-ons charged</small> : null}
                 {problem ? <small className="error">{problem} Tap to remove.</small> : null}
@@ -281,9 +283,9 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
       {pickingFree ? (
         <Modal title="Which drink is free?" onClose={() => setPickingFree(false)}>
           <div className="stack">
-            {priced.map(({ line, priced: p }) => (
+            {priced.filter(({ line }) => !isFoodItem(menu, line.menuItemId)).map(({ line, priced: p }) => (
               <button type="button" key={line.key} className="btn btn-outline btn-block" disabled={!p} onClick={() => makeFree(line.key)}>
-                {p?.name ?? 'Drink'} {line.size}{line.quantity > 1 ? ` (1 of ${line.quantity})` : ''}
+                {p?.name ?? 'Drink'} {sizeTag(line.size)}{line.quantity > 1 ? ` (1 of ${line.quantity})` : ''}
               </button>
             ))}
           </div>

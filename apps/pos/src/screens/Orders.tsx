@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ORDER_TYPE_LABELS, PAYMENT_LABELS, formatPesos, iceLabel, sameLook, type OnlineQueueLine, type OnlineQueueOrder, type Order, type OrderStatus, type PendingPaymentOrder, type WallVisitor } from '@kennko/core'
+import { ORDER_TYPE_LABELS, PAYMENT_LABELS, formatPesos, iceLabel, sameLook, sizeTag, type OnlineQueueLine, type OnlineQueueOrder, type Order, type OrderStatus, type PendingPaymentOrder, type WallVisitor } from '@kennko/core'
 import { api, type Bootstrap, type Live } from '../api.ts'
 import { Modal } from '../components/Modal.tsx'
 import { PinPrompt } from '../components/PinPrompt.tsx'
@@ -128,7 +128,7 @@ export function Orders({ boot, live, online = true, notify }: { boot: Bootstrap;
                       const extras = [...line.modifiers.map((m) => m.name), iceLabel(line.iceLevel, line.iceServe), line.note].filter(Boolean).join(', ')
                       return (
                         <li key={i}>
-                          <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
+                          <b>{line.quantity}×</b> {line.name}{sizeTag(line.size) ? <> <i>{sizeTag(line.size)}</i></> : null}
                           {extras ? <small>{extras}</small> : null}
                         </li>
                       )
@@ -242,7 +242,7 @@ function CounterOrderModal({
             const extras = [...line.modifiers.map((m) => m.name), iceLabel(line.iceLevel, line.iceServe), line.note].filter(Boolean).join(', ')
             return (
               <li key={i}>
-                <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
+                <b>{line.quantity}×</b> {line.name}{sizeTag(line.size) ? <> <i>{sizeTag(line.size)}</i></> : null}
                 {extras ? <small> · {extras}</small> : null}
               </li>
             )
@@ -328,7 +328,7 @@ function OnlineOrderModal({ order, now, onClose }: { order: OnlineQueueOrder; no
             const extras = onlineLineExtras(line)
             return (
               <li key={i}>
-                <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
+                <b>{line.quantity}×</b> {line.name}{sizeTag(line.size) ? <> <i>{sizeTag(line.size)}</i></> : null}
                 {extras ? <small> · {extras}</small> : null}
               </li>
             )
@@ -378,7 +378,7 @@ function OnlineTicket({
           const extras = onlineLineExtras(line)
           return (
             <li key={i}>
-              <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
+              <b>{line.quantity}×</b> {line.name}{sizeTag(line.size) ? <> <i>{sizeTag(line.size)}</i></> : null}
               {extras ? <small>{extras}</small> : null}
             </li>
           )
@@ -428,7 +428,7 @@ function PendingPaymentTicket({
           const extras = onlineLineExtras(line)
           return (
             <li key={i}>
-              <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
+              <b>{line.quantity}×</b> {line.name}{sizeTag(line.size) ? <> <i>{sizeTag(line.size)}</i></> : null}
               {extras ? <small>{extras}</small> : null}
             </li>
           )

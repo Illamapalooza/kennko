@@ -1,5 +1,5 @@
 import { normaliseIce, type IceLevel, type IceServe } from './ice.ts'
-import { findItem, type DrinkSize, type Menu, type MenuItem, type ModifierGroup } from './menu.ts'
+import { findItem, isFoodItem, type DrinkSize, type Menu, type MenuItem, type ModifierGroup } from './menu.ts'
 
 /** A mistake the person at the till can fix; the message is shown to them. */
 export class OrderError extends Error {}
@@ -79,12 +79,14 @@ export function priceLine(menu: Menu, input: LineInput): PricedLine {
     throw new OrderError(`Quantity must be 1 to ${MAX_QUANTITY}.`)
   }
   if (input.reward && input.quantity !== 1) throw new OrderError('A free drink is one drink.')
+  if (input.reward && isFoodItem(menu, item.id)) throw new OrderError('The free drink has to be a drink.')
 
   const wanted = new Set(Array.isArray(input.modifierIds) ? input.modifierIds : [])
   const modifiers: PricedModifier[] = []
   for (const group of groupsFor(menu, item)) {
     const picked = group.modifiers.filter((m) => wanted.has(m.id))
     if (!group.isMultiSelect && picked.length > 1) throw new OrderError(`Pick only one from ${group.name}.`)
+    if (picked.length < (group.minSelect ?? 0)) throw new OrderError(`Pick a ${group.name.toLowerCase()} for ${item.name}.`)
     for (const m of picked) {
       if (!m.isAvailable) throw new OrderError(`${m.name} is marked sold out.`)
       modifiers.push({ id: m.id, name: m.name, priceCentavos: m.priceCentavos })

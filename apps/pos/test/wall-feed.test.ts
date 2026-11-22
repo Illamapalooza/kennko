@@ -88,6 +88,13 @@ describe('the wall menu', () => {
     ])
   })
 
+  it('carries the food too, so the wall knows Cookies, Empanada and Fries by name', () => {
+    const food = wallMenu(builtInMenu(0)).find((c) => c.category === 'Food')
+    expect(food).toEqual({ category: 'Food', items: [
+      { name: 'Cookies', star: false }, { name: 'Empanada', star: false }, { name: 'Fries', star: false },
+    ] })
+  })
+
   it('carries only category, items, name and star: no price, id or availability', () => {
     const keys = new Set<string>()
     const walk = (v: unknown) => {
