@@ -16,7 +16,7 @@
     "pos:apk": "node scripts/build-pos-app.mjs",
     "wall": "node wall/server.mjs",
     "wall:pos": "node wall/server.mjs --pos",
-    "wall:apk": "npm run apk -w @kennko/wall-app",
+    "wall:apk": "node apps/wall-app/scripts/build-apk.mjs",
     "test": "npm test --workspaces --if-present && node --test wall/test/*.test.mjs scripts/*.test.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
