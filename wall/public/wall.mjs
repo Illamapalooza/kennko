@@ -165,6 +165,25 @@ addEventListener("keydown", (e) => {
 document.addEventListener("fullscreenchange", fit);
 
 async function start() {
+  if (window.Capacitor?.isNativePlatform?.()) {
+    const { bootApp } = await import("./app/boot.mjs");
+    bootApp({
+      apply,
+      setBoot: (next) => {
+        boot = { ...boot, ...next };
+        document.body.classList.toggle("ambient", Boolean(boot.ambient));
+        scene.setAmbient(boot.ambient);
+        fit();
+      },
+      setSfxMuted: (m) => { sfx.muted = Boolean(m); },
+      setLink: (show, text) => {
+        const pill = $("link");
+        pill.hidden = !show;
+        if (text) pill.textContent = text;
+      },
+    });
+    return;
+  }
   try { boot = { ...boot, ...(await (await fetch("/api/bootstrap")).json()) }; } catch { /* keep defaults; events will retry */ }
   document.body.classList.toggle("ambient", Boolean(boot.ambient));
   scene.setAmbient(boot.ambient);

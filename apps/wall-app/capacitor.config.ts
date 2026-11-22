@@ -3,7 +3,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 const config: CapacitorConfig = {
   appId: 'coffee.kennko.wall',
   appName: 'Kennko Wall',
-  webDir: 'www-probe',
+  webDir: 'www',
   server: {
     androidScheme: 'http',
   },

@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "probe:build": "node probe/copy-scene.mjs && npx cap sync android",
-    "probe:apk": "npm run probe:build && cd android && ./gradlew assembleDebug"
+    "build": "node scripts/copy-wall.mjs && npx cap sync android",
+    "apk": "node scripts/build-apk.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.6.2",
