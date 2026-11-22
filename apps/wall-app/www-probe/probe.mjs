@@ -1,4 +1,4 @@
-import { createScene } from './scene/scene.mjs'
+window.__probeStarted = true
 
 const verdictEl = document.getElementById('verdict')
 const statusEl = document.getElementById('status')
@@ -27,23 +27,24 @@ window.requestAnimationFrame = (cb) => origRaf((ts) => {
   cb(ts)
 })
 
-const scene = createScene(canvas, tagLayer, {})
-const stages = ['queued', 'preparing', 'serving']
-let tick = 0
-function pushSample() {
-  const s1 = stages[tick % 3]
-  const s2 = stages[(tick + 1) % 3]
-  scene.sync({
-    baristas: 2,
-    orders: [
-      { id: 1, label: '#1', status: s1, items: [{ name: 'Café Latte', qty: 1 }], name: 'Maya', createdAt: Date.now() - 10_000 },
-      { id: 2, label: '#2', status: s2, items: [{ name: 'Matcha', qty: 2 }], name: 'Leo', createdAt: Date.now() - 5_000 },
-    ],
-  }, [], Date.now())
-  tick++
-}
-pushSample()
-setInterval(pushSample, 5000)
+import('./scene/scene.mjs').then(({ createScene }) => {
+  const scene = createScene(canvas, tagLayer, {})
+  const stages = ['queued', 'preparing', 'serving']
+  let tick = 0
+  function pushSample() {
+    const s1 = stages[tick % 3]
+    const s2 = stages[(tick + 1) % 3]
+    scene.sync([
+      { id: 1, label: '#1', status: s1, items: [{ name: 'Café Latte', qty: 1 }], name: 'Maya', createdAt: Date.now() - 10000 },
+      { id: 2, label: '#2', status: s2, items: [{ name: 'Matcha', qty: 2 }], name: 'Leo', createdAt: Date.now() - 5000 },
+    ], 2, tick === 0, [])
+    tick++
+  }
+  pushSample()
+  setInterval(pushSample, 5000)
+}).catch((e) => {
+  errors.push(`scene: ${e && e.message ? e.message : String(e)}`)
+})
 
 function playBeep() {
   try {
@@ -60,7 +61,7 @@ function playBeep() {
     osc.stop(ctx.currentTime + 0.18)
     audioBeeped = true
   } catch (e) {
-    errors.push(`audio: ${e.message}`)
+    errors.push(`audio: ${e && e.message ? e.message : String(e)}`)
   }
 }
 
@@ -74,7 +75,9 @@ window.addEventListener('click', (e) => {
 const features = {
   EventSource: typeof EventSource === 'function',
   ESModules: true,
-  OptionalNullish: (() => { const x = { a: 1 }; return (x?.a ?? 0) === 1 })(),
+  OptionalNullish: (() => {
+    try { return new Function('const x = { a: 1 }; return (x?.a ?? 0) === 1')() } catch { return false }
+  })(),
   ArrayAt: typeof Array.prototype.at === 'function',
   StructuredClone: typeof structuredClone === 'function',
   AudioContext: Boolean(window.AudioContext || window.webkitAudioContext),
@@ -83,7 +86,8 @@ const features = {
   })(),
 }
 
-const KennkoProbe = window.Capacitor?.Plugins?.KennkoProbe
+const cap = window.Capacitor
+const KennkoProbe = cap && cap.Plugins ? cap.Plugins.KennkoProbe : null
 
 async function runDiscovery() {
   if (!KennkoProbe) {
@@ -114,7 +118,7 @@ const startedAt = Date.now()
 function render() {
   const elapsed = Math.floor((Date.now() - startedAt) / 1000)
   const remaining = Math.max(0, 60 - elapsed)
-  const wvMajor = majorWebView(probeInfo?.webViewVersion)
+  const wvMajor = majorWebView(probeInfo && probeInfo.webViewVersion)
 
   statusEl.textContent = `Frames: ${frames} | SSE frames: ${sseFrames} | Beep (press OK): ${audioBeeped ? 'yes' : 'tap OK'}`
   detailsEl.textContent = JSON.stringify({
@@ -130,9 +134,9 @@ function render() {
     const reasons = []
     if (frames < 30) reasons.push(`low frames (${frames})`)
     if (errors.length > 0) reasons.push(...errors)
-    if (wvMajor > 0 && wvMajor < 90) reasons.push(`WebView ${probeInfo?.webViewVersion} < 90`)
+    if (wvMajor > 0 && wvMajor < 90) reasons.push(`WebView ${probeInfo && probeInfo.webViewVersion} < 90`)
     for (const [k, v] of Object.entries(features)) if (!v) reasons.push(`missing ${k}`)
-    if (!discovered?.host) reasons.push(`discovery: ${discovered?.error ?? 'failed'}`)
+    if (!discovered || !discovered.host) reasons.push(`discovery: ${discovered && discovered.error ? discovered.error : 'failed'}`)
     if (sseFrames === 0) reasons.push('no SSE frames')
 
     if (reasons.length === 0) {

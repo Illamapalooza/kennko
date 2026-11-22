@@ -28,6 +28,21 @@
       <button id="overlay-btn" type="button">Grant Display over other apps</button>
     </div>
   </div>
+  <script>
+    setTimeout(function () {
+      if (window.__probeStarted) return;
+      var v = document.getElementById('verdict');
+      var d = document.getElementById('details');
+      v.className = 'fail';
+      v.textContent = 'FAIL: WebView too old for ES modules';
+      var p = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.KennkoProbe;
+      if (p && p.info) {
+        p.info().then(function (info) {
+          d.textContent = JSON.stringify({ info: info }, null, 2);
+        });
+      }
+    }, 2000);
+  </script>
   <script type="module" src="./probe.mjs"></script>
 </body>
 </html>
