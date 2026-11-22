@@ -1,9 +1,9 @@
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import {
   ORDER_TYPE_LABELS, OrderError, findItem, formatPesos, iceLabel, parsePesos, priceLine, totals,
-  type Discount, type LineInput, type Menu, type MenuItem, type OrderType, type PricedLine,
+  type Discount, type LineInput, type Menu, type MenuItem, type OrderType, type PricedLine, type WallVisitor,
 } from '@kennko/core'
-import type { Bootstrap, Live } from '../api.ts'
+import { api, type Bootstrap, type Live } from '../api.ts'
 import { EMPTY_CART, type Cart, type CartLine } from '../App.tsx'
 import { AddCustomer } from '../components/AddCustomer.tsx'
 import { Modal } from '../components/Modal.tsx'
@@ -85,8 +85,23 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
   const freeReady = Boolean(customer?.info && customer.info.fullCards > 0 && customer.info.stampMode !== 'paper')
   const setCustomer = (next: Cart['customer']) => setCart((c) => {
     const keepsFree = Boolean(next?.info && next.info.fullCards > 0 && next.info.stampMode !== 'paper')
-    return { ...c, customer: next, lines: keepsFree ? c.lines : c.lines.map(({ reward: _reward, ...l }) => l) }
+    const nextName = !c.customerName.trim() && next?.info?.catName ? next.info.catName.slice(0, 24) : c.customerName
+    const nextLook = next?.info?.catLook ?? (next === null ? null : c.catLook ?? null)
+    return {
+      ...c,
+      customer: next,
+      customerName: nextName,
+      catLook: nextLook,
+      lines: keepsFree ? c.lines : c.lines.map(({ reward: _reward, ...l }) => l),
+    }
   })
+  const [visitors, setVisitors] = useState<WallVisitor[]>([])
+  useEffect(() => {
+    let gone = false
+    api.visitors().then((v) => { if (!gone) setVisitors(v) }).catch(() => { /* ignore */ })
+    return () => { gone = true }
+  }, [live.sync.lastSyncAt, live.version])
+  const selectedLookKey = cart.catLook ? JSON.stringify(cart.catLook) : null
   const makeFree = (key: string) => { setCart((c) => ({ ...c, lines: splitReward(c.lines, key, newKey) })); setPickingFree(false) }
   const notFree = (key: string) => setCart((c) => ({ ...c, lines: c.lines.map((l) => (l.key === key ? { ...l, reward: false } : l)) }))
 
@@ -114,6 +129,31 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
       ) : (
         <button type="button" className="btn btn-quiet btn-block add-customer" onClick={() => setAddingCustomer(true)}>Add Kennko card</button>
       )}
+      {visitors.length > 0 ? (
+        <div className="walking-cats" aria-label="Walking cats">
+          <small className="muted">Walking cats</small>
+          <div className="walking-cat-chips">
+            {visitors.map((v) => {
+              const active = selectedLookKey === JSON.stringify(v.look)
+              return (
+                <button
+                  type="button"
+                  key={v.key}
+                  className={`pill${active ? ' pill-amber' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => setCart((c) => ({
+                    ...c,
+                    catLook: active ? null : v.look,
+                    customerName: !active && !c.customerName.trim() ? v.name.slice(0, 24) : c.customerName,
+                  }))}
+                >
+                  {v.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
       {freeReady && !hasFree && cart.lines.length > 0 ? (
         <button type="button" className="btn btn-amber btn-block" onClick={() => (cart.lines.length === 1 ? makeFree(cart.lines[0]!.key) : setPickingFree(true))}>
           Make one drink free

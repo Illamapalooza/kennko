@@ -45,7 +45,7 @@ function byName(lines: { name: string; quantity: number }[]): { name: string; qt
 
 export function wallOrders(orders: Order[], lookFor?: (code: string) => CatLook | null): WallOrder[] {
   return orders.map((order) => {
-    const look = order.customerCode && lookFor ? lookFor(order.customerCode) : null
+    const look = order.catLook ?? (order.customerCode && lookFor ? lookFor(order.customerCode) : null)
     return {
       id: order.id,
       number: order.number,

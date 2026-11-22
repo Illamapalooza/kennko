@@ -24,6 +24,29 @@ it and `GEMINI.md` is a symlink to it. **Edit rules here, nowhere else.**
 - New apps go under `apps/`. No Turborepo or Nx until builds or task running actually need it.
 - Run `npm test` and `npm run typecheck` from the repo root before committing.
 
+## Android build & device workflow
+- **Java 21 for Gradle:** Capacitor 8 requires JDK 21: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"`.
+- **Build debug APKs** (clear `android/kennko-kit/build` when switching between apps to avoid AGP `bundleLibRuntimeToDirDebug` collisions):
+  ```bash
+  rm -rf android/kennko-kit/build && npm run pos:apk
+  rm -rf android/kennko-kit/build && npm run wall:apk
+  ```
+  For release APKs, pass `-- --release` (requires `~/.kennko/keystore.properties`; see `docs/android-release.md`).
+- **Shop devices & ADB:**
+  - `adb devices -l` to list attached devices.
+  - **Samsung tablet (`SM_X210`, `coffee.kennko.pos`):** Wireless Debugging (pair once with `adb pair <ip>:<pair-port>`, connect with `adb connect <ip>:<port>`).
+  - **Wanbo WPD24 projector (`TV_Stick`, `coffee.kennko.wall`):** `adb connect 192.168.1.21:5555`.
+  - **Router (`HG8145X6-10`):** AP/client isolation must remain off so NSD (`_kennko-pos._tcp.`) and ADB work across Mac, tablet, and projector.
+- **Reinstall & launch:**
+  ```bash
+  adb -s <tablet> install -r apps/pos/android/app/build/outputs/apk/debug/app-debug.apk
+  adb -s <tablet> shell am start -n coffee.kennko.pos/.MainActivity
+
+  adb -s <projector> install -r apps/wall-app/android/app/build/outputs/apk/debug/app-debug.apk
+  adb -s <projector> shell am start -n coffee.kennko.wall/.MainActivity
+  ```
+  If POS/API changes were made, remember the tablet talks to production Vercel (`main`), so push `main` when asked to deploy API updates.
+
 ## Safety
 - **This repo is public on GitHub.** Never commit `.env*` files, keys, tokens or customer data.
 - **Pushing to `main` deploys the website** (Vercel). Commit or push only when Julius asks.

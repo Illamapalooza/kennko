@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CatToon } from '@kennko/cats'
-import type { Discount, LineInput, Menu, OrderType, TillCustomer } from '@kennko/core'
+import type { CatLook, Discount, LineInput, Menu, OrderType, TillCustomer } from '@kennko/core'
 import { ApiError, api, setOnLocked, type Bootstrap, type Live, type Session } from './api.ts'
 import { ClockIcon, CupIcon, DrawerIcon, ListIcon, LockIcon, TicketIcon } from './components/Icons.tsx'
 import { Gate } from './screens/Gate.tsx'
@@ -18,8 +18,8 @@ import { UpdateBanner } from './app/UpdateBanner.tsx'
 export type CartLine = LineInput & { key: string }
 /** A Kennko card on the sale: the code (formatted) and what the lookup said, null when it could not be asked. */
 export type CartCustomer = { code: string; info: TillCustomer | null; note: string }
-export type Cart = { lines: CartLine[]; type: OrderType; customerName: string; discount: Discount | null; customer: CartCustomer | null }
-export const EMPTY_CART: Cart = { lines: [], type: 'dine_in', customerName: '', discount: null, customer: null }
+export type Cart = { lines: CartLine[]; type: OrderType; customerName: string; discount: Discount | null; customer: CartCustomer | null; catLook?: CatLook | null }
+export const EMPTY_CART: Cart = { lines: [], type: 'dine_in', customerName: '', discount: null, customer: null, catLook: null }
 
 type Tab = 'sell' | 'orders' | 'history' | 'till' | 'menu'
 const TABS: { id: Tab; label: string; icon: () => React.JSX.Element }[] = [
@@ -156,7 +156,7 @@ export function App() {
     if (!boot || !menu || !live) return <div className="loading">Opening the till…</div>
     switch (tab) {
       case 'sell': return <Sell boot={boot} menu={menu} live={live} cart={cart} setCart={setCart} notify={notify} goTill={() => setTab('till')} />
-      case 'orders': return <Orders live={live} online={online && !live.sync.offline} notify={notify} />
+      case 'orders': return <Orders boot={boot} live={live} online={online && !live.sync.offline} notify={notify} />
       case 'history': return <History boot={boot} live={live} notify={notify} />
       case 'till': return <Till live={live} notify={notify} />
       case 'menu': return <MenuScreen boot={boot} live={live} menu={menu} setMenu={setMenu} notify={notify} onDeviceChange={refreshBoot} />

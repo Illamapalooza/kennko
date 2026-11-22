@@ -57,6 +57,7 @@ export function Pay({ boot, cart, totalCentavos, onPaid, onClose, notify }: Prop
       // A free drink is claimed online with a manager's PIN; a plain card is just linked to the sale.
       ...(freeIndex >= 0 && cart.customer ? { reward: { lineIndex: freeIndex, code: cart.customer.code }, managerPin } : {}),
       ...(freeIndex < 0 && cart.customer ? { customerCode: cart.customer.code } : {}),
+      ...(cart.catLook ? { catLook: cart.catLook } : {}),
     })
     setCard(cart.customer)
     setOrder(saved)

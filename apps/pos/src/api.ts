@@ -1,4 +1,4 @@
-import type { CashMove, Discount, Menu, OnlineQueueOrder, Order, PendingPaymentOrder, PrepStatus, Shift, Summary, TillCustomer } from '@kennko/core'
+import type { CashMove, CatLook, Discount, Menu, OnlineQueueOrder, Order, PendingPaymentOrder, PrepStatus, Shift, Summary, TillCustomer, WallVisitor } from '@kennko/core'
 import { getTransport } from './transport.ts'
 
 export type Bootstrap = {
@@ -81,6 +81,7 @@ export const api = {
   session: () => call<Session>('GET', '/api/session'),
   endSession: () => call<{ ok: true }>('POST', '/api/session/end', {}),
   menu: () => call<Menu>('GET', '/api/menu'),
+  visitors: () => call<WallVisitor[]>('GET', '/api/visitors'),
   orders: (day: string) => call<Order[]>('GET', `/api/orders?day=${day}`),
   createOrder: (body: unknown) => call<Order>('POST', '/api/orders', body),
   /** `from` is the step on screen, so a double tap or a second tablet cannot move the order twice. */
@@ -92,6 +93,7 @@ export const api = {
   customer: (code: string, signal?: AbortSignal) => call<{ customer: TillCustomer | null; code: string; note?: string }>('GET', `/api/customers/${encodeURIComponent(code)}`, undefined, signal),
   linkCustomer: (id: number, code: string) => call<Order>('POST', `/api/orders/${id}/customer`, { code }),
   unlinkCustomer: (id: number) => call<Order>('POST', `/api/orders/${id}/customer/remove`, {}),
+  assignOrderCat: (id: number, catLook: CatLook | null, customerName?: string) => call<Order>('POST', `/api/orders/${id}/cat`, { catLook, customerName }),
   stampOrder: (id: number) => call<Order>('POST', `/api/orders/${id}/stamp`, {}),
   stampOnline: (id: string) => call<OnlineQueueOrder>('POST', `/api/online/${id}/stamp`, {}),
   voidOrder: (id: number, reason: string, managerPin: string) => call<Order>('POST', `/api/orders/${id}/void`, { reason, managerPin }),

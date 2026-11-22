@@ -3,7 +3,7 @@ import type { SqlDb, SqlOpen } from './sql.ts'
 import {
   ADDON_LIMIT_MESSAGE, MAX_MODIFIERS, MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, canMovePrep, cleanDiscount, isOnlineQueueOrder,
   formatPublicCode, hasDrink, manilaDay, nextPrepStatus, nextStatus, normalisePublicCode, prevStatus, priceLines, summarise, totals,
-  type CashMove, type CounterOrderPayload, type Discount, type LineInput, type Menu, type OnlineQueueOrder, type Order, type OrderStatus,
+  type CashMove, type CatLook, type CounterOrderPayload, type Discount, type LineInput, type Menu, type OnlineQueueOrder, type Order, type OrderStatus,
   type OrderType, type PaymentMethod, type PendingPaymentOrder, type PrepStatus, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
   type TillCustomer, type WallVisitor, MAX_VISITORS, isWallVisitor, parseLook,
 } from '@kennko/core'
@@ -17,6 +17,8 @@ export type NewOrder = {
   payment: { method: PaymentMethod; tenderedCentavos?: number; ref?: string }
   /** A Kennko card to link in the same transaction, as typed or scanned (`KC-…` or bare). Empty or absent: none. */
   customerCode?: string | null
+  /** Optional cat look from a walking cat or Kennko card. */
+  catLook?: CatLook | null
 }
 
 /** Refusals the till screens show as they are. */
@@ -111,6 +113,7 @@ const ADDED_COLUMNS: [table: string, column: string, decl: string][] = [
   ['orders', 'needs_import', 'integer not null default 0'],
   // Plan 7: the linked Kennko card (bare code), this sale's stamp and the free-drink claim it used.
   ['orders', 'customer_code', 'text'],
+  ['orders', 'cat_look', 'text'],
   ['orders', 'stamp_uid', 'text'],
   ['orders', 'reward_claim_id', 'text'],
   ['cash_moves', 'uid', 'text'],
@@ -187,6 +190,7 @@ function toOrder(row: any): Order {
     customerCode: row.customer_code ? formatPublicCode(row.customer_code) : null,
     stamped: row.stamp_uid != null,
     freeDrink: row.reward_claim_id != null,
+    ...(row.cat_look ? (() => { try { const l = parseLook(JSON.parse(row.cat_look)); return l ? { catLook: l } : {} } catch { return {} } })() : {}),
   }
 }
 
@@ -587,7 +591,10 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       if (claimId !== null && (!hasReward || p.customerCode === null || !UUID.test(claimId))) {
         throw new OrderError('The free drink needs its line and the customer\'s code.')
       }
-      const { lines, discount, sums, type, method, tendered, change, ref, customerName, menuVersion, customerCode } = p
+      const { lines, discount, sums, type, method, tendered, change, ref, menuVersion, customerCode } = p
+      const cached = customerCode !== null ? cachedCustomer(customerCode) : null
+      const customerName = p.customerName || (cached?.catName ? clean(cached.catName, 24) : '')
+      const catLook = input.catLook ? parseLook(input.catLook) : (cached?.catLook ?? null)
 
       return tx(() => {
         const shift = openShift()
@@ -598,11 +605,11 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
         const result = db.prepare(`
           insert into orders (day, number, type, customer_name, status, lines, subtotal, discount, discount_label, total,
             payment_method, tendered, change, payment_ref, shift_id, created_at, updated_at, uid, payment_uid, menu_version,
-            customer_code, reward_claim_id)
-          values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            customer_code, cat_look, reward_claim_id)
+          values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(day, number, type, customerName, JSON.stringify(lines), sums.subtotalCentavos, sums.discountCentavos,
           sums.discountCentavos > 0 ? discount!.label : null, sums.totalCentavos, method, tendered, change, ref, shift.id, now, now,
-          randomUuid(), randomUuid(), menuVersion, customerCode, claimId)
+          randomUuid(), randomUuid(), menuVersion, customerCode, catLook ? JSON.stringify(catLook) : null, claimId)
         const id = Number(result.lastInsertRowid)
         record('order.created', id, by, now, {
           businessDay: day, ticketNumber: number, fulfilment: type, customerName, menuVersion, lines, discount,
@@ -615,6 +622,20 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       })
     },
 
+    /** Assigns or clears a cat look on an existing order (and fills customer_name if blank). */
+    setOrderCat(id: number, catLook: CatLook | null, customerName?: string): Order {
+      const look = catLook ? parseLook(catLook) : null
+      if (catLook && !look) throw new OrderError('That cat look is not valid.')
+      return tx(() => {
+        const order = getOrder(id)
+        if (order.status === 'voided') throw new OrderError('That order is voided.')
+        const nextName = !order.customerName && customerName ? clean(customerName, 24) : order.customerName
+        db.prepare('update orders set cat_look = ?, customer_name = ? where id = ?')
+          .run(look ? JSON.stringify(look) : null, nextName, id)
+        return getOrder(id)
+      })
+    },
+
     /** Links a Kennko card to a sale of the open till (Ruling 19). A typo'd code is refused before anything is written. */
     linkCustomer(id: number, code: string, now: number, by: By): Order {
       by = checkBy(by)
@@ -623,7 +644,11 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       return tx(() => {
         const order = changeableOrder(id)
         if (order.customerCode !== null) throw new OrderError('Remove the customer first.')
-        db.prepare('update orders set customer_code = ?, updated_at = ? where id = ?').run(bare, now, id)
+        const cached = cachedCustomer(bare)
+        const nextName = !order.customerName && cached?.catName ? clean(cached.catName, 24) : order.customerName
+        const nextLook = order.catLook ?? cached?.catLook ?? null
+        db.prepare('update orders set customer_code = ?, customer_name = ?, cat_look = ?, updated_at = ? where id = ?')
+          .run(bare, nextName, nextLook ? JSON.stringify(nextLook) : null, now, id)
         record('customer.linked', id, by, now, { publicCode: bare })
         return getOrder(id)
       })

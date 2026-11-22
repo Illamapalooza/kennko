@@ -4,6 +4,8 @@ import type { PricedLine } from './cart.ts'
 export const FLOW = ['queued', 'preparing', 'serving', 'done'] as const
 
 export type OrderStatus = (typeof FLOW)[number] | 'voided'
+import type { CatLook } from './cats.ts'
+
 export type OrderType = 'dine_in' | 'takeout'
 export type PaymentMethod = 'cash' | 'gcash'
 
@@ -38,6 +40,8 @@ export type Order = {
   voidReason: string | null
   /** Who approved the void, when the till knows them (counter orders only). */
   voidedByName?: string | null
+  /** Assigned customer cat look for the wall, if any. */
+  catLook?: CatLook | null
   /** The Kennko card linked to the sale, formatted `KC-XXX-XXX-XXX`, or null. Never shown on the wall. */
   customerCode: string | null
   /** The till stamped the linked card for this sale. */

@@ -462,3 +462,8 @@ body { background: var(--pattern-grid), var(--cream); }
 .paid-card { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; width: 100%; font-weight: 800; }
 .paid-card .stamped { color: var(--green); }
 .ticket footer .pill { flex: none; }
+.ticket-clickable { cursor: pointer; }
+.walking-cats { display: grid; gap: 6px; }
+.walking-cat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.walking-cat-chips .pill { cursor: pointer; }
+.detail-lines { display: grid; gap: 6px; list-style: none; padding: 0; margin: 0; }

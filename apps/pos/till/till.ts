@@ -251,6 +251,7 @@ export function createTill(host: TillHost) {
         const day = url.searchParams.get('day')
         return { status: 200, body: store.ordersForDay(isDay(day) ? day : manilaDay(t)) }
       }
+      if (route === '/api/visitors') return { status: 200, body: store.activeVisitors(t) }
       if (route === '/api/till') {
         const shift = store.openShift()
         return {
@@ -308,11 +309,14 @@ export function createTill(host: TillHost) {
       return done(store.createOrder(menu(), body, t, by))
     }
 
-    const customerAction = /^\/api\/orders\/(\d+)\/(customer|customer\/remove|stamp)$/.exec(route)
+    const customerAction = /^\/api\/orders\/(\d+)\/(customer|customer\/remove|stamp|cat)$/.exec(route)
     if (customerAction) {
       const id = Number(customerAction[1])
       if (customerAction[2] === 'customer') return done(store.linkCustomer(id, body.code, t, by))
       if (customerAction[2] === 'customer/remove') return done(store.unlinkCustomer(id, t, by))
+      if (customerAction[2] === 'cat') {
+        return done(store.setOrderCat(id, body.catLook ?? null, typeof body.customerName === 'string' ? body.customerName : undefined))
+      }
       return done(store.stampOrder(id, t, by))
     }
 

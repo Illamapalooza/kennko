@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ORDER_TYPE_LABELS, formatPesos, iceLabel, type OnlineQueueLine, type OnlineQueueOrder, type Order, type OrderStatus, type PendingPaymentOrder } from '@kennko/core'
-import { api, type Live } from '../api.ts'
+import { ORDER_TYPE_LABELS, PAYMENT_LABELS, formatPesos, iceLabel, type OnlineQueueLine, type OnlineQueueOrder, type Order, type OrderStatus, type PendingPaymentOrder, type WallVisitor } from '@kennko/core'
+import { api, type Bootstrap, type Live } from '../api.ts'
+import { Modal } from '../components/Modal.tsx'
+import { PinPrompt } from '../components/PinPrompt.tsx'
 import { maskCode, onlineCardLabel, stampButtonLabel } from '../loyaltyText.ts'
 import { deliveryText, onlineAction, onlineColumn, onlineStage, onlineWhen } from '../onlineText.ts'
 
@@ -10,24 +12,44 @@ const COLUMNS: { status: OrderStatus; title: string; action: string }[] = [
   { status: 'serving', title: 'Serving', action: 'Done' },
 ]
 
+const VOID_REASONS = ['Wrong drink', 'Customer left', 'Duplicate order']
+
 const waited = (createdAt: number, now: number) => {
   const minutes = Math.max(0, Math.floor((now - createdAt) / 60000))
   return minutes < 1 ? 'just now' : `${minutes} min`
 }
 
+const clockTime = (ms: number) =>
+  new Date(ms).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+
 type Card = { kind: 'c'; at: number; order: Order } | { kind: 'w'; at: number; order: OnlineQueueOrder }
+type SelectedOrder = { kind: 'c'; id: number } | { kind: 'w'; id: string }
 
 const onlineLineExtras = (line: OnlineQueueLine) =>
   [...line.options, iceLabel(line.iceLevel, line.iceServe), line.note].filter(Boolean).join(', ')
 
-/** The barista's queue. One big button per card moves it along; every tablet follows. */
-export function Orders({ live, online = true, notify }: { live: Live; online?: boolean; notify: (message: string) => void }) {
+const shouldIgnoreCardClick = (target: EventTarget | null) =>
+  target instanceof Element && Boolean(target.closest('button, a, input, select, textarea'))
+
+/** The barista's queue. One big button per card moves it along; tap a card for details, cat assignment, or voiding. */
+export function Orders({ boot, live, online = true, notify }: { boot: Bootstrap; live: Live; online?: boolean; notify: (message: string) => void }) {
   const [now, setNow] = useState(Date.now())
   const [busy, setBusy] = useState<string | null>(null)
+  const [selected, setSelected] = useState<SelectedOrder | null>(null)
+  const [voidStep, setVoidStep] = useState<'none' | 'reason' | 'confirm' | 'pin'>('none')
+  const [voidReason, setVoidReason] = useState('')
+  const [visitors, setVisitors] = useState<WallVisitor[]>([])
+
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 20000)
     return () => clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    let gone = false
+    api.visitors().then((v) => { if (!gone) setVisitors(v) }).catch(() => { /* ignore */ })
+    return () => { gone = true }
+  }, [live.sync.lastSyncAt, live.version])
 
   const act = async (id: string, work: () => Promise<unknown>) => {
     if (busy !== null) return
@@ -35,6 +57,14 @@ export function Orders({ live, online = true, notify }: { live: Live; online?: b
     try { await work() } catch (err) { notify(err instanceof Error ? err.message : 'That did not work.') } finally { setBusy(null) }
   }
 
+  const closeDetail = () => {
+    setSelected(null)
+    setVoidStep('none')
+    setVoidReason('')
+  }
+
+  const selectedCounter = selected?.kind === 'c' ? live.active.find((o) => o.id === selected.id) ?? null : null
+  const selectedOnline = selected?.kind === 'w' ? (live.online ?? []).find((o) => o.id === selected.id) ?? null : null
   const pending = live.pendingPayments ?? []
 
   return (
@@ -66,60 +96,271 @@ export function Orders({ live, online = true, notify }: { live: Live; online?: b
             <h2>{column.title} <b>{cards.length}</b></h2>
             {cards.length === 0 ? <p className="empty">Nothing here.</p> : null}
             {cards.map((card) => {
-              if (card.kind === 'w') return (
-              <OnlineTicket key={`w:${card.order.id}`} order={card.order} now={now} busy={busy === `w:${card.order.id}`} onAdvance={() => act(`w:${card.order.id}`, () => api.advanceOnline(card.order.id, card.order.prepStatus))} onStamp={() => act(`w:${card.order.id}`, () => api.stampOnline(card.order.id))} />
-              )
+              if (card.kind === 'w') {
+                return (
+                  <OnlineTicket
+                    key={`w:${card.order.id}`}
+                    order={card.order}
+                    now={now}
+                    busy={busy === `w:${card.order.id}`}
+                    onOpen={() => { setSelected({ kind: 'w', id: card.order.id }); setVoidStep('none') }}
+                    onAdvance={() => act(`w:${card.order.id}`, () => api.advanceOnline(card.order.id, card.order.prepStatus))}
+                    onStamp={() => act(`w:${card.order.id}`, () => api.stampOnline(card.order.id))}
+                  />
+                )
+              }
               const order = card.order
               const key = `c:${order.id}`
               return (
-              <article className="ticket" key={key}>
-                <header>
-                  <b className="ticket-number">#{order.number}</b>
-                  <span className="ticket-who">{order.customerName || ORDER_TYPE_LABELS[order.type]}</span>
-                  {order.customerCode ? <span className="pill pill-card">{maskCode(order.customerCode)}</span> : null}
-                  <span className={`pill${order.type === 'takeout' ? ' pill-amber' : ''}`}>{ORDER_TYPE_LABELS[order.type]}</span>
-                </header>
-                <ul>
-                  {order.lines.map((line, i) => {
-                    const extras = [...line.modifiers.map((m) => m.name), iceLabel(line.iceLevel, line.iceServe), line.note].filter(Boolean).join(', ')
-                    return (
-                      <li key={i}>
-                        <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
-                        {extras ? <small>{extras}</small> : null}
-                      </li>
-                    )
-                  })}
-                </ul>
-                <footer>
-                  <span className="muted">{waited(order.createdAt, now)}</span>
-                  {stampButtonLabel(order) === 'Stamp card' ? (
-                    <button type="button" className="btn btn-amber" disabled={busy === key} onClick={() => act(key, () => api.stampOrder(order.id))}>Stamp card</button>
-                  ) : stampButtonLabel(order) === 'Stamped' ? <span className="pill pill-done">Stamped</span> : null}
-                  {column.status !== 'queued' ? (
-                    <button type="button" className="btn btn-quiet" disabled={busy === key} onClick={() => act(key, () => api.undo(order.id))}>Back</button>
-                  ) : null}
-                  <button type="button" className="btn btn-primary" disabled={busy === key} onClick={() => act(key, () => api.advance(order.id))}>
-                    {column.action}
-                  </button>
-                </footer>
-              </article>
+                <article
+                  className="ticket ticket-clickable"
+                  key={key}
+                  onClick={(e) => { if (!shouldIgnoreCardClick(e.target)) { setSelected({ kind: 'c', id: order.id }); setVoidStep('none') } }}
+                >
+                  <header>
+                    <b className="ticket-number">#{order.number}</b>
+                    <span className="ticket-who">{order.customerName || ORDER_TYPE_LABELS[order.type]}</span>
+                    {order.customerCode ? <span className="pill pill-card">{maskCode(order.customerCode)}</span> : null}
+                    <span className={`pill${order.type === 'takeout' ? ' pill-amber' : ''}`}>{ORDER_TYPE_LABELS[order.type]}</span>
+                  </header>
+                  <ul>
+                    {order.lines.map((line, i) => {
+                      const extras = [...line.modifiers.map((m) => m.name), iceLabel(line.iceLevel, line.iceServe), line.note].filter(Boolean).join(', ')
+                      return (
+                        <li key={i}>
+                          <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
+                          {extras ? <small>{extras}</small> : null}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  <footer>
+                    <span className="muted">{waited(order.createdAt, now)}</span>
+                    {stampButtonLabel(order) === 'Stamp card' ? (
+                      <button type="button" className="btn btn-amber" disabled={busy === key} onClick={() => act(key, () => api.stampOrder(order.id))}>Stamp card</button>
+                    ) : stampButtonLabel(order) === 'Stamped' ? <span className="pill pill-done">Stamped</span> : null}
+                    {column.status !== 'queued' ? (
+                      <button type="button" className="btn btn-quiet" disabled={busy === key} onClick={() => act(key, () => api.undo(order.id))}>Back</button>
+                    ) : null}
+                    <button type="button" className="btn btn-primary" disabled={busy === key} onClick={() => act(key, () => api.advance(order.id))}>
+                      {column.action}
+                    </button>
+                  </footer>
+                </article>
               )
             })}
           </section>
         )
       })}
+
+      {selectedCounter ? (
+        <CounterOrderModal
+          order={selectedCounter}
+          visitors={visitors}
+          busy={busy === `c:${selectedCounter.id}`}
+          voidStep={voidStep}
+          voidReason={voidReason}
+          onVoidReasonChange={setVoidReason}
+          onStartVoid={() => setVoidStep('reason')}
+          onConfirmVoidStep={() => setVoidStep('confirm')}
+          onCancelVoid={() => { setVoidStep('none'); setVoidReason('') }}
+          onProceedVoidPin={() => {
+            if (boot.pinMode === 'off') {
+              void act(`c:${selectedCounter.id}`, async () => {
+                await api.voidOrder(selectedCounter.id, voidReason.trim(), '')
+                notify(`Order #${selectedCounter.number} was voided.`)
+                closeDetail()
+              })
+            } else {
+              setVoidStep('pin')
+            }
+          }}
+          onAssignCat={(look, name) => act(`c:${selectedCounter.id}`, () => api.assignOrderCat(selectedCounter.id, look ?? null, name))}
+          onClose={closeDetail}
+        />
+      ) : null}
+
+      {selectedOnline ? (
+        <OnlineOrderModal order={selectedOnline} now={now} onClose={closeDetail} />
+      ) : null}
+
+      {selectedCounter && voidStep === 'pin' ? (
+        <PinPrompt
+          title="Manager PIN to void"
+          hint={`Voiding order #${selectedCounter.number} (${formatPesos(selectedCounter.totalCentavos)}) takes it off the wall and out of sales.`}
+          onClose={() => setVoidStep('confirm')}
+          onSubmit={async (pin: string) => {
+            await api.voidOrder(selectedCounter.id, voidReason.trim(), pin)
+            notify(`Order #${selectedCounter.number} was voided.`)
+            closeDetail()
+          }}
+        />
+      ) : null}
     </div>
   )
 }
 
+function CounterOrderModal({
+  order,
+  visitors,
+  busy,
+  voidStep,
+  voidReason,
+  onVoidReasonChange,
+  onStartVoid,
+  onConfirmVoidStep,
+  onCancelVoid,
+  onProceedVoidPin,
+  onAssignCat,
+  onClose,
+}: {
+  order: Order
+  visitors: WallVisitor[]
+  busy: boolean
+  voidStep: 'none' | 'reason' | 'confirm' | 'pin'
+  voidReason: string
+  onVoidReasonChange: (v: string) => void
+  onStartVoid: () => void
+  onConfirmVoidStep: () => void
+  onCancelVoid: () => void
+  onProceedVoidPin: () => void
+  onAssignCat: (look: Order['catLook'] | null, name?: string) => void
+  onClose: () => void
+}) {
+  const currentLookKey = order.catLook ? JSON.stringify(order.catLook) : null
+  return (
+    <Modal title={`Order #${order.number}`} onClose={onClose}>
+      <div className="stack">
+        <p className="muted">
+          {clockTime(order.createdAt)} · {order.customerName || ORDER_TYPE_LABELS[order.type]} · {ORDER_TYPE_LABELS[order.type]} · {PAYMENT_LABELS[order.paymentMethod]} · <b>{formatPesos(order.totalCentavos)}</b>
+        </p>
+        {order.customerCode ? <p className="muted">Kennko card: <b>{maskCode(order.customerCode)}</b></p> : null}
+        <ul className="detail-lines">
+          {order.lines.map((line, i) => {
+            const extras = [...line.modifiers.map((m) => m.name), iceLabel(line.iceLevel, line.iceServe), line.note].filter(Boolean).join(', ')
+            return (
+              <li key={i}>
+                <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
+                {extras ? <small> · {extras}</small> : null}
+              </li>
+            )
+          })}
+        </ul>
+
+        {visitors.length > 0 && voidStep === 'none' ? (
+          <div className="walking-cats">
+            <small className="muted">Assign walking cat</small>
+            <div className="walking-cat-chips">
+              {visitors.map((v) => {
+                const active = currentLookKey === JSON.stringify(v.look)
+                return (
+                  <button
+                    type="button"
+                    key={v.key}
+                    className={`pill${active ? ' pill-amber' : ''}`}
+                    disabled={busy}
+                    onClick={() => onAssignCat(active ? null : v.look, v.name)}
+                  >
+                    {v.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {voidStep === 'reason' ? (
+          <div className="stack">
+            <h3><label htmlFor="orders-void-reason">Why is it being voided?</label></h3>
+            <div className="walking-cat-chips">
+              {VOID_REASONS.map((r) => (
+                <button type="button" key={r} className={`pill${voidReason === r ? ' pill-amber' : ''}`} onClick={() => onVoidReasonChange(r)}>
+                  {r}
+                </button>
+              ))}
+            </div>
+            <input
+              id="orders-void-reason"
+              className="input"
+              value={voidReason}
+              maxLength={120}
+              placeholder="Reason for voiding…"
+              autoFocus
+              onChange={(e) => onVoidReasonChange(e.target.value)}
+            />
+            <div className="row-actions">
+              <button type="button" className="btn btn-quiet grow" onClick={onCancelVoid}>Keep order</button>
+              <button type="button" className="btn btn-danger grow" disabled={!voidReason.trim()} onClick={onConfirmVoidStep}>Continue</button>
+            </div>
+          </div>
+        ) : voidStep === 'confirm' ? (
+          <div className="stack">
+            <p className="error" role="alert">
+              Void order #{order.number} ({formatPesos(order.totalCentavos)})? Reason: “{voidReason.trim()}”. This takes it off the wall and out of sales.
+            </p>
+            <div className="row-actions">
+              <button type="button" className="btn btn-quiet grow" onClick={onCancelVoid}>Keep order</button>
+              <button type="button" className="btn btn-danger grow" disabled={busy} onClick={onProceedVoidPin}>Confirm void</button>
+            </div>
+          </div>
+        ) : voidStep === 'none' ? (
+          <div className="row-actions">
+            <button type="button" className="btn btn-ghost-danger" onClick={onStartVoid}>Void order</button>
+            <button type="button" className="btn btn-primary grow" onClick={onClose}>Close</button>
+          </div>
+        ) : null}
+      </div>
+    </Modal>
+  )
+}
+
+function OnlineOrderModal({ order, now, onClose }: { order: OnlineQueueOrder; now: number; onClose: () => void }) {
+  const where = deliveryText(order)
+  return (
+    <Modal title={`Order W${order.ticketNumber}`} onClose={onClose}>
+      <div className="stack">
+        <p className="muted">{order.customerName} · {onlineWhen(order, now)} · {onlineStage(order.prepStatus, order.fulfilment) || order.prepStatus}</p>
+        <ul className="detail-lines">
+          {order.lines.map((line, i) => {
+            const extras = onlineLineExtras(line)
+            return (
+              <li key={i}>
+                <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
+                {extras ? <small> · {extras}</small> : null}
+              </li>
+            )
+          })}
+        </ul>
+        {order.customerNote ? <p className="online-note"><i>{order.customerNote}</i></p> : null}
+        {where ? <p className="online-where">{where}</p> : null}
+        <button type="button" className="btn btn-primary btn-block" onClick={onClose}>Close</button>
+      </div>
+    </Modal>
+  )
+}
+
 /** A paid online order: forward-only (no Back, no Void: admin cancels and refunds), and no money. */
-function OnlineTicket({ order, now, busy, onAdvance, onStamp }: { order: OnlineQueueOrder; now: number; busy: boolean; onAdvance: () => void; onStamp: () => void }) {
+function OnlineTicket({
+  order,
+  now,
+  busy,
+  onOpen,
+  onAdvance,
+  onStamp,
+}: {
+  order: OnlineQueueOrder
+  now: number
+  busy: boolean
+  onOpen: () => void
+  onAdvance: () => void
+  onStamp: () => void
+}) {
   const cardLabel = onlineCardLabel(order.card)
   const action = onlineAction(order.prepStatus, order.fulfilment)
   const stage = onlineStage(order.prepStatus, order.fulfilment)
   const where = deliveryText(order)
   return (
-    <article className="ticket ticket-online">
+    <article className="ticket ticket-online ticket-clickable" onClick={(e) => { if (!shouldIgnoreCardClick(e.target)) onOpen() }}>
       <header>
         <b className="ticket-number">W{order.ticketNumber}</b>
         <span className="ticket-who">{order.customerName}</span>
