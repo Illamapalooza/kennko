@@ -83,6 +83,20 @@ export function History({ boot, live, notify }: { boot: Bootstrap; live: Live; n
               {editable(open) && open.customerCode && !open.freeDrink ? <button type="button" className="btn btn-quiet" disabled={working} onClick={() => change(() => api.unlinkCustomer(open.id))}>Remove customer</button> : null}
               {editable(open) && stampButtonLabel(open) === 'Stamp card' ? <button type="button" className="btn btn-amber" disabled={working} onClick={() => change(() => api.stampOrder(open.id))}>Stamp card</button> : null}
               {stampButtonLabel(open) === 'Stamped' ? <span className="pill pill-done">Stamped</span> : null}
+              {open.status === 'done' && open.type === 'dine_in' ? (
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  disabled={working}
+                  onClick={() => change(async () => {
+                    const updated = await api.removeFromWall(open.id)
+                    notify(`Removed order #${open.number} cat from the cafe wall.`)
+                    return updated
+                  })}
+                >
+                  Remove cat from cafe
+                </button>
+              ) : null}
               {open.status !== 'voided' ? <button type="button" className="btn btn-ghost-danger" onClick={() => setVoiding(true)}>Void</button> : null}
               <button type="button" className="btn btn-outline grow" onClick={() => window.print()}>Print</button>
               <button type="button" className="btn btn-primary grow" onClick={closeOrder}>Close</button>

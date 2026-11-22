@@ -2,7 +2,7 @@ import { parseLook, type CatLook, type PrepStatus, type WallVisitor } from '@ken
 import type postgres from 'postgres'
 import { readVisitors } from '../loyalty/visits.js'
 
-const WALL_LINGER_MS = 90_000
+const WALL_LINGER_MS = 2 * 60 * 60 * 1000
 
 export type PublicWallOrder = {
   id: number

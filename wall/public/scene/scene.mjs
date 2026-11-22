@@ -202,7 +202,15 @@ export function createScene(canvas, tagLayer, opts = {}) {
         const slot = waitSlots.get(o.id);
         go(c, seat !== undefined ? SEATS[seat] : slot >= 0 ? WAIT[slot] : { x: 20 + (o.id % 6) * 17, y: 150 });
       } else if (o.status === "done") {
-        if (c.phase === "in") { c.cup = true; c.phase = "finish"; c.leaveAt = t + rand(6, 14); }
+        const dineIn = o.fulfilment === "dine_in";
+        if (c.phase === "in") {
+          c.cup = true;
+          c.phase = "finish";
+          c.dineIn = dineIn;
+          c.leaveAt = dineIn ? Infinity : t + rand(6, 14);
+        } else {
+          c.dineIn = dineIn;
+        }
       } else if (c.phase !== "leave") {
         c.cup = false;
         leave(c);
@@ -284,20 +292,62 @@ export function createScene(canvas, tagLayer, opts = {}) {
     if (arrived && !target.moving) { target.cup = true; sendHome(); }
   }
 
+  function pickIdleAction(e, { canWander = false, canNap = false } = {}) {
+    const r = Math.random();
+    e.actAt = t;
+    e.lookFlip = undefined;
+    if (canWander && r < 0.25 && e.spot) {
+      e.act = "wander";
+      e.tx = Math.max(16, Math.min(272, Math.round(e.spot.x + rand(-8, 8))));
+      e.ty = Math.max(84, Math.min(149, Math.round(e.spot.y + rand(-4, 4))));
+      e.nextAct = t + rand(3, 6);
+      return;
+    }
+    if (canNap && r < 0.4) {
+      e.act = "nap";
+      e.nextAct = t + rand(4, 7);
+      return;
+    }
+    if (r < 0.58) {
+      e.act = "look";
+      e.lookFlip = !e.flip;
+      e.nextAct = t + rand(1.4, 2.4);
+    } else if (r < 0.74) {
+      e.act = "hop";
+      e.nextAct = t + rand(1.8, 3.2);
+    } else if (r < 0.9) {
+      e.act = "happy";
+      e.nextAct = t + rand(2.2, 4.0);
+    } else {
+      e.act = "idle";
+      e.nextAct = t + rand(2.5, 5.5);
+    }
+  }
+
   function step(dt) {
     for (const c of custs.values()) {
-      if (!walk(c, dt)) continue;
+      if (!walk(c, dt)) { c.act = "idle"; continue; }
       const seat = SEATS[seatOf.get(c.id)];
       if (seat && c.phase !== "leave") c.flip = seat.flip;
-      if (c.phase === "finish" && t > c.leaveAt) leave(c);
+      if (c.phase === "finish" && !c.dineIn && t > c.leaveAt) leave(c);
       else if (c.phase === "leave") custs.delete(c.id);
+      else if ((c.phase === "in" || (c.phase === "finish" && c.dineIn)) && t > (c.nextAct ?? 0)) {
+        if (c.nextAct === undefined) c.nextAct = t + rand(1.5, 4.5);
+        else pickIdleAction(c, { canWander: !seat && waitSlots.get(c.id) >= 0, canNap: c.phase === "finish" });
+      }
     }
     for (const v of visitors.values()) {
       // a visit that ends between two feeds still ends on time, by the till's clock
       if (v.phase === "in" && v.endsAt <= clock()) { v.phase = "leave"; go(v, DOOR); }
-      if (!walk(v, dt)) continue;
+      if (!walk(v, dt)) { v.act = "idle"; continue; }
       if (v.phase === "leave") visitors.delete(v.key);
-      else if (v.spot) v.flip = v.spot.flip;
+      else {
+        if (v.spot && v.act !== "wander" && v.act !== "look") v.flip = v.spot.flip;
+        if (t > (v.nextAct ?? 0)) {
+          if (v.nextAct === undefined) v.nextAct = t + rand(1.5, 4.5);
+          else pickIdleAction(v, { canWander: true, canNap: true });
+        }
+      }
     }
     if (baristaCount > 0) stepServer(dt);
     baristas.forEach((b, i) => {
@@ -359,23 +409,54 @@ export function createScene(canvas, tagLayer, opts = {}) {
     R(INK, tb.x - 8, tb.y - 12, 16, 5); R("#ffffff", tb.x - 7, tb.y - 11, 14, 3); R(BLUE, tb.x - 7, tb.y - 9, 14, 1);
   }
 
+  function drawHeart(x, y, age) {
+    if (age < 0 || age > 1.4) return;
+    const dy = Math.round(age * 5);
+    ctx.globalAlpha = Math.max(0, 1 - age / 1.4);
+    ctx.fillStyle = "#ff5c8a";
+    ctx.fillRect(x, y - dy, 2, 1);
+    ctx.fillRect(x + 3, y - dy, 2, 1);
+    ctx.fillRect(x, y + 1 - dy, 5, 2);
+    ctx.fillRect(x + 1, y + 3 - dy, 3, 1);
+    ctx.fillRect(x + 2, y + 4 - dy, 1, 1);
+    ctx.globalAlpha = 1;
+  }
+
+  function hopOffset(e) {
+    if (e.moving || e.act !== "hop") return 0;
+    const age = t - (e.actAt ?? t);
+    if (age < 0 || age > 0.7) return 0;
+    return Math.abs(Math.round(Math.sin(age * Math.PI * 3) * 2));
+  }
+
   function drawCust(c) {
-    const bob = c.moving ? Math.floor(t * 7 + c.id) % 2 : 0;
+    const bob = (c.moving ? Math.floor(t * 7 + c.id) % 2 : 0) + hopOffset(c);
     const x = Math.round(c.x) - 7, y = Math.round(c.y) - CAT_H - bob;
+    const flip = !c.moving && c.act === "look" && c.lookFlip !== undefined ? c.lookFlip : c.flip;
     ctx.fillStyle = "rgba(26,35,64,.14)"; ctx.fillRect(x + 1, Math.round(c.y) - 1, 12, 2);
-    drawCat(ctx, x, y, c.coat, { flip: c.flip, blink: blink(c.id) });
+    drawCat(ctx, x, y, c.coat, { flip, blink: blink(c.id) });
+    if (!c.moving && c.act === "happy") drawHeart(x + 5, y - 6, t - (c.actAt ?? t));
     if (!c.cup) return;
     const seat = c.moving ? null : SEATS[seatOf.get(c.id)];
     const sipping = !c.moving && ((t * 1000 + c.id * 911) % 5200) < 900;
     if (seat && !sipping) drawCup(ctx, Math.round(c.x) + (seat.flip ? -12 : 9), Math.round(c.y) - 17);
-    else drawCup(ctx, c.flip ? x - 2 : x + CAT_W - 2, y + (sipping ? 5 : 9));
+    else drawCup(ctx, flip ? x - 2 : x + CAT_W - 2, y + (sipping ? 5 : 9));
   }
 
   function drawVisitor(v) {
-    const bob = v.moving ? Math.floor(t * 7 + v.seed) % 2 : 0;
+    if (!v.moving && v.act === "nap") {
+      const x = Math.round(v.x) - 7, y = Math.round(v.y) - 8;
+      ctx.fillStyle = "rgba(26,35,64,.14)"; ctx.fillRect(x + 1, Math.round(v.y) - 1, 12, 2);
+      drawLoaf(ctx, x, y, v.look?.coat ?? "cream", Math.floor(t / 1.4) % 2);
+      drawZzz(x + 11, y - 2);
+      return;
+    }
+    const bob = (v.moving ? Math.floor(t * 7 + v.seed) % 2 : 0) + hopOffset(v);
     const x = Math.round(v.x) - 7, y = Math.round(v.y) - CAT_H - bob;
+    const flip = !v.moving && v.act === "look" && v.lookFlip !== undefined ? v.lookFlip : v.flip;
     ctx.fillStyle = "rgba(26,35,64,.14)"; ctx.fillRect(x + 1, Math.round(v.y) - 1, 12, 2);
-    drawCat(ctx, x, y, v.look, { flip: v.flip, blink: blink(200 + v.seed) });
+    drawCat(ctx, x, y, v.look, { flip, blink: blink(200 + v.seed) });
+    if (!v.moving && v.act === "happy") drawHeart(x + 5, y - 6, t - (v.actAt ?? t));
   }
 
   function drawServer() {

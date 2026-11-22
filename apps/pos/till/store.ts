@@ -118,6 +118,7 @@ const ADDED_COLUMNS: [table: string, column: string, decl: string][] = [
   ['orders', 'cat_look', 'text'],
   // The walking cat this order belongs to (its per-visit key), so the wall moves that cat instead of adding a twin.
   ['orders', 'visitor_key', 'text'],
+  ['orders', 'wall_dismissed', 'integer not null default 0'],
   ['orders', 'stamp_uid', 'text'],
   ['orders', 'reward_claim_id', 'text'],
   ['cash_moves', 'uid', 'text'],
@@ -981,9 +982,16 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       return db.prepare(`${ORDERS} where o.status in ('queued','preparing','serving') order by o.id`).all().map(toOrder)
     },
 
-    /** Orders finished or voided since the given time, for the wall to play out their ending. */
+    /** Orders finished or voided since the given time, for the wall to play out their ending or keep dine-in cats seated. */
     recentlyFinished(since: number): Order[] {
-      return db.prepare(`${ORDERS} where o.status in ('done','voided') and o.updated_at >= ? order by o.id`).all(since).map(toOrder)
+      return db.prepare(`${ORDERS} where o.status in ('done','voided') and coalesce(o.wall_dismissed, 0) = 0 and o.updated_at >= ? order by o.id`).all(since).map(toOrder)
+    },
+
+    /** Explicitly removes a finished order's cat from the cafe wall without voiding the sale. */
+    dismissFromWall(id: number): Order {
+      getOrder(id)
+      db.prepare('update orders set wall_dismissed = 1 where id = ?').run(id)
+      return getOrder(id)
     },
 
     ordersForDay(day: string): Order[] {

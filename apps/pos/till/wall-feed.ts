@@ -22,8 +22,8 @@ export type WallOrder = {
   visitor?: string
 }
 
-/** How long a finished order stays in the feed, so its cat can finish the drink and walk out. */
-export const WALL_LINGER_MS = 90_000
+/** How long a finished dine-in order stays in the feed (2 hours) unless explicitly removed from the cafe. */
+export const WALL_LINGER_MS = 2 * 60 * 60 * 1000
 
 /**
  * An online order's step as a wall status (Plan 5 Ruling 11). Out for delivery is `done`: the customer is not in the
@@ -74,6 +74,7 @@ export function wallOrders(
       status: order.status,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
+      fulfilment: order.type,
       ...(look ? { look } : {}),
       ...(key ? { visitor: key } : {}),
     }
