@@ -52,6 +52,8 @@ export function OrderCard({
   const [error, setError] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [showReject, setShowReject] = useState(false)
+  const [voidStep, setVoidStep] = useState<'closed' | 'reason' | 'confirm'>('closed')
+  const [voidReason, setVoidReason] = useState('')
   const [proof, setProof] = useState<string | null>(null)
 
   const run = (fn: () => Promise<{ ok: true } | { ok: false; message: string } | void>) =>
@@ -67,14 +69,7 @@ export function OrderCard({
 
   const advance = nextStatus(order)
   const unverified = order.stage === 'awaiting_verification'
-  const canCancel = isOwner && order.prepStatus !== 'completed' && order.prepStatus !== 'cancelled'
-
-  const askCancel = () => {
-    const why = window.prompt('Why is this order being cancelled?')
-    if (!why || !why.trim()) return
-    if (!window.confirm(`Cancel order ${order.ticket}? This cannot be undone.`)) return
-    run(() => cancelOrder(order.id, why))
-  }
+  const canCancel = isOwner && order.prepStatus !== 'cancelled'
 
   return (
     <article className="section-card" style={{ display: 'grid', gap: 10 }}>
@@ -202,15 +197,47 @@ export function OrderCard({
           </button>
         ) : null}
 
-        {canCancel ? (
+        {canCancel && voidStep === 'closed' ? (
           <button
             type="button" className="btn btn-secondary" disabled={pending}
-            onClick={askCancel}
+            onClick={() => setVoidStep('reason')}
           >
-            Cancel order
+            Void order
           </button>
         ) : null}
       </div>
+
+      {voidStep === 'reason' ? (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <label className="admin-field">
+            <span>Why is this order being voided?</span>
+            <input value={voidReason} placeholder="Wrong order, customer requested refund…" onChange={(e) => setVoidReason(e.target.value)} />
+          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => { setVoidStep('closed'); setVoidReason('') }}>Keep order</button>
+            <button type="button" className="btn btn-primary" disabled={!voidReason.trim()} onClick={() => setVoidStep('confirm')}>Continue</button>
+          </div>
+        </div>
+      ) : voidStep === 'confirm' ? (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <p className="admin-error" role="alert">
+            Void order {order.ticket} ({order.orderCode})? Reason: “{voidReason.trim()}”. This cannot be undone.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => { setVoidStep('closed'); setVoidReason('') }}>Keep order</button>
+            <button
+              type="button" className="btn btn-primary" disabled={pending}
+              onClick={() => run(async () => {
+                const res = await cancelOrder(order.id, voidReason.trim())
+                if (res.ok) { setVoidStep('closed'); setVoidReason('') }
+                return res
+              })}
+            >
+              Confirm void
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {showReject && order.paymentId ? (
         <div>

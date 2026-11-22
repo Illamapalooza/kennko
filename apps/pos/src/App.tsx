@@ -18,8 +18,8 @@ import { UpdateBanner } from './app/UpdateBanner.tsx'
 export type CartLine = LineInput & { key: string }
 /** A Kennko card on the sale: the code (formatted) and what the lookup said, null when it could not be asked. */
 export type CartCustomer = { code: string; info: TillCustomer | null; note: string }
-export type Cart = { lines: CartLine[]; type: OrderType; customerName: string; discount: Discount | null; customer: CartCustomer | null; catLook?: CatLook | null }
-export const EMPTY_CART: Cart = { lines: [], type: 'dine_in', customerName: '', discount: null, customer: null, catLook: null }
+export type Cart = { lines: CartLine[]; type: OrderType; customerName: string; discount: Discount | null; customer: CartCustomer | null; catLook?: CatLook | null; /** The walking cat picked or matched for this sale (its visit key). */ visitorKey?: string | null }
+export const EMPTY_CART: Cart = { lines: [], type: 'dine_in', customerName: '', discount: null, customer: null, catLook: null, visitorKey: null }
 
 type Tab = 'sell' | 'orders' | 'history' | 'till' | 'menu'
 const TABS: { id: Tab; label: string; icon: () => React.JSX.Element }[] = [

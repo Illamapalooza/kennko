@@ -114,7 +114,7 @@ function cancelOrderTx(
     if (order.channel !== 'online') {
       return fail(409, 'COUNTER_ORDER', 'Counter orders are cancelled at the till, not here.')
     }
-    if (order.prep_status === 'completed' || order.prep_status === 'cancelled') {
+    if (order.prep_status === 'cancelled') {
       return badTransition(`An order that is ${order.prep_status} cannot be cancelled.`)
     }
 

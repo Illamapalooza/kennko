@@ -1,6 +1,6 @@
 import { COAT_KEYS, SLOTS } from '@kennko/cats/pixel'
 import { describe, expect, it } from 'vitest'
-import { COSMETIC_SLOTS, STARTER_COATS, checkCatName, normaliseCatName, checkinLink, CHECKIN_URL, isWallVisitor, parseLook, wallCode, wallMinute } from './index.ts'
+import { COSMETIC_SLOTS, STARTER_COATS, checkCatName, normaliseCatName, checkinLink, CHECKIN_URL, isWallVisitor, parseLook, wallCode, wallMinute, cleanVisitorKey, findVisitor, sameLook } from './index.ts'
 
 const ok = (raw: string) => {
   const r = checkCatName(raw)
@@ -102,5 +102,42 @@ describe('isWallVisitor', () => {
     expect(isWallVisitor({ ...v, customerId: 'x' })).toBe(false)
     const { endsAt: _e, ...rest } = v
     expect(isWallVisitor(rest)).toBe(false)
+  })
+})
+
+describe('one cat per customer', () => {
+  const mochi = { key: 'a', name: 'Mochi', look: { coat: 'ginger', hat: 'beanie' } }
+  const kape = { key: 'b', name: 'Kape', look: { coat: 'black' } }
+  const twin = { key: 'c', name: 'Biko', look: { coat: 'black' } }
+
+  it('sameLook ignores key order and treats a missing slot as empty', () => {
+    expect(sameLook({ coat: 'ginger', hat: 'beanie' }, { hat: 'beanie', coat: 'ginger' })).toBe(true)
+    expect(sameLook({ coat: 'ginger' }, { coat: 'ginger', hat: 'beanie' })).toBe(false)
+    expect(sameLook(null, { coat: 'ginger' })).toBe(false)
+  })
+
+  it('finds a cat by name and look together', () => {
+    expect(findVisitor([mochi, kape], { name: 'Mochi', look: { coat: 'ginger', hat: 'beanie' } })).toBe('a')
+    expect(findVisitor([mochi, kape], { name: ' mochi ', look: { hat: 'beanie', coat: 'ginger' } })).toBe('a')
+    expect(findVisitor([mochi, kape], { name: 'Mochi', look: { coat: 'black' } })).toBeNull()
+  })
+
+  it('with only a name or only a look, matches when exactly one cat fits', () => {
+    expect(findVisitor([mochi, kape], { name: 'Kape' })).toBe('b')
+    expect(findVisitor([mochi, kape], { look: { coat: 'black' } })).toBe('b')
+    expect(findVisitor([mochi, kape, twin], { look: { coat: 'black' } })).toBeNull()
+    expect(findVisitor([mochi, kape, twin], { name: 'Biko', look: { coat: 'black' } })).toBe('c')
+  })
+
+  it('finds nobody for a customer with no cat', () => {
+    expect(findVisitor([mochi], { name: null, look: null })).toBeNull()
+    expect(findVisitor([], { name: 'Mochi' })).toBeNull()
+  })
+
+  it('a visit key is a short non-empty string or nothing', () => {
+    expect(cleanVisitorKey('abc')).toBe('abc')
+    expect(cleanVisitorKey('')).toBeNull()
+    expect(cleanVisitorKey('x'.repeat(65))).toBeNull()
+    expect(cleanVisitorKey(12)).toBeNull()
   })
 })

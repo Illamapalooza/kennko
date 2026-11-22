@@ -57,7 +57,16 @@ export function AddCustomer({ onConfirm, onClose }: Props) {
     setSaving(true)
     setError('')
     try {
-      const info = looked && looked !== 'busy' ? looked : null
+      let info = looked && looked !== 'busy' ? looked : null
+      if (!info) {
+        try {
+          const r = await api.customer(formatPublicCode(bare), AbortSignal.timeout(LOOKUP_MS))
+          info = { code: formatPublicCode(bare), info: r.customer, note: r.note ?? '' }
+        } catch (err: unknown) {
+          const refused = err instanceof Error && 'status' in err && (err as { status: number }).status > 0
+          if (refused) throw err
+        }
+      }
       await onConfirm({ code: formatPublicCode(bare), info: info?.info ?? null, note: info?.note ?? '' })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That did not work.')

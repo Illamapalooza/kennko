@@ -164,3 +164,14 @@ test("a replayed visit block carries the till's time advanced by the feed's age"
   assert.equal(agedVisit(visit, 100, 50).tillNow, 1_000_000); // a clock step back never rewinds it
   assert.equal(visit.tillNow, 1_000_000);
 });
+
+test("an order's visit key passes through, and anything that is not a short string is dropped", () => {
+  const state = fromPosFeed({ day: "2026-11-22", orders: [
+    order({ id: 1, number: 1, visitor: "k1", look: { coat: "ginger" } }),
+    order({ id: 2, number: 2, visitor: 12 }),
+    order({ id: 3, number: 3, visitor: "x".repeat(65) }),
+  ] }, 1);
+  assert.equal(state.orders[0].visitor, "k1");
+  assert.equal("visitor" in state.orders[1], false);
+  assert.equal("visitor" in state.orders[2], false);
+});

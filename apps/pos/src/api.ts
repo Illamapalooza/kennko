@@ -93,7 +93,8 @@ export const api = {
   customer: (code: string, signal?: AbortSignal) => call<{ customer: TillCustomer | null; code: string; note?: string }>('GET', `/api/customers/${encodeURIComponent(code)}`, undefined, signal),
   linkCustomer: (id: number, code: string) => call<Order>('POST', `/api/orders/${id}/customer`, { code }),
   unlinkCustomer: (id: number) => call<Order>('POST', `/api/orders/${id}/customer/remove`, {}),
-  assignOrderCat: (id: number, catLook: CatLook | null, customerName?: string) => call<Order>('POST', `/api/orders/${id}/cat`, { catLook, customerName }),
+  /** With `visitorKey` the order is tied to that walking cat; the till takes its look and name from the visit. */
+  assignOrderCat: (id: number, catLook: CatLook | null, customerName?: string, visitorKey?: string | null) => call<Order>('POST', `/api/orders/${id}/cat`, { catLook, customerName, visitorKey: visitorKey ?? null }),
   stampOrder: (id: number) => call<Order>('POST', `/api/orders/${id}/stamp`, {}),
   stampOnline: (id: string) => call<OnlineQueueOrder>('POST', `/api/online/${id}/stamp`, {}),
   voidOrder: (id: number, reason: string, managerPin: string) => call<Order>('POST', `/api/orders/${id}/void`, { reason, managerPin }),

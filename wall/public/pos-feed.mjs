@@ -27,6 +27,7 @@ export function fromPosFeed(feed, baristas) {
     const look = cleanLook(o.look);
     const fulfilment = typeof o.fulfilment === "string" ? o.fulfilment : undefined;
     const prepStatus = typeof o.prepStatus === "string" ? o.prepStatus : undefined;
+    const visitor = typeof o.visitor === "string" && o.visitor !== "" && o.visitor.length <= 64 ? o.visitor : undefined;
     orders.push({
       id,
       ...(online ? { label: `W${o.number}` } : {}),
@@ -38,6 +39,7 @@ export function fromPosFeed(feed, baristas) {
       ...(fulfilment ? { fulfilment } : {}),
       ...(prepStatus ? { prepStatus } : {}),
       ...(look ? { look } : {}),
+      ...(visitor ? { visitor } : {}),
     });
   }
   orders.sort((a, b) => a.id - b.id);

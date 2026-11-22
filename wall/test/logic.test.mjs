@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { coatFor, COATS, assignBaristas, assignSlots, boardView, VISIT_SPOTS, SEAT_SPOTS, visitorView, clockOffset, qrCell, itemsLabel, shuffled } from "../public/scene/logic.mjs";
+import { coatFor, COATS, assignBaristas, assignSlots, boardView, VISIT_SPOTS, SEAT_SPOTS, visitorView, clockOffset, qrCell, itemsLabel, shuffled, claimVisitors, sameLook } from "../public/scene/logic.mjs";
 import { CAT_FRONT, COAT_COLOURS, GLYPHS } from "../public/scene/sprites.mjs";
 
 test("a coat is stable per order and every coat gets used", () => {
@@ -93,4 +93,47 @@ test("the QR cell is a whole number of pixels, the card fits the box", () => {
   assert.equal(qrCell(29, 370), 10);
   assert.equal(qrCell(29, 20), 1);
   assert.ok(Number.isInteger(qrCell(33, 301)));
+});
+
+// ---------- one cat per customer ----------
+const cat = (key, name, look) => ({ key, name, look, endsAt: 9e15 });
+const ord = (id, over = {}) => ({ id, status: "queued", name: "", ...over });
+
+test("an order that names its visitor uses that cat", () => {
+  const claims = claimVisitors([ord(4, { visitor: "k1", look: { coat: "ginger" } })], [cat("k1", "Mochi", { coat: "ginger" }), cat("k2", "Kape", { coat: "black" })]);
+  assert.deepEqual([...claims], [[4, "k1"]]);
+});
+
+test("an order with only a look takes the visiting cat that wears it, not a second cat", () => {
+  const claims = claimVisitors([ord(4, { look: { hat: "beanie", coat: "ginger" } })], [cat("k1", "Mochi", { coat: "ginger", hat: "beanie" })]);
+  assert.deepEqual([...claims], [[4, "k1"]]);
+});
+
+test("two cats in the same clothes: the one with the order's name is taken", () => {
+  const twins = [cat("k1", "Biko", { coat: "black" }), cat("k2", "Kape", { coat: "black" })];
+  assert.deepEqual([...claimVisitors([ord(4, { name: "kape", look: { coat: "black" } })], twins)], [[4, "k2"]]);
+});
+
+test("one cat is given to one order only, the oldest first; the next gets none", () => {
+  const claims = claimVisitors([ord(9, { visitor: "k1" }), ord(4, { visitor: "k1" })], [cat("k1", "Mochi", { coat: "ginger" })]);
+  assert.deepEqual([...claims], [[4, "k1"]]);
+});
+
+test("a named visitor that is not on the wall, a plain order and a cancelled order claim nothing", () => {
+  const here = [cat("k1", "Mochi", { coat: "ginger" })];
+  assert.equal(claimVisitors([ord(4, { visitor: "gone" })], here).size, 0);
+  assert.equal(claimVisitors([ord(4)], here).size, 0);
+  assert.equal(claimVisitors([ord(4, { visitor: "k1", status: "cancelled" })], here).size, 0);
+});
+
+test("an explicit key wins over a look match by an older order", () => {
+  const here = [cat("k1", "Mochi", { coat: "ginger" })];
+  const claims = claimVisitors([ord(4, { look: { coat: "ginger" } }), ord(9, { visitor: "k1", look: { coat: "ginger" } })], here);
+  assert.deepEqual([...claims], [[9, "k1"]]);
+});
+
+test("sameLook compares slot by slot", () => {
+  assert.equal(sameLook({ coat: "ginger", hat: "beanie" }, { hat: "beanie", coat: "ginger" }), true);
+  assert.equal(sameLook({ coat: "ginger" }, { coat: "ginger", hat: "beanie" }), false);
+  assert.equal(sameLook(null, { coat: "ginger" }), false);
 });

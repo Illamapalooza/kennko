@@ -1,4 +1,4 @@
-import { manilaDay, type CatLook, type Menu, type OnlineQueueOrder, type Order, type OrderStatus, type PrepStatus } from '@kennko/core'
+import { findVisitor, manilaDay, sameLook, type CatLook, type Menu, type OnlineQueueOrder, type Order, type OrderStatus, type PrepStatus } from '@kennko/core'
 import { storedSkew, type WallCheckin } from './checkin.ts'
 import type { Store } from './store.ts'
 
@@ -18,6 +18,8 @@ export type WallOrder = {
   fulfilment?: 'dine_in' | 'takeout' | 'pickup' | 'delivery'
   prepStatus?: PrepStatus
   look?: CatLook
+  /** The visit key of the walking cat this order belongs to: the wall seats that cat instead of adding a second one. */
+  visitor?: string
 }
 
 /** How long a finished order stays in the feed, so its cat can finish the drink and walk out. */
@@ -43,9 +45,26 @@ function byName(lines: { name: string; quantity: number }[]): { name: string; qt
   return [...items].map(([name, qty]) => ({ name, qty }))
 }
 
-export function wallOrders(orders: Order[], lookFor?: (code: string) => CatLook | null): WallOrder[] {
+/**
+ * `catFor` gives a linked card's cat (name and look) from the customer cache. `visitors` are the cats on the wall now:
+ * an order keeps the visit key it was given while that cat is still here, and an order whose customer checked in
+ * after ordering is matched to their cat by name and look, so the same cat is used either way.
+ */
+export function wallOrders(
+  orders: Order[],
+  catFor?: (code: string) => { name: string | null; look: CatLook | null } | null,
+  visitors: readonly WallFeedVisitor[] = [],
+): WallOrder[] {
+  const here = new Map(visitors.map((v) => [v.key, v]))
   return orders.map((order) => {
-    const look = order.catLook ?? (order.customerCode && lookFor ? lookFor(order.customerCode) : null)
+    const cat = order.customerCode && catFor ? catFor(order.customerCode) : null
+    // The cat to look for when the order carries no live key: the look on the order (with the card's cat name only
+    // when it is that same cat), else the card's own cat.
+    const wanted = order.catLook
+      ? { look: order.catLook, name: cat && sameLook(cat.look, order.catLook) ? cat.name : null }
+      : cat
+    const key = order.visitorKey && here.has(order.visitorKey) ? order.visitorKey : wanted ? findVisitor(visitors, wanted) : null
+    const look = (key ? here.get(key)!.look : null) ?? order.catLook ?? cat?.look ?? null
     return {
       id: order.id,
       number: order.number,
@@ -56,6 +75,7 @@ export function wallOrders(orders: Order[], lookFor?: (code: string) => CatLook 
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       ...(look ? { look } : {}),
+      ...(key ? { visitor: key } : {}),
     }
   })
 }
@@ -100,7 +120,10 @@ export function wallSnapshot(store: Store, menu: Menu, now: number, checkin: Wal
     now, day: manilaDay(now),
     menu: wallMenu(menu),
     orders: [
-      ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)], (code) => store.cachedCustomer?.(code)?.catLook ?? null),
+      ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)], (code) => {
+        const c = store.cachedCustomer?.(code)
+        return c ? { name: c.catName, look: c.catLook ?? null } : null
+      }, visitors),
       ...wallOnlineOrders([...store.activeOnlineOrders(), ...store.recentlyFinishedOnline(since)]),
     ],
     checkin: checkin ? { url: checkin.url, modules: checkin.modules } : null,

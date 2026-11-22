@@ -42,6 +42,11 @@ export type Order = {
   voidedByName?: string | null
   /** Assigned customer cat look for the wall, if any. */
   catLook?: CatLook | null
+  /**
+   * The visit key of the walking cat this order belongs to, when the customer's cat is on the wall. The wall then
+   * moves that same cat to a seat instead of bringing in a second one. Absent or null: no visiting cat.
+   */
+  visitorKey?: string | null
   /** The Kennko card linked to the sale, formatted `KC-XXX-XXX-XXX`, or null. Never shown on the wall. */
   customerCode: string | null
   /** The till stamped the linked card for this sale. */

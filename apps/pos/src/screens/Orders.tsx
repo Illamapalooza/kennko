@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ORDER_TYPE_LABELS, PAYMENT_LABELS, formatPesos, iceLabel, type OnlineQueueLine, type OnlineQueueOrder, type Order, type OrderStatus, type PendingPaymentOrder, type WallVisitor } from '@kennko/core'
+import { ORDER_TYPE_LABELS, PAYMENT_LABELS, formatPesos, iceLabel, sameLook, type OnlineQueueLine, type OnlineQueueOrder, type Order, type OrderStatus, type PendingPaymentOrder, type WallVisitor } from '@kennko/core'
 import { api, type Bootstrap, type Live } from '../api.ts'
 import { Modal } from '../components/Modal.tsx'
 import { PinPrompt } from '../components/PinPrompt.tsx'
@@ -175,7 +175,7 @@ export function Orders({ boot, live, online = true, notify }: { boot: Bootstrap;
               setVoidStep('pin')
             }
           }}
-          onAssignCat={(look, name) => act(`c:${selectedCounter.id}`, () => api.assignOrderCat(selectedCounter.id, look ?? null, name))}
+          onAssignCat={(visitor) => act(`c:${selectedCounter.id}`, () => api.assignOrderCat(selectedCounter.id, visitor?.look ?? null, visitor?.name, visitor?.key ?? null))}
           onClose={closeDetail}
         />
       ) : null}
@@ -224,10 +224,12 @@ function CounterOrderModal({
   onConfirmVoidStep: () => void
   onCancelVoid: () => void
   onProceedVoidPin: () => void
-  onAssignCat: (look: Order['catLook'] | null, name?: string) => void
+  /** The walking cat to tie the order to, or null to take the cat away. */
+  onAssignCat: (visitor: WallVisitor | null) => void
   onClose: () => void
 }) {
-  const currentLookKey = order.catLook ? JSON.stringify(order.catLook) : null
+  // The order's cat is a walking cat by its visit key; an order from before the key existed falls back to the look.
+  const isCurrent = (v: WallVisitor) => (order.visitorKey ? order.visitorKey === v.key : sameLook(order.catLook, v.look))
   return (
     <Modal title={`Order #${order.number}`} onClose={onClose}>
       <div className="stack">
@@ -252,14 +254,15 @@ function CounterOrderModal({
             <small className="muted">Assign walking cat</small>
             <div className="walking-cat-chips">
               {visitors.map((v) => {
-                const active = currentLookKey === JSON.stringify(v.look)
+                const active = isCurrent(v)
                 return (
                   <button
                     type="button"
                     key={v.key}
                     className={`pill${active ? ' pill-amber' : ''}`}
                     disabled={busy}
-                    onClick={() => onAssignCat(active ? null : v.look, v.name)}
+                    aria-pressed={active}
+                    onClick={() => onAssignCat(active ? null : v)}
                   >
                     {v.name}
                   </button>

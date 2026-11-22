@@ -154,3 +154,38 @@ export function clockOffset(tillNow, localNow) {
 export function qrCell(modules, boxPx) {
   return Math.max(1, Math.floor(boxPx / (modules + 8)));
 }
+
+// ---------- one cat per customer: an order uses the cat already walking the wall ----------
+const LOOK_SLOTS = ["coat", "hat", "face", "neck", "held"];
+
+/** Two looks are the same when every slot matches, whatever order the keys came in. */
+export function sameLook(a, b) {
+  if (!a || !b) return false;
+  return LOOK_SLOTS.every((slot) => (a[slot] ?? null) === (b[slot] ?? null));
+}
+
+/**
+ * Which visiting cat each order belongs to: order id -> visit key. An order that names its visitor (`visitor`, set
+ * by the till) gets that cat. An order that only carries a look takes a visiting cat that wears exactly that look,
+ * the one with the order's name first, so a till that sends no key still never shows the same cat twice. Each cat
+ * is given to one order only, the oldest first. Cancelled orders claim nothing.
+ * @param {{id: number, status: string, name?: string, look?: object, visitor?: string}[]} orders
+ * @param {{key: string, name: string, look: object}[]} visitors
+ * @returns {Map<number, string>}
+ */
+export function claimVisitors(orders, visitors) {
+  const out = new Map();
+  const free = new Map((visitors ?? []).map((v) => [v.key, v]));
+  const live = (orders ?? []).filter((o) => o.status !== "cancelled").sort((a, b) => a.id - b.id);
+  for (const o of live) {
+    if (typeof o.visitor === "string" && free.has(o.visitor)) { out.set(o.id, o.visitor); free.delete(o.visitor); }
+  }
+  for (const o of live) {
+    if (out.has(o.id) || !o.look) continue;
+    const fits = [...free.values()].filter((v) => sameLook(v.look, o.look));
+    const name = String(o.name ?? "").trim().toLowerCase();
+    const pick = fits.find((v) => String(v.name ?? "").trim().toLowerCase() === name) ?? fits[0];
+    if (pick) { out.set(o.id, pick.key); free.delete(pick.key); }
+  }
+  return out;
+}

@@ -58,6 +58,7 @@ export function Pay({ boot, cart, totalCentavos, onPaid, onClose, notify }: Prop
       ...(freeIndex >= 0 && cart.customer ? { reward: { lineIndex: freeIndex, code: cart.customer.code }, managerPin } : {}),
       ...(freeIndex < 0 && cart.customer ? { customerCode: cart.customer.code } : {}),
       ...(cart.catLook ? { catLook: cart.catLook } : {}),
+      ...(cart.visitorKey ? { visitorKey: cart.visitorKey } : {}),
     })
     setCard(cart.customer)
     setOrder(saved)

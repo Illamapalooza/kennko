@@ -1,7 +1,7 @@
 // The cat cafe: a 288 x 152 pixel room drawn on a canvas, with crisp DOM labels laid over it.
 // Table service: customers sit down, a barista makes the drink, a server cat carries it over.
 import { drawCat, drawLoaf, drawCup, drawText, textWidth, catBounds, CAT_W, CAT_H, INK, BLUE, AMBER } from "./sprites.mjs";
-import { coatFor, assignBaristas, assignSlots, itemsLabel, TABLES, VISIT_SPOTS, visitorView } from "./logic.mjs";
+import { coatFor, assignBaristas, assignSlots, claimVisitors, itemsLabel, TABLES, VISIT_SPOTS, visitorView } from "./logic.mjs";
 
 export const W = 288;
 export const H = 152;
@@ -109,6 +109,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
   const steam = [];
   /** @type {Map<string, any>} visiting cats by their per-visit key */ const visitors = new Map();
   let visitSlots = new Map();
+  let lastVisitors = []; // the feed's visitors as last given to sync(), claimed ones included
   const tags = new Map();
   let t = 0; // seconds
   let last = performance.now();
@@ -118,8 +119,27 @@ export function createScene(canvas, tagLayer, opts = {}) {
   const go = (c, p) => { c.tx = p.x; c.ty = p.y; };
   const isActive = (o) => o.status === "queued" || o.status === "preparing" || o.status === "serving";
 
+  /** Visit keys held by an order's cat right now: those cats are at a seat, not on a visiting spot. */
+  const heldKeys = () => new Set([...custs.values()].filter((c) => c.visitorKey).map((c) => c.visitorKey));
+  const visitingNow = (key) => lastVisitors.find((v) => v.key === key && Number.isFinite(v.endsAt) && v.endsAt > clock());
+  const freeVisitors = () => { const held = heldKeys(); return lastVisitors.filter((v) => !held.has(v.key)); };
+
+  /**
+   * An order's cat that is a visiting cat goes back to being a visitor, from where it stands: the same cat walks to
+   * a visiting spot. Returns false when the visit is over (or the cat was never a visitor), so it leaves by the door.
+   */
+  function backToVisiting(c) {
+    const info = c.visitorKey ? visitingNow(c.visitorKey) : null;
+    if (!info || ambient) return false;
+    custs.delete(c.id);
+    visitors.set(info.key, { key: info.key, x: c.x, y: c.y, tx: c.x, ty: c.y, flip: c.flip, phase: "in", moving: false, seed: visitors.size + 1, name: info.name, look: info.look, endsAt: info.endsAt });
+    syncVisitors(freeVisitors(), false);
+    return true;
+  }
+
   function leave(c) {
     seatOf.delete(c.id);
+    if (backToVisiting(c)) return;
     c.phase = "leave";
     go(c, DOOR);
   }
@@ -128,6 +148,12 @@ export function createScene(canvas, tagLayer, opts = {}) {
   function sync(nextOrders, count, initial = false, nextVisitors = []) {
     orders = nextOrders;
     baristaCount = count;
+    lastVisitors = nextVisitors ?? [];
+    // One cat per customer: an order whose customer's cat is visiting uses that cat, it does not bring a second one.
+    // Only an order that still has (or is about to get) a cat can hold one: a finished order whose cat already went
+    // back to visiting must not keep the customer's next order from using it.
+    const wantsCat = (o) => isActive(o) || custs.has(o.id);
+    const claims = ambient ? new Map() : claimVisitors(orders.filter(wantsCat), visitorView(lastVisitors, clock()));
     const preparing = orders.filter((o) => o.status === "preparing").sort((a, b) => a.updatedAt - b.updatedAt || a.id - b.id).map((o) => o.id);
     assignment = assignBaristas(assignment, preparing, count);
 
@@ -144,11 +170,28 @@ export function createScene(canvas, tagLayer, opts = {}) {
     for (const o of orders) {
       seen.add(o.id);
       let c = custs.get(o.id);
+      const claim = claims.get(o.id) ?? null;
       if (!c && isActive(o)) {
-        c = { id: o.id, coat: o.look ?? coatFor(o.id), x: DOOR.x, y: DOOR.y, tx: DOOR.x, ty: DOOR.y, phase: "in", cup: false, flip: false, leaveAt: 0, snap: initial };
+        // The visiting cat itself becomes the order's cat and walks from where it stands; anyone else comes in by the door.
+        const walking = claim ? visitors.get(claim) : null;
+        c = { id: o.id, coat: o.look ?? walking?.look ?? coatFor(o.id), x: walking?.x ?? DOOR.x, y: walking?.y ?? DOOR.y, tx: DOOR.x, ty: DOOR.y, phase: "in", cup: false, flip: walking?.flip ?? false, leaveAt: 0, snap: initial && !walking, visitorKey: claim };
+        if (walking) visitors.delete(claim);
         custs.set(o.id, c);
-      } else if (c && o.look) {
-        c.coat = o.look;
+      } else if (c) {
+        if (c.phase !== "leave" && claim !== c.visitorKey) {
+          if (claim) {
+            // A cat was assigned after the order was placed: the stand-in is replaced by the real cat, which walks over from its spot.
+            const walking = visitors.get(claim);
+            if (walking) { c.x = walking.x; c.y = walking.y; c.flip = walking.flip; visitors.delete(claim); }
+            c.visitorKey = claim;
+          } else if (c.visitorKey && isActive(o)) {
+            // The cat was taken off the order: it goes back to visiting and a plain cat keeps the seat.
+            const info = visitingNow(c.visitorKey);
+            if (info) visitors.set(info.key, { key: info.key, x: c.x, y: c.y, tx: c.x, ty: c.y, flip: c.flip, phase: "in", moving: false, seed: visitors.size + 1, name: info.name, look: info.look, endsAt: info.endsAt });
+            c.visitorKey = null;
+          }
+        }
+        c.coat = o.look ?? (c.visitorKey ? c.coat : coatFor(o.id));
       }
       if (!c) continue;
       if (isActive(o)) {
@@ -172,11 +215,8 @@ export function createScene(canvas, tagLayer, opts = {}) {
       baristas.push({ x: STATIONS[i], tx: STATIONS[i], nextMove: t + rand(2, 6), coat: BARISTA_COATS[i % BARISTA_COATS.length] });
     }
     baristas.length = Math.min(baristas.length, count);
-    const activeLooks = new Set(active.filter((o) => o.look).map((o) => JSON.stringify(o.look)));
-    const visibleVisitors = activeLooks.size > 0
-      ? nextVisitors.filter((v) => !v.look || !activeLooks.has(JSON.stringify(v.look)))
-      : nextVisitors;
-    syncVisitors(ambient ? [] : visibleVisitors, initial);
+    // A cat that is at a seat for its order is not also standing on a visiting spot.
+    syncVisitors(ambient ? [] : freeVisitors(), initial);
   }
 
   /** Visiting cats: the ones on the list stand on their spot, a new one walks in, one gone walks out. */
@@ -451,6 +491,13 @@ export function createScene(canvas, tagLayer, opts = {}) {
   return {
     sync,
     setAmbient(on) { ambient = Boolean(on); },
+    /** Where every floor cat is right now. Read-only; for checks and debugging, never for drawing. */
+    cats() {
+      return {
+        customers: [...custs.values()].map((c) => ({ id: c.id, x: Math.round(c.x), y: Math.round(c.y), phase: c.phase, visitorKey: c.visitorKey ?? null })),
+        visitors: [...visitors.values()].map((v) => ({ key: v.key, x: Math.round(v.x), y: Math.round(v.y), phase: v.phase })),
+      };
+    },
     destroy() { cancelAnimationFrame(raf); for (const el of tags.values()) el.remove(); tags.clear(); },
   };
 }

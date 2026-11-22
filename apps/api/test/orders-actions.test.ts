@@ -306,12 +306,13 @@ describe('staff order and payment actions', () => {
     expect((await events(orderId, 'cancelled'))[0]!.reason).toBe('out of beans (payment rejected)')
   })
 
-  it('cancel twice / a completed order -> 409 BAD_TRANSITION', async () => {
+  it('voiding a completed order refunds it; cancel twice -> 409 BAD_TRANSITION', async () => {
     const { orderId, paymentId } = await seedOnline()
     await verify(paymentId)
     for (const s of ['preparing', 'ready', 'completed']) await patch(orderId, { prepStatus: s })
-    expectError(await cancel(orderId), 409, 'BAD_TRANSITION')
-    expect((await orderRow(orderId)).payment_status).toBe('paid')
+    const voided = await cancel(orderId)
+    expect(voided.status).toBe(200)
+    expect(voided.body).toEqual({ prepStatus: 'cancelled', paymentStatus: 'refunded' })
 
     const b = await seedOnline()
     await cancel(b.orderId)

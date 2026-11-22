@@ -92,3 +92,35 @@ export function isWallVisitor(x: unknown): x is WallVisitor {
     parseLook(x.look) !== null
   )
 }
+
+/** Two looks are the same cat's clothes when every slot matches, whatever order the keys came in. */
+export function sameLook(a: CatLook | null | undefined, b: CatLook | null | undefined): boolean {
+  if (!a || !b) return false
+  return COSMETIC_SLOTS.every((slot) => (a[slot] ?? null) === (b[slot] ?? null))
+}
+
+/** A visit key as it travels with an order: a short opaque string, or null. */
+export function cleanVisitorKey(x: unknown): string | null {
+  return typeof x === 'string' && x.length > 0 && x.length <= 64 ? x : null
+}
+
+/**
+ * The visiting cat that belongs to a customer, so an order uses the cat already walking the wall instead of a
+ * second one that looks the same. The till never learns who a visitor is (a visit carries a per-visit key, a cat
+ * name and a look, nothing else), so the match is by what both sides show: the cat's name and its look.
+ *  - name and look both known: both must match;
+ *  - only one known: that one must match, and only when exactly one visitor does.
+ * Returns the visit key, or null when nobody (or more than one cat) fits.
+ */
+export function findVisitor(
+  visitors: readonly Pick<WallVisitor, 'key' | 'name' | 'look'>[],
+  cat: { name?: string | null; look?: CatLook | null },
+): string | null {
+  const name = cat.name ? normaliseCatName(cat.name).toLowerCase() : ''
+  const look = cat.look ?? null
+  if (!name && !look) return null
+  const hits = visitors.filter((v) =>
+    (!name || normaliseCatName(v.name).toLowerCase() === name) && (!look || sameLook(v.look, look)))
+  if (name && look) return hits[0]?.key ?? null
+  return hits.length === 1 ? hits[0]!.key : null
+}

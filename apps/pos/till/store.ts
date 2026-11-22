@@ -5,7 +5,7 @@ import {
   formatPublicCode, hasDrink, manilaDay, nextPrepStatus, nextStatus, normalisePublicCode, prevStatus, priceLines, summarise, totals,
   type CashMove, type CatLook, type CounterOrderPayload, type Discount, type LineInput, type Menu, type OnlineQueueOrder, type Order, type OrderStatus,
   type OrderType, type PaymentMethod, type PendingPaymentOrder, type PrepStatus, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
-  type TillCustomer, type WallVisitor, MAX_VISITORS, isWallVisitor, parseLook,
+  type TillCustomer, type WallVisitor, MAX_VISITORS, cleanVisitorKey, findVisitor, isWallVisitor, parseLook,
 } from '@kennko/core'
 import type { CachedStaff } from './pins.ts'
 
@@ -19,6 +19,8 @@ export type NewOrder = {
   customerCode?: string | null
   /** Optional cat look from a walking cat or Kennko card. */
   catLook?: CatLook | null
+  /** The visit key of the walking cat picked for this sale (a chip on the Sell screen). Empty or absent: none. */
+  visitorKey?: string | null
 }
 
 /** Refusals the till screens show as they are. */
@@ -114,6 +116,8 @@ const ADDED_COLUMNS: [table: string, column: string, decl: string][] = [
   // Plan 7: the linked Kennko card (bare code), this sale's stamp and the free-drink claim it used.
   ['orders', 'customer_code', 'text'],
   ['orders', 'cat_look', 'text'],
+  // The walking cat this order belongs to (its per-visit key), so the wall moves that cat instead of adding a twin.
+  ['orders', 'visitor_key', 'text'],
   ['orders', 'stamp_uid', 'text'],
   ['orders', 'reward_claim_id', 'text'],
   ['cash_moves', 'uid', 'text'],
@@ -190,6 +194,7 @@ function toOrder(row: any): Order {
     customerCode: row.customer_code ? formatPublicCode(row.customer_code) : null,
     stamped: row.stamp_uid != null,
     freeDrink: row.reward_claim_id != null,
+    ...(row.visitor_key ? { visitorKey: row.visitor_key as string } : {}),
     ...(row.cat_look ? (() => { try { const l = parseLook(JSON.parse(row.cat_look)); return l ? { catLook: l } : {} } catch { return {} } })() : {}),
   }
 }
@@ -417,6 +422,25 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
     return order
   }
 
+  /** The cats visiting at `now` on the till's clock (visit ends are the server's time, so the measured skew is added). */
+  const visitorsAt = (now: number): WallVisitor[] => {
+    const skew = Number(kvGet('checkin_skew'))
+    const at = now + (Number.isSafeInteger(skew) ? skew : 0)
+    return (db.prepare('select data from visitors where ends_at > ? order by rowid').all(at) as any[]).map((r) => JSON.parse(r.data))
+  }
+
+  /**
+   * Which walking cat an order belongs to. A key the screen sent wins when that cat is still here; otherwise the
+   * customer's own cat is looked for among the visitors by name and look. null: no visiting cat fits.
+   */
+  const visitorForOrder = (now: number, picked: string | null, cat: { name?: string | null; look?: CatLook | null } | null): WallVisitor | null => {
+    const here = visitorsAt(now)
+    if (picked !== null) return here.find((v) => v.key === picked) ?? null
+    if (!cat) return null
+    const key = findVisitor(here, cat)
+    return key === null ? null : here.find((v) => v.key === key) ?? null
+  }
+
   /** The customer as last pulled or looked up, or null. Only `TillCustomer` fields are ever stored. */
   const cachedCustomer = (code: string): TillCustomer | null => {
     const bare = normalisePublicCode(code)
@@ -593,8 +617,12 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       }
       const { lines, discount, sums, type, method, tendered, change, ref, menuVersion, customerCode } = p
       const cached = customerCode !== null ? cachedCustomer(customerCode) : null
-      const customerName = p.customerName || (cached?.catName ? clean(cached.catName, 24) : '')
-      const catLook = input.catLook ? parseLook(input.catLook) : (cached?.catLook ?? null)
+      // The customer's cat already walking the wall is the order's cat: the picked chip, else the card's own cat.
+      const visitor = visitorForOrder(now, cleanVisitorKey(input.visitorKey),
+        cached ? { name: cached.catName, look: cached.catLook ?? null } : null)
+      const customerName = p.customerName || (cached?.catName ? clean(cached.catName, 24) : visitor ? clean(visitor.name, 24) : '')
+      const catLook = visitor?.look ?? (input.catLook ? parseLook(input.catLook) : (cached?.catLook ?? null))
+      const visitorKey = visitor?.key ?? null
 
       return tx(() => {
         const shift = openShift()
@@ -605,11 +633,11 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
         const result = db.prepare(`
           insert into orders (day, number, type, customer_name, status, lines, subtotal, discount, discount_label, total,
             payment_method, tendered, change, payment_ref, shift_id, created_at, updated_at, uid, payment_uid, menu_version,
-            customer_code, cat_look, reward_claim_id)
-          values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            customer_code, cat_look, visitor_key, reward_claim_id)
+          values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(day, number, type, customerName, JSON.stringify(lines), sums.subtotalCentavos, sums.discountCentavos,
           sums.discountCentavos > 0 ? discount!.label : null, sums.totalCentavos, method, tendered, change, ref, shift.id, now, now,
-          randomUuid(), randomUuid(), menuVersion, customerCode, catLook ? JSON.stringify(catLook) : null, claimId)
+          randomUuid(), randomUuid(), menuVersion, customerCode, catLook ? JSON.stringify(catLook) : null, visitorKey, claimId)
         const id = Number(result.lastInsertRowid)
         record('order.created', id, by, now, {
           businessDay: day, ticketNumber: number, fulfilment: type, customerName, menuVersion, lines, discount,
@@ -622,16 +650,25 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       })
     },
 
-    /** Assigns or clears a cat look on an existing order (and fills customer_name if blank). */
-    setOrderCat(id: number, catLook: CatLook | null, customerName?: string): Order {
-      const look = catLook ? parseLook(catLook) : null
-      if (catLook && !look) throw new OrderError('That cat look is not valid.')
+    /**
+     * Gives an order its cat, or takes it away. With `visitorKey` the order is tied to that walking cat (its look and
+     * name are taken from the visit, so the wall and the ticket cannot disagree); a key that is no longer visiting is
+     * refused rather than silently turned into a look-alike. Without a key, `catLook` alone dresses a new cat.
+     * Fills `customer_name` when it is blank.
+     */
+    setOrderCat(id: number, catLook: CatLook | null, customerName?: string, visitorKey?: string | null, now: number = Date.now()): Order {
+      const key = cleanVisitorKey(visitorKey)
+      const visitor = key !== null ? visitorForOrder(now, key, null) : null
+      if (key !== null && !visitor) throw new OrderError('That cat is no longer visiting. Pick again.')
+      const look = visitor ? visitor.look : catLook ? parseLook(catLook) : null
+      if (!visitor && catLook && !look) throw new OrderError('That cat look is not valid.')
+      const name = visitor ? visitor.name : customerName
       return tx(() => {
         const order = getOrder(id)
         if (order.status === 'voided') throw new OrderError('That order is voided.')
-        const nextName = !order.customerName && customerName ? clean(customerName, 24) : order.customerName
-        db.prepare('update orders set cat_look = ?, customer_name = ? where id = ?')
-          .run(look ? JSON.stringify(look) : null, nextName, id)
+        const nextName = !order.customerName && name ? clean(name, 24) : order.customerName
+        db.prepare('update orders set cat_look = ?, visitor_key = ?, customer_name = ? where id = ?')
+          .run(look ? JSON.stringify(look) : null, visitor?.key ?? null, nextName, id)
         return getOrder(id)
       })
     },
@@ -646,9 +683,12 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
         if (order.customerCode !== null) throw new OrderError('Remove the customer first.')
         const cached = cachedCustomer(bare)
         const nextName = !order.customerName && cached?.catName ? clean(cached.catName, 24) : order.customerName
-        const nextLook = order.catLook ?? cached?.catLook ?? null
-        db.prepare('update orders set customer_code = ?, customer_name = ?, cat_look = ?, updated_at = ? where id = ?')
-          .run(bare, nextName, nextLook ? JSON.stringify(nextLook) : null, now, id)
+        // A cat already assigned by hand stays; otherwise the card's own cat, and the walking one when it is here.
+        const visitor = order.visitorKey ? null : visitorForOrder(now, null, cached ? { name: cached.catName, look: cached.catLook ?? null } : null)
+        const nextLook = order.catLook ?? visitor?.look ?? cached?.catLook ?? null
+        const nextKey = order.visitorKey ?? (order.catLook ? null : visitor?.key ?? null)
+        db.prepare('update orders set customer_code = ?, customer_name = ?, cat_look = ?, visitor_key = ?, updated_at = ? where id = ?')
+          .run(bare, nextName, nextLook ? JSON.stringify(nextLook) : null, nextKey, now, id)
         record('customer.linked', id, by, now, { publicCode: bare })
         return getOrder(id)
       })
@@ -832,6 +872,7 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
     },
 
     cachedCustomer,
+    visitorsAt,
 
     /**
      * The wall check-in pulled from Kennko (Plan 8). The secret is read only by checkin.ts, inside this server process;

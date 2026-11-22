@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import {
-  ORDER_TYPE_LABELS, OrderError, findItem, formatPesos, iceLabel, parsePesos, priceLine, totals,
+  ORDER_TYPE_LABELS, OrderError, findItem, findVisitor, formatPesos, iceLabel, parsePesos, priceLine, sameLook, totals,
   type Discount, type LineInput, type Menu, type MenuItem, type OrderType, type PricedLine, type WallVisitor,
 } from '@kennko/core'
 import { api, type Bootstrap, type Live } from '../api.ts'
@@ -83,25 +83,45 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
   const hasFree = cart.lines.some((l) => l.reward)
   // A free drink is offered only when the online lookup said a card is full (the claim itself needs the internet).
   const freeReady = Boolean(customer?.info && customer.info.fullCards > 0 && customer.info.stampMode !== 'paper')
-  const setCustomer = (next: Cart['customer']) => setCart((c) => {
-    const keepsFree = Boolean(next?.info && next.info.fullCards > 0 && next.info.stampMode !== 'paper')
-    const nextName = !c.customerName.trim() && next?.info?.catName ? next.info.catName.slice(0, 24) : c.customerName
-    const nextLook = next?.info?.catLook ?? (next === null ? null : c.catLook ?? null)
-    return {
-      ...c,
-      customer: next,
-      customerName: nextName,
-      catLook: nextLook,
-      lines: keepsFree ? c.lines : c.lines.map(({ reward: _reward, ...l }) => l),
-    }
-  })
   const [visitors, setVisitors] = useState<WallVisitor[]>([])
   useEffect(() => {
     let gone = false
     api.visitors().then((v) => { if (!gone) setVisitors(v) }).catch(() => { /* ignore */ })
     return () => { gone = true }
   }, [live.sync.lastSyncAt, live.version])
-  const selectedLookKey = cart.catLook ? JSON.stringify(cart.catLook) : null
+  /** The card's own cat among the cats walking the wall right now, or null. */
+  const walkingCatOf = (info: NonNullable<Cart['customer']>['info'], list: WallVisitor[]) => {
+    if (!info) return null
+    const key = findVisitor(list, { name: info.catName, look: info.catLook ?? null })
+    return key === null ? null : list.find((v) => v.key === key) ?? null
+  }
+  // The moment a card is added, its cat is the order's cat: the one already walking the wall when it is here.
+  const setCustomer = (next: Cart['customer'], list: WallVisitor[] = visitors) => setCart((c) => {
+    const keepsFree = Boolean(next?.info && next.info.fullCards > 0 && next.info.stampMode !== 'paper')
+    const nextName = !c.customerName.trim() && next?.info?.catName ? next.info.catName.slice(0, 24) : c.customerName
+    const walking = next ? walkingCatOf(next.info, list) : null
+    return {
+      ...c,
+      customer: next,
+      customerName: nextName,
+      // Removing the card takes its cat with it; a card with no cat keeps whatever was picked by hand.
+      catLook: next === null ? null : walking?.look ?? next.info?.catLook ?? c.catLook ?? null,
+      visitorKey: next === null ? null : walking?.key ?? (next.info?.catLook ? null : c.visitorKey ?? null),
+      lines: keepsFree ? c.lines : c.lines.map(({ reward: _reward, ...l }) => l),
+    }
+  })
+  // The customer may check in at the wall after their card was added: pick their cat up as soon as it appears,
+  // and let go of a cat whose visit ended. A cat picked by hand for a sale with no card is left alone.
+  useEffect(() => {
+    const walking = cart.customer ? walkingCatOf(cart.customer.info, visitors) : null
+    if (walking && cart.visitorKey !== walking.key) {
+      setCart((c) => ({ ...c, visitorKey: walking.key, catLook: walking.look }))
+    } else if (!walking && cart.visitorKey && !visitors.some((v) => v.key === cart.visitorKey)) {
+      setCart((c) => ({ ...c, visitorKey: null }))
+    }
+  }, [visitors, cart.customer, cart.visitorKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const isPicked = (v: WallVisitor) => (cart.visitorKey ? cart.visitorKey === v.key : sameLook(cart.catLook, v.look))
+  const pickedCat = visitors.find(isPicked) ?? null
   const makeFree = (key: string) => { setCart((c) => ({ ...c, lines: splitReward(c.lines, key, newKey) })); setPickingFree(false) }
   const notFree = (key: string) => setCart((c) => ({ ...c, lines: c.lines.map((l) => (l.key === key ? { ...l, reward: false } : l)) }))
 
@@ -134,7 +154,7 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
           <small className="muted">Walking cats</small>
           <div className="walking-cat-chips">
             {visitors.map((v) => {
-              const active = selectedLookKey === JSON.stringify(v.look)
+              const active = isPicked(v)
               return (
                 <button
                   type="button"
@@ -144,6 +164,7 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
                   onClick={() => setCart((c) => ({
                     ...c,
                     catLook: active ? null : v.look,
+                    visitorKey: active ? null : v.key,
                     customerName: !active && !c.customerName.trim() ? v.name.slice(0, 24) : c.customerName,
                   }))}
                 >
@@ -152,6 +173,7 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
               )
             })}
           </div>
+          {pickedCat ? <small className="muted">This order&apos;s cat: <b>{pickedCat.name}</b>, the one on the wall now.</small> : null}
         </div>
       ) : null}
       {freeReady && !hasFree && cart.lines.length > 0 ? (
