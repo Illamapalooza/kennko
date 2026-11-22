@@ -1,10 +1,23 @@
 # Kennko Wall
 
 The cat cafe for the shop projector: cat baristas make drinks, a server cat carries them to the tables, customer
-cats come in, sip and leave. It runs by itself as pure visuals, with the playlist behind it. Standalone: it shares
-nothing with the website and needs no install.
+cats come in, sip and leave.
 
-## Start it
+## Kennko Wall on the projector
+
+In the shop it runs as an Android app (`coffee.kennko.wall` via `apps/wall-app`) on the Wanbo WPD24 projector. It
+discovers the Samsung till over NSD (`_kennko-pos._tcp.`), connects to its `/api/wall/events` feed, and starts on
+boot. Press **Menu** (or long-press the corner) to open the hidden settings screen for manual till address fallback,
+SFX toggle, or update checks. See `docs/android-release.md` for building, signing and go-live.
+
+- Build a debug APK: `npm run wall:apk`
+- Build a release APK: `npm run wall:apk -- --release`
+
+## On a computer, for development
+
+Standalone: it shares nothing with the website and needs no install.
+
+### Start it
 
 | Where | How |
 |---|---|

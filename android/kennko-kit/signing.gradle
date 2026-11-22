@@ -1,0 +1,27 @@
+def propsFile = new File(System.getProperty('user.home'), '.kennko/keystore.properties')
+
+if (propsFile.exists()) {
+  def props = new Properties()
+  propsFile.withInputStream { props.load(it) }
+  android {
+    signingConfigs {
+      release {
+        storeFile file(props['storeFile'])
+        storePassword props['storePassword']
+        keyAlias props['keyAlias']
+        keyPassword props['keyPassword']
+      }
+    }
+    buildTypes {
+      release {
+        signingConfig signingConfigs.release
+      }
+    }
+  }
+}
+
+gradle.taskGraph.whenReady { graph ->
+  if (graph.allTasks.any { it.name.endsWith('Release') } && !propsFile.exists()) {
+    throw new GradleException('Release signing needs ~/.kennko/keystore.properties (see docs/android-release.md)')
+  }
+}

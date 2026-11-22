@@ -107,28 +107,29 @@ export const TOPICS: GuideTopic[] = [
         ],
       },
       {
-        heading: 'Install the till on each tablet',
+        heading: 'Install the till on the tablet',
         steps: [
-          'Start the till computer. On the counter tablet, open Edge at http://localhost:4466/ and tap Install Kennko POS on this device.',
-          'On every other tablet, open http://<till address>:4466/setup and follow the three steps there.',
-          'Open the till once on the https address (https://<till address>:4443) and allow the camera. Scanning Kennko cards only works there.',
+          'Allow "Install unknown apps" for the browser or file manager, then install the Kennko POS APK.',
+          'Open Kennko POS. On Connect this till, type the 6-digit code from admin › Tills, then a manager PIN.',
+          'Accept the battery prompt and add Kennko POS to Never sleeping apps in Settings › Battery › Background usage limits.',
+          'Keep the tablet on its charger.',
         ],
         tips: [
-          'Use one address and keep it: the .local name the till prints, or reserve the till computer\'s IP in the router.',
-          'If the address changes, install again from the new one.',
-          'Sales are never stored on a tablet. They live on the till computer.',
+          'Sales live inside the app on the Samsung tablet and sync to Kennko when online.',
+          'When an update is published, an Update banner appears at the top of the till.',
+          'Use Menu › This till › Export backup to save or share a copy of the database.',
         ],
       },
       {
         heading: 'Set up the wall',
         steps: [
-          'In the shop the wall starts by itself on the counter tablet and follows the till (it runs kennko-wall --pos).',
-          'On the projector, open TV Bro and go to http://<tablet address>:4455/. Bookmark it.',
-          'Press OK on the big button once. The music starts and the wall goes full screen.',
+          'Install the Kennko Wall APK on the projector and open it once.',
+          'Press OK on the big button once: sound starts and the board fills from the Samsung till automatically.',
+          'Reboot the projector once to confirm Kennko Wall opens by itself.',
         ],
         tips: [
-          'Reserve the counter tablet\'s IP address in the router so the projector\'s bookmark keeps working.',
-          'Keep the tablet plugged in. Asleep, it pauses the till and the wall.',
+          'Reserve the Samsung tablet\'s IP address in the router as a fallback. You only need to enter it on the Wall hidden settings screen if automatic discovery fails.',
+          'Keep the Samsung tablet awake and plugged in so the wall keeps receiving live orders.',
         ],
       },
     ],
@@ -650,16 +651,8 @@ export const TOPICS: GuideTopic[] = [
             fix: 'Kennko refused something. Keep selling and tell the owner. Check Needs a look in admin.',
           },
           {
-            problem: '"This computer\'s clock is N minutes behind."',
-            fix: 'Sales still work. Fix the time in Windows settings so reports line up.',
-          },
-          {
-            problem: 'A tablet says it can\'t reach the till.',
-            fix: 'Is the counter tablet on, awake and plugged in? Is the tablet on the shop wifi? It reconnects by itself.',
-          },
-          {
-            problem: 'A tablet shows old screens or refuses a PIN after an update.',
-            fix: 'Reload the app on that tablet, then type the PIN again.',
+            problem: '"This device\'s clock is N minutes behind."',
+            fix: 'Sales still work. Fix the time in Android settings so reports and QR codes line up.',
           },
           {
             problem: 'PIN forgotten',
@@ -676,11 +669,11 @@ export const TOPICS: GuideTopic[] = [
           },
           {
             problem: 'A fresh QR never works on phones',
-            fix: 'Check the counter tablet\'s clock in Windows settings.',
+            fix: 'Check the Samsung tablet\'s clock in Android settings.',
           },
           {
             problem: 'Old orders or "can\'t reach the till"',
-            fix: 'The counter tablet is asleep or off the wifi.',
+            fix: 'The Samsung tablet is asleep or off the wifi. Open the Wall hidden settings screen (Menu button) to retry or check the till address.',
           },
           { problem: 'No sound', fix: 'Press OK on the big button on the wall once.' },
         ],

@@ -1,11 +1,19 @@
 # Kennko POS
 
-The till for the shop. It runs on one computer in the shop; tablets open it in a browser over the cafe wifi. Sales are
-kept in a local database on that computer, so the till keeps working when the internet is down.
+The till for the shop. Sales are kept in a local SQLite database on the device, so the till keeps working when the
+internet is down.
 
-In the shop it runs on the Windows tablet at the counter: see `deploy/windows/README.md` for the one-time setup.
+## Kennko POS on the tablet
 
-## Start it
+In the shop it runs as an Android app (`coffee.kennko.pos`) on the Samsung counter tablet, with SQLite inside the app
+and a local wall feed (`_kennko-pos._tcp.`) for the projector. See `docs/android-release.md` for building, signing and
+go-live.
+
+- Build a debug APK: `npm run pos:apk`
+- Build a release APK: `npm run pos:apk -- --release` (needs `~/.kennko/keystore.properties`)
+- Backup: **Menu › This till › Export backup** opens the Android share sheet with a snapshot of the database.
+
+## On a Mac, for development
 
 From the repo root, once: `npm install`
 
