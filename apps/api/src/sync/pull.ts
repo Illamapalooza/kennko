@@ -5,7 +5,7 @@ import { tillCustomer } from '../loyalty/customers.js'
 import { checkinSecret, readVisitors } from '../loyalty/visits.js'
 import { readMenuVersion } from '../menu/read.js'
 import { readPinRoster } from '../staff/pin-roster.js'
-import { readOnlineQueue } from './online-orders.js'
+import { readOnlineQueue, readPendingPayments } from './online-orders.js'
 
 /** At most this many recent customers per pull. */
 export const RECENT_CUSTOMERS_MAX = 50
@@ -55,7 +55,13 @@ export async function readRecentCustomers(sql: postgres.Sql, deviceId: string, n
  * paid online queue, the customers linked on this till recently, the wall check-in secret and URL (the secret is
  * created on the first pull) and the cats visiting now.
  */
-export async function readPullState(sql: postgres.Sql, tillVersion: number | null, now: Date, deviceId: string): Promise<PullState> {
+export async function readPullState(
+  sql: postgres.Sql,
+  tillVersion: number | null,
+  now: Date,
+  deviceId: string,
+  proofs?: { signedUrl(path: string, seconds: number): Promise<string> },
+): Promise<PullState> {
   const [latest] = await sql<{ version: string | number }[]>`select version from menu_snapshots order by version desc limit 1`
   let menu: PullState['menu'] = null
   if (latest) {
@@ -79,6 +85,7 @@ export async function readPullState(sql: postgres.Sql, tillVersion: number | nul
     soldOut,
     staff,
     onlineOrders: await readOnlineQueue(sql, now),
+    pendingPayments: await readPendingPayments(sql, proofs),
     customers: await readRecentCustomers(sql, deviceId, now),
     shop: { name: shop?.display_name ?? 'Kennko Coffee', address: shop?.address ?? '', phone: shop?.phone ?? null },
     checkin: { secret: await checkinSecret(sql, now), url: CHECKIN_URL },

@@ -15,6 +15,9 @@ export type WallOrder = {
   status: OrderStatus
   createdAt: number
   updatedAt: number
+  fulfilment?: 'dine_in' | 'takeout' | 'pickup' | 'delivery'
+  prepStatus?: PrepStatus
+  look?: CatLook
 }
 
 /** How long a finished order stays in the feed, so its cat can finish the drink and walk out. */
@@ -40,17 +43,21 @@ function byName(lines: { name: string; quantity: number }[]): { name: string; qt
   return [...items].map(([name, qty]) => ({ name, qty }))
 }
 
-export function wallOrders(orders: Order[]): WallOrder[] {
-  return orders.map((order) => ({
-    id: order.id,
-    number: order.number,
-    series: 'C',
-    name: order.customerName,
-    items: byName(order.lines),
-    status: order.status,
-    createdAt: order.createdAt,
-    updatedAt: order.updatedAt,
-  }))
+export function wallOrders(orders: Order[], lookFor?: (code: string) => CatLook | null): WallOrder[] {
+  return orders.map((order) => {
+    const look = order.customerCode && lookFor ? lookFor(order.customerCode) : null
+    return {
+      id: order.id,
+      number: order.number,
+      series: 'C',
+      name: order.customerName,
+      items: byName(order.lines),
+      status: order.status,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      ...(look ? { look } : {}),
+    }
+  })
 }
 
 /** Online orders for the wall: picked field by field, so no delivery details, phone or note can reach the projector. */
@@ -64,6 +71,9 @@ export function wallOnlineOrders(orders: OnlineQueueOrder[]): WallOrder[] {
     status: ONLINE_TO_WALL[order.prepStatus],
     createdAt: Date.parse(order.createdAt),
     updatedAt: Date.parse(order.updatedAt),
+    fulfilment: order.fulfilment,
+    prepStatus: order.prepStatus,
+    ...(order.catLook ? { look: order.catLook } : {}),
   }))
 }
 
@@ -90,7 +100,7 @@ export function wallSnapshot(store: Store, menu: Menu, now: number, checkin: Wal
     now, day: manilaDay(now),
     menu: wallMenu(menu),
     orders: [
-      ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)]),
+      ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)], (code) => store.cachedCustomer?.(code)?.catLook ?? null),
       ...wallOnlineOrders([...store.activeOnlineOrders(), ...store.recentlyFinishedOnline(since)]),
     ],
     checkin: checkin ? { url: checkin.url, modules: checkin.modules } : null,

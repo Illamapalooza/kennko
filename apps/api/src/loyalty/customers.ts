@@ -1,4 +1,4 @@
-import { formatPublicCode, type StampMode, type TillCustomer } from '@kennko/core'
+import { formatPublicCode, parseLook, type StampMode, type TillCustomer } from '@kennko/core'
 import type postgres from 'postgres'
 
 type Tx = postgres.TransactionSql
@@ -37,15 +37,19 @@ export async function cardSummary(tx: Tx, id: string): Promise<{ stamps: { stamp
  * name is withheld (null) while Kennko has hidden the cat, or when there is no cat yet.
  */
 export async function tillCustomer(tx: Tx, id: string): Promise<TillCustomer> {
-  const [c] = await tx<{ public_code: string; stamp_mode: StampMode; cat_name: string | null }[]>`
-    select cu.public_code, cu.stamp_mode, case when ca.hidden_by_admin then null else ca.name end as cat_name
+  const [c] = await tx<{ public_code: string; stamp_mode: StampMode; cat_name: string | null; cat_equipped: unknown }[]>`
+    select cu.public_code, cu.stamp_mode,
+      case when ca.hidden_by_admin then null else ca.name end as cat_name,
+      case when ca.hidden_by_admin then null else ca.equipped end as cat_equipped
     from customers cu left join cats ca on ca.customer_id = cu.id
     where cu.id = ${id}`
   if (!c) throw new Error(`customer ${id} not found`)
   const summary = await cardSummary(tx, id)
+  const catLook = c.cat_equipped ? parseLook(c.cat_equipped) : null
   return {
     code: formatPublicCode(c.public_code),
     catName: c.cat_name,
+    ...(catLook ? { catLook } : {}),
     stampMode: c.stamp_mode,
     stamps: summary.stamps.length,
     fullCards: summary.fullCards,

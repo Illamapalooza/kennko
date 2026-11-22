@@ -332,6 +332,32 @@ export function createTill(host: TillHost) {
       return done(store.advanceOnline(onlineAction[1]!, t, by, body.from as PrepStatus))
     }
 
+    const paymentAction = /^\/api\/online\/payment\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/(verify|reject)$/i.exec(route)
+    if (paymentAction) {
+      const device = loadDevice(files)
+      if (!device || device.revokedAt !== null || !config.apiUrl) {
+        throw new OrderError('Connect this till to Kennko to confirm online payments.')
+      }
+      const staffId = by ?? store.staffCache()[0]?.id ?? null
+      if (!staffId) throw new OrderError('Sign in with a staff PIN to confirm online payments.')
+      let r: Response
+      try {
+        r = await fetchFn(`${config.apiUrl.replace(/\/+$/, '')}/sync/online-payment`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ paymentId: paymentAction[1], decision: paymentAction[2], staffId }),
+        })
+      } catch {
+        throw new OrderError('Connect to the internet to confirm online payments.')
+      }
+      const data: any = await r.json().catch(() => null)
+      if (!r.ok) throw new OrderError(data?.error || 'Could not update payment.')
+      if (Array.isArray(data?.pendingPayments)) store.replacePendingPayments(data.pendingPayments)
+      if (Array.isArray(data?.onlineOrders)) store.replaceOnlineOrders(data.onlineOrders)
+      broadcast()
+      return { status: 200, body: { ok: true } }
+    }
+
     if (route === '/api/menu/availability') {
       if (typeof body.itemId !== 'string' || !onMenu(body.itemId)) throw new OrderError('That drink is not on the menu.')
       const credited = pins.mode() === 'per-person' ? (await personalPin(req.client, body.pin)).staffId : by

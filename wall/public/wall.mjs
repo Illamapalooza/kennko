@@ -1,6 +1,6 @@
 // The wall: listens for order changes, drives the scene and the board, plays sound effects.
 import { createScene, W, H } from "./scene/scene.mjs";
-import { boardView, itemsLabel, clockOffset, qrCell, sceneEvents } from "./scene/logic.mjs";
+import { boardView, deliveryView, itemsLabel, clockOffset, qrCell, sceneEvents } from "./scene/logic.mjs";
 import { createSfx } from "./sfx.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -16,7 +16,9 @@ const scene = createScene($("scene"), $("tags"), { clock: () => Date.now() + til
 // ---------- layout ----------
 function fit() {
   const stage = $("stage");
-  const px = Math.max(1, Math.floor(Math.min((stage.clientWidth - 16) / W, (stage.clientHeight - 24) / H)));
+  const deliv = $("deliveries");
+  const delivH = deliv && !deliv.hidden ? deliv.offsetHeight + 16 : 0;
+  const px = Math.max(1, Math.floor(Math.min((stage.clientWidth - 16) / W, (stage.clientHeight - delivH - 24) / H)));
   document.documentElement.style.setProperty("--px", `${px}px`);
 }
 addEventListener("resize", fit);
@@ -64,6 +66,33 @@ function row(order, fresh) {
   return li;
 }
 
+const DELIVERY_STAGE = {
+  placed: "Queued",
+  preparing: "Preparing",
+  ready: "Ready",
+  out_for_delivery: "Out for delivery",
+};
+
+function renderDeliveries(orders) {
+  const box = $("deliveries");
+  const list = deliveryView(orders);
+  box.hidden = list.length === 0;
+  if (list.length === 0) {
+    $("b-deliveries").replaceChildren();
+    return;
+  }
+  $("b-deliveries").replaceChildren(
+    ...list.slice(0, 6).map((o) => {
+      const li = document.createElement("li");
+      const stage = DELIVERY_STAGE[o.prepStatus] ?? (o.status === "preparing" ? "Preparing" : o.status === "serving" ? "Ready" : "Queued");
+      li.append(el("strong", shownNumber(o)));
+      if (o.name) li.append(el("span", o.name));
+      li.append(el("em", stage));
+      return li;
+    }),
+  );
+}
+
 function renderBoard(state, freshIds) {
   const closed = state.baristas === 0;
   $("board").classList.toggle("is-closed", closed);
@@ -76,6 +105,8 @@ function renderBoard(state, freshIds) {
   const chips = view.queued.shown.map((o) => el("span", shownNumber(o)));
   if (view.queued.more) chips.push(el("span", `+${view.queued.more}`));
   $("b-queued").replaceChildren(...chips);
+  renderDeliveries(state.orders);
+  fit();
 }
 
 // ---------- live state ----------

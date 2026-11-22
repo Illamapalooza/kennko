@@ -151,12 +151,12 @@ export function App() {
     refreshBoot()
   }, [unlocked, menuKey, lastSyncAt, refreshBoot])
 
-  const activeCount = (live?.active.length ?? 0) + (live?.online?.length ?? 0)
+  const activeCount = (live?.active.length ?? 0) + (live?.online?.length ?? 0) + (live?.pendingPayments?.length ?? 0)
   const screen = useMemo(() => {
     if (!boot || !menu || !live) return <div className="loading">Opening the till…</div>
     switch (tab) {
       case 'sell': return <Sell boot={boot} menu={menu} live={live} cart={cart} setCart={setCart} notify={notify} goTill={() => setTab('till')} />
-      case 'orders': return <Orders live={live} notify={notify} />
+      case 'orders': return <Orders live={live} online={online && !live.sync.offline} notify={notify} />
       case 'history': return <History boot={boot} live={live} notify={notify} />
       case 'till': return <Till live={live} notify={notify} />
       case 'menu': return <MenuScreen boot={boot} live={live} menu={menu} setMenu={setMenu} notify={notify} onDeviceChange={refreshBoot} />

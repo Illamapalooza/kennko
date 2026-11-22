@@ -58,13 +58,21 @@ export function itemsLabel(items) {
 
 const byAge = (a, b) => a.updatedAt - b.updatedAt || a.id - b.id;
 
-/** What the board shows: each state's oldest `cap` orders and how many more are hidden. */
+/** What the board shows: each state's oldest `cap` counter/pickup orders and how many more are hidden. */
 export function boardView(orders, cap) {
+  const counterOrPickup = orders.filter((o) => o.fulfilment !== "delivery");
   const column = (status, limit) => {
-    const all = orders.filter((o) => o.status === status).sort(status === "queued" ? (a, b) => a.id - b.id : byAge);
+    const all = counterOrPickup.filter((o) => o.status === status).sort(status === "queued" ? (a, b) => a.id - b.id : byAge);
     return { shown: all.slice(0, limit), more: Math.max(0, all.length - limit) };
   };
   return { queued: column("queued", cap * 2), preparing: column("preparing", cap), serving: column("serving", cap) };
+}
+
+/** Active online deliveries shown separately above the pixel cafe. */
+export function deliveryView(orders) {
+  return (orders ?? [])
+    .filter((o) => o.fulfilment === "delivery" && o.prepStatus !== "completed" && o.prepStatus !== "cancelled" && o.status !== "cancelled")
+    .sort((a, b) => a.createdAt - b.createdAt || a.id - b.id);
 }
 
 export function sceneEvents(prev, next) {

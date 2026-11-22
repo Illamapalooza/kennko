@@ -4,7 +4,7 @@ import {
   ADDON_LIMIT_MESSAGE, MAX_MODIFIERS, MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, canMovePrep, cleanDiscount, isOnlineQueueOrder,
   formatPublicCode, hasDrink, manilaDay, nextPrepStatus, nextStatus, normalisePublicCode, prevStatus, priceLines, summarise, totals,
   type CashMove, type CounterOrderPayload, type Discount, type LineInput, type Menu, type OnlineQueueOrder, type Order, type OrderStatus,
-  type OrderType, type PaymentMethod, type PrepStatus, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
+  type OrderType, type PaymentMethod, type PendingPaymentOrder, type PrepStatus, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
   type TillCustomer, type WallVisitor, MAX_VISITORS, isWallVisitor, parseLook,
 } from '@kennko/core'
 import type { CachedStaff } from './pins.ts'
@@ -240,9 +240,17 @@ export function tillCustomer(x: any): { bare: string; customer: TillCustomer } |
   if (!x || typeof x !== 'object' || typeof x.code !== 'string') return null
   const bare = normalisePublicCode(x.code)
   if (!bare || !STAMP_MODES.has(x.stampMode) || !count(x.stamps) || !count(x.fullCards)) return null
+  const catLook = x.catLook !== undefined ? parseLook(x.catLook) : null
   return {
     bare,
-    customer: { code: formatPublicCode(bare), catName: typeof x.catName === 'string' ? x.catName.slice(0, 40) : null, stampMode: x.stampMode, stamps: x.stamps, fullCards: x.fullCards },
+    customer: {
+      code: formatPublicCode(bare),
+      catName: typeof x.catName === 'string' ? x.catName.slice(0, 40) : null,
+      ...(catLook ? { catLook } : {}),
+      stampMode: x.stampMode,
+      stamps: x.stamps,
+      fullCards: x.fullCards,
+    },
   }
 }
 
@@ -300,6 +308,8 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
     db.prepare('insert into outbox (id, kind, entity, entity_local_id, staff_id, occurred_at, payload) values (?, ?, ?, ?, ?, ?, ?)')
       .run(randomUuid(), kind, ENTITY[kind], localId, by, now, JSON.stringify(payload))
   }
+
+  let pendingPayments: PendingPaymentOrder[] = []
 
   const openShift = (): Shift | null => {
     const row = db.prepare('select * from shifts where closed_at is null order by id desc limit 1').get()
@@ -693,6 +703,14 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
      */
     onlineOrders(): OnlineQueueOrder[] {
       return onlineRows('')
+    },
+
+    pendingPayments(): PendingPaymentOrder[] {
+      return pendingPayments
+    },
+
+    replacePendingPayments(list: PendingPaymentOrder[]) {
+      pendingPayments = list
     },
 
     activeOnlineOrders(): OnlineQueueOrder[] {

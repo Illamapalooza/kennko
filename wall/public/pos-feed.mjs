@@ -24,7 +24,21 @@ export function fromPosFeed(feed, baristas) {
     let id = online ? 5000 + o.number : o.number;
     while (taken.has(id)) id += 1000;
     taken.add(id);
-    orders.push({ id, ...(online ? { label: `W${o.number}` } : {}), name: typeof o.name === "string" ? o.name.slice(0, 16) : "", items, status, createdAt: o.createdAt, updatedAt: o.updatedAt });
+    const look = cleanLook(o.look);
+    const fulfilment = typeof o.fulfilment === "string" ? o.fulfilment : undefined;
+    const prepStatus = typeof o.prepStatus === "string" ? o.prepStatus : undefined;
+    orders.push({
+      id,
+      ...(online ? { label: `W${o.number}` } : {}),
+      name: typeof o.name === "string" ? o.name.slice(0, 16) : "",
+      items,
+      status,
+      createdAt: o.createdAt,
+      updatedAt: o.updatedAt,
+      ...(fulfilment ? { fulfilment } : {}),
+      ...(prepStatus ? { prepStatus } : {}),
+      ...(look ? { look } : {}),
+    });
   }
   orders.sort((a, b) => a.id - b.id);
   return {
@@ -37,6 +51,13 @@ export function fromPosFeed(feed, baristas) {
 const MAX_VISITORS = 12;
 const SLOTS = ["hat", "face", "neck", "held"];
 
+function cleanLook(raw) {
+  if (!raw || typeof raw.coat !== "string") return null;
+  const look = { coat: raw.coat };
+  for (const slot of SLOTS) if (typeof raw[slot] === "string") look[slot] = raw[slot];
+  return look;
+}
+
 function cleanVisitors(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
@@ -44,9 +65,8 @@ function cleanVisitors(raw) {
     if (out.length >= MAX_VISITORS) break;
     if (!v || typeof v.key !== "string" || v.key === "" || v.key.length > 64) continue;
     if (typeof v.name !== "string" || !Number.isFinite(v.endsAt)) continue;
-    if (!v.look || typeof v.look.coat !== "string") continue;
-    const look = { coat: v.look.coat };
-    for (const slot of SLOTS) if (typeof v.look[slot] === "string") look[slot] = v.look[slot];
+    const look = cleanLook(v.look);
+    if (!look) continue;
     out.push({ key: v.key, name: [...v.name].slice(0, 16).join(""), look, endsAt: v.endsAt });
   }
   return out;

@@ -5,6 +5,7 @@ import { canMovePrep, type Fulfilment, type PaymentStatus, type PrepStatus } fro
 import type { MenuSnapshot } from './snapshot.ts'
 import type { WallVisitor } from './cats.ts'
 import { formatPublicCode, normalisePublicCode, type StampMode } from './loyalty.ts'
+import type { CatLook } from './cats.ts'
 
 export const MAX_PUSH_EVENTS = 50
 export const IMPORT_CHUNK_MAX = 100
@@ -107,6 +108,24 @@ export type OnlineQueueOrder = {
   delivery: { address: string; barangay: string; phone: string } | null
   /** Stamp at pickup: `stamp` = to stamp, `stamped` = done, `paper` = a paper card, null = no card. Absent = older API. */
   card?: 'stamp' | 'stamped' | 'paper' | null
+  /** Customer's dressed cat look for the wall, or null/absent when none or hidden. */
+  catLook?: CatLook | null
+}
+
+/** An online order awaiting GCash payment verification. */
+export type PendingPaymentOrder = {
+  id: string
+  paymentId: string
+  orderCode: string
+  ticketNumber: number
+  customerName: string
+  fulfilment: 'pickup' | 'delivery'
+  fulfilAt: string
+  totalCentavos: number
+  reference: string | null
+  proofUrl: string | null
+  createdAt: string
+  lines: OnlineQueueLine[]
 }
 
 /** The only customer fields the till ever receives. No real name, email, phone or point balance. */
@@ -115,6 +134,8 @@ export type TillCustomer = {
   code: string
   /** The customer's cat name; null when Kennko has hidden the cat. */
   catName: string | null
+  /** The customer's dressed cat look; absent/null when none or hidden. */
+  catLook?: CatLook | null
   stampMode: StampMode
   stamps: number
   fullCards: number
@@ -128,6 +149,8 @@ export type PullState = {
   shop: { name: string; address: string; phone: string | null }
   /** Absent = an API from before Plan 5: the till keeps the online orders it has. */
   onlineOrders?: OnlineQueueOrder[]
+  /** Online orders awaiting payment verification. Absent = older API. */
+  pendingPayments?: PendingPaymentOrder[]
   /** Customers linked through this till recently. Absent = an API from before the loyalty plan. */
   customers?: TillCustomer[]
   /** The wall check-in secret and URL. null = none yet; absent = an API from before the cats plan. */

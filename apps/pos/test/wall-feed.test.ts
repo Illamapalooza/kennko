@@ -52,6 +52,8 @@ describe('online orders on the wall', () => {
       status: 'queued',
       createdAt: Date.parse('2026-11-21T01:50:00.000Z'),
       updatedAt: Date.parse('2026-11-21T01:52:00.000Z'),
+      fulfilment: 'delivery',
+      prepStatus: 'placed',
     }])
   })
 

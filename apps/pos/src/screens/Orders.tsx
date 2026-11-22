@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ORDER_TYPE_LABELS, iceLabel, type OnlineQueueLine, type OnlineQueueOrder, type Order, type OrderStatus } from '@kennko/core'
+import { ORDER_TYPE_LABELS, formatPesos, iceLabel, type OnlineQueueLine, type OnlineQueueOrder, type Order, type OrderStatus, type PendingPaymentOrder } from '@kennko/core'
 import { api, type Live } from '../api.ts'
 import { maskCode, onlineCardLabel, stampButtonLabel } from '../loyaltyText.ts'
 import { deliveryText, onlineAction, onlineColumn, onlineStage, onlineWhen } from '../onlineText.ts'
@@ -21,7 +21,7 @@ const onlineLineExtras = (line: OnlineQueueLine) =>
   [...line.options, iceLabel(line.iceLevel, line.iceServe), line.note].filter(Boolean).join(', ')
 
 /** The barista's queue. One big button per card moves it along; every tablet follows. */
-export function Orders({ live, notify }: { live: Live; notify: (message: string) => void }) {
+export function Orders({ live, online = true, notify }: { live: Live; online?: boolean; notify: (message: string) => void }) {
   const [now, setNow] = useState(Date.now())
   const [busy, setBusy] = useState<string | null>(null)
   useEffect(() => {
@@ -35,8 +35,27 @@ export function Orders({ live, notify }: { live: Live; notify: (message: string)
     try { await work() } catch (err) { notify(err instanceof Error ? err.message : 'That did not work.') } finally { setBusy(null) }
   }
 
+  const pending = live.pendingPayments ?? []
+
   return (
-    <div className="board">
+    <div className={`board${pending.length > 0 ? ' board-has-pending' : ''}`}>
+      {pending.length > 0 ? (
+        <section className="column column-pending" aria-label="Pending payment">
+          <h2>To confirm <b>{pending.length}</b></h2>
+          {!online ? <p className="empty">Connect to the internet to confirm GCash payments.</p> : null}
+          {pending.map((p) => (
+            <PendingPaymentTicket
+              key={`p:${p.paymentId}`}
+              order={p}
+              now={now}
+              online={online}
+              busy={busy === `p:${p.paymentId}`}
+              onVerify={() => act(`p:${p.paymentId}`, () => api.decideOnlinePayment(p.paymentId, 'verify'))}
+              onReject={() => act(`p:${p.paymentId}`, () => api.decideOnlinePayment(p.paymentId, 'reject'))}
+            />
+          ))}
+        </section>
+      ) : null}
       {COLUMNS.map((column) => {
         const cards: Card[] = [
           ...live.active.filter((o) => o.status === column.status).map((order): Card => ({ kind: 'c', at: order.createdAt, order })),
@@ -129,6 +148,57 @@ function OnlineTicket({ order, now, busy, onAdvance, onStamp }: { order: OnlineQ
           <button type="button" className="btn btn-amber" disabled={busy} onClick={onStamp}>{cardLabel}</button>
         ) : cardLabel ? <span className={`pill${cardLabel === 'Stamped' ? ' pill-done' : ''}`}>{cardLabel}</span> : null}
         {action ? <button type="button" className="btn btn-primary" disabled={busy} onClick={onAdvance}>{action}</button> : null}
+      </footer>
+    </article>
+  )
+}
+
+function PendingPaymentTicket({
+  order,
+  now,
+  online,
+  busy,
+  onVerify,
+  onReject,
+}: {
+  order: PendingPaymentOrder
+  now: number
+  online: boolean
+  busy: boolean
+  onVerify: () => void
+  onReject: () => void
+}) {
+  return (
+    <article className="ticket ticket-online ticket-pending">
+      <header>
+        <b className="ticket-number">{order.orderCode}</b>
+        <span className="ticket-who">{order.customerName}</span>
+        <span className="pill pill-amber">{formatPesos(order.totalCentavos)}</span>
+      </header>
+      <p className="online-when">
+        <b>{onlineWhen(order, now)}</b>
+        {order.reference ? <span className="pill">Ref: {order.reference}</span> : null}
+      </p>
+      <ul>
+        {order.lines.map((line, i) => {
+          const extras = onlineLineExtras(line)
+          return (
+            <li key={i}>
+              <b>{line.quantity}×</b> {line.name} <i>{line.size}</i>
+              {extras ? <small>{extras}</small> : null}
+            </li>
+          )
+        })}
+      </ul>
+      {order.proofUrl ? (
+        <p className="online-note">
+          <a href={order.proofUrl} target="_blank" rel="noreferrer" className="link">View GCash proof</a>
+        </p>
+      ) : null}
+      <footer>
+        <span className="muted">{waited(Date.parse(order.createdAt) || now, now)}</span>
+        <button type="button" className="btn btn-quiet" disabled={!online || busy} onClick={onReject}>Reject</button>
+        <button type="button" className="btn btn-primary" disabled={!online || busy} onClick={onVerify}>Confirm paid</button>
       </footer>
     </article>
   )

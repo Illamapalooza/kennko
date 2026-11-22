@@ -12,6 +12,7 @@ export function tabletSnapshot(store: Store, o: { version: number; now: number; 
     version: o.version, now: o.now, day: manilaDay(o.now), active: store.activeOrders(), shift: store.openShift(),
     // Paid online orders being made or out for delivery (Plan 5), kept apart from the till's own tickets.
     online: store.activeOnlineOrders(),
+    pendingPayments: store.pendingPayments(),
     menuKey: o.menuKey,
     sync: o.sync,
   }

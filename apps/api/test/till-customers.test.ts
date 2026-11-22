@@ -7,7 +7,7 @@ import { startTestDb, type TestDb } from './pg.js'
 import { customerLinked, orderCreated, rewardUsed, seedDevice, seedStaff, shiftOpened, stampAdded, syncApp } from './sync-helpers.js'
 
 const NOW = new Date('2026-11-21T02:00:00Z')
-const TILL_KEYS = ['catName', 'code', 'fullCards', 'stampMode', 'stamps']
+const TILL_KEYS = ['catLook', 'catName', 'code', 'fullCards', 'stampMode', 'stamps']
 const PRIVATE_KEYS = ['points', 'balance', 'email', 'displayName', 'name', 'phone']
 
 let db: TestDb
@@ -176,7 +176,14 @@ describe('the till allowlist', () => {
     const lookupRaw = await res.text()
     const found = JSON.parse(lookupRaw) as TillCustomer
     expect(Object.keys(found).sort()).toEqual(TILL_KEYS)
-    expect(found).toEqual({ code: ana.code, catName: 'Mochi', stampMode: 'digital', stamps: 3, fullCards: 0 })
+    expect(found).toEqual({
+      code: ana.code,
+      catName: 'Mochi',
+      catLook: { coat: 'tabby', hat: 'beanie' },
+      stampMode: 'digital',
+      stamps: 3,
+      fullCards: 0,
+    })
 
     await linkOnTill(ana.code)
     const { state, raw } = await pull()

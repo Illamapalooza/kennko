@@ -1,4 +1,4 @@
-import type { CashMove, Discount, Menu, OnlineQueueOrder, Order, PrepStatus, Shift, Summary, TillCustomer } from '@kennko/core'
+import type { CashMove, Discount, Menu, OnlineQueueOrder, Order, PendingPaymentOrder, PrepStatus, Shift, Summary, TillCustomer } from '@kennko/core'
 import { getTransport } from './transport.ts'
 
 export type Bootstrap = {
@@ -34,7 +34,7 @@ export type SyncStatus = {
   importing: number
 }
 
-export type Live = { version: number; now: number; day: string; active: Order[]; online: OnlineQueueOrder[]; shift: Shift | null; menuKey: string; sync: SyncStatus }
+export type Live = { version: number; now: number; day: string; active: Order[]; online: OnlineQueueOrder[]; pendingPayments?: PendingPaymentOrder[]; shift: Shift | null; menuKey: string; sync: SyncStatus }
 
 export type TillState = {
   shift: Shift | null
@@ -85,6 +85,7 @@ export const api = {
   createOrder: (body: unknown) => call<Order>('POST', '/api/orders', body),
   /** `from` is the step on screen, so a double tap or a second tablet cannot move the order twice. */
   advanceOnline: (id: string, from: PrepStatus) => call<OnlineQueueOrder>('POST', `/api/online/${id}/advance`, { from }),
+  decideOnlinePayment: (paymentId: string, decision: 'verify' | 'reject') => call<{ ok: true }>('POST', `/api/online/payment/${paymentId}/${decision}`, {}),
   advance: (id: number) => call<Order>('POST', `/api/orders/${id}/advance`, {}),
   undo: (id: number) => call<Order>('POST', `/api/orders/${id}/undo`, {}),
   /** A Kennko card by code. `customer` is null (with a `note`) when the till could not ask Kennko just now. */

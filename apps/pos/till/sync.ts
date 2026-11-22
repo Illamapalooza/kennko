@@ -71,6 +71,7 @@ const isPullState = (b: any): b is PullState =>
   && Boolean(b.shop) && typeof b.shop.name === 'string' && typeof b.shop.address === 'string' && (b.shop.phone === null || typeof b.shop.phone === 'string')
   && (b.menu === null || (Boolean(b.menu) && Number.isInteger(b.menu.version) && (b.menu.snapshot === null || isMenuSnapshot(b.menu.snapshot))))
   && (b.onlineOrders === undefined || isOnlineList(b.onlineOrders))
+  && (b.pendingPayments === undefined || Array.isArray(b.pendingPayments))
   // Entries are checked one by one when stored (a bad one is skipped); a `customers` that is not a list is garbled.
   && (b.customers === undefined || Array.isArray(b.customers))
   // Plan 8: visitors are checked one by one when stored (a bad one is skipped); a `visitors` that is not a list is garbled.
@@ -274,6 +275,11 @@ export function createSync(opts: {
         const before = JSON.stringify(store.onlineOrders())
         store.replaceOnlineOrders(state.onlineOrders)
         changed.online = JSON.stringify(store.onlineOrders()) !== before
+      }
+      if (state.pendingPayments !== undefined) {
+        const before = JSON.stringify(store.pendingPayments())
+        store.replacePendingPayments(state.pendingPayments)
+        if (JSON.stringify(store.pendingPayments()) !== before) changed.online = true
       }
       // No key = an API from before the loyalty plan: keep the cached customers.
       if (state.customers !== undefined) store.replaceCustomerCache(state.customers, now())

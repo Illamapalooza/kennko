@@ -198,6 +198,10 @@ i { font-style: normal; }
 
 /* ---------- orders board ---------- */
 .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 16px 20px 24px; height: 100%; }
+.board-has-pending { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.column-pending, .column-pending h2 { background: #fff4e0; }
+.column-pending h2 { color: #8a5a00; }
+.column-pending h2 b { background: var(--amber); color: var(--ink); }
 .column { background: var(--blue-soft); border-radius: var(--radius-lg); padding: 14px; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; }
 .column h2 { display: flex; justify-content: space-between; color: var(--blue); position: sticky; top: -14px; background: var(--blue-soft); padding: 4px 2px 6px; margin-top: -4px; z-index: 1; }
 .column h2 b { background: var(--blue); color: var(--white); border-radius: 999px; min-width: 28px; text-align: center; padding: 2px 8px; font-size: 0.9rem; }
@@ -205,15 +209,15 @@ i { font-style: normal; }
 .column-preparing h2 { color: #8a5a00; }
 .column-preparing h2 b { background: var(--amber); color: var(--ink); }
 .ticket { background: var(--white); border-radius: var(--radius-md); padding: 14px; display: grid; gap: 10px; box-shadow: var(--shadow); }
-.ticket header { display: flex; align-items: center; gap: 8px; }
+.ticket header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ticket-number { font-size: 1.7rem; font-weight: 900; color: var(--blue); line-height: 1; }
 .ticket-who { flex: 1; font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ticket ul { display: grid; gap: 6px; }
 .ticket li { font-weight: 700; }
 .ticket li small { margin-left: 26px; color: #8a5a00; font-weight: 800; }
-.ticket footer { display: flex; align-items: center; gap: 8px; }
-.ticket footer .muted { flex: 1; font-size: 0.85rem; }
-.ticket .btn { min-height: 48px; padding: 0 18px; }
+.ticket footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.ticket footer .muted { flex: 1 0 auto; margin-right: auto; font-size: 0.85rem; }
+.ticket .btn { min-height: 44px; padding: 0 14px; }
 
 /* ---------- pages ---------- */
 .page { padding: 20px; overflow-y: auto; height: 100%; display: flex; flex-direction: column; gap: 16px; }
@@ -454,6 +458,7 @@ body { background: var(--pattern-grid), var(--cream); }
 .scan-frame { position: absolute; inset: 18% 22%; border: 4px solid var(--amber); border-radius: 16px; pointer-events: none; }
 .scan-wait { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; font-weight: 800; color: var(--blue); }
 .scan-note { margin: 0; text-align: center; font-size: 0.9rem; }
+.scan-flip { position: absolute; right: 10px; bottom: 10px; min-height: 36px; padding: 4px 10px; font-size: 0.82rem; border-radius: 999px; background: rgba(255, 255, 255, 0.92); color: var(--ink); border: 2px solid var(--ink); font-weight: 800; }
 .paid-card { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; width: 100%; font-weight: 800; }
 .paid-card .stamped { color: var(--green); }
 .ticket footer .pill { flex: none; }

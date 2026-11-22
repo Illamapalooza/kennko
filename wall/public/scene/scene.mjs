@@ -145,8 +145,10 @@ export function createScene(canvas, tagLayer, opts = {}) {
       seen.add(o.id);
       let c = custs.get(o.id);
       if (!c && isActive(o)) {
-        c = { id: o.id, coat: coatFor(o.id), x: DOOR.x, y: DOOR.y, tx: DOOR.x, ty: DOOR.y, phase: "in", cup: false, flip: false, leaveAt: 0, snap: initial };
+        c = { id: o.id, coat: o.look ?? coatFor(o.id), x: DOOR.x, y: DOOR.y, tx: DOOR.x, ty: DOOR.y, phase: "in", cup: false, flip: false, leaveAt: 0, snap: initial };
         custs.set(o.id, c);
+      } else if (c && o.look) {
+        c.coat = o.look;
       }
       if (!c) continue;
       if (isActive(o)) {
@@ -170,7 +172,11 @@ export function createScene(canvas, tagLayer, opts = {}) {
       baristas.push({ x: STATIONS[i], tx: STATIONS[i], nextMove: t + rand(2, 6), coat: BARISTA_COATS[i % BARISTA_COATS.length] });
     }
     baristas.length = Math.min(baristas.length, count);
-    syncVisitors(ambient ? [] : nextVisitors, initial);
+    const activeLooks = new Set(active.filter((o) => o.look).map((o) => JSON.stringify(o.look)));
+    const visibleVisitors = activeLooks.size > 0
+      ? nextVisitors.filter((v) => !v.look || !activeLooks.has(JSON.stringify(v.look)))
+      : nextVisitors;
+    syncVisitors(ambient ? [] : visibleVisitors, initial);
   }
 
   /** Visiting cats: the ones on the list stand on their spot, a new one walks in, one gone walks out. */

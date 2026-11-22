@@ -2,9 +2,13 @@ import {
   hasDrink,
   ONLINE_PULL_MAX,
   ONLINE_RECENT_MS,
+  parseLook,
+  type CatLook,
   type IceLevel,
   type IceServe,
+  type OnlineQueueLine,
   type OnlineQueueOrder,
+  type PendingPaymentOrder,
   type PrepStatus,
   type StampMode,
 } from '@kennko/core'
@@ -108,18 +112,7 @@ async function readCards(sql: postgres.Sql, orders: OrderRow[]): Promise<Map<str
 
 const day = (d: string | Date) => (typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10))
 
-/** Paid online orders for the till queue: unfinished first, then finished within the last 24 h (Ruling 1). */
-export async function readOnlineQueue(sql: postgres.Sql, now: Date): Promise<OnlineQueueOrder[]> {
-  const since = new Date(now.getTime() - ONLINE_RECENT_MS)
-  const orders = await sql<OrderRow[]>`
-    select ${sql(ONLINE_ORDER_COLUMNS as unknown as string[])} from orders
-    where channel = 'online' and payment_status = 'paid'
-      and (prep_status <> 'completed' or updated_at >= ${since})
-    order by (prep_status = 'completed'), created_at desc
-    limit ${ONLINE_PULL_MAX}`
-  if (orders.length === 0) return []
-  const orderIds = orders.map((o) => o.id)
-
+async function loadLinesByOrder(sql: postgres.Sql, orderIds: string[]): Promise<Map<string, OnlineQueueLine[]>> {
   const lines = await sql<LineRow[]>`
     select ${sql(ONLINE_LINE_COLUMNS as unknown as string[])} from order_lines
     where order_id in ${sql(orderIds)}`
@@ -133,7 +126,7 @@ export async function readOnlineQueue(sql: postgres.Sql, now: Date): Promise<Onl
   // The options table has no sequence column, so heap (insert) order is the order they were written.
   const optionsByLine = new Map<string, string[]>()
   for (const o of options) optionsByLine.set(o.line_id, [...(optionsByLine.get(o.line_id) ?? []), o.option_name])
-  const linesByOrder = new Map<string, OnlineQueueOrder['lines']>()
+  const linesByOrder = new Map<string, OnlineQueueLine[]>()
   for (const l of lines) {
     const list = linesByOrder.get(l.order_id) ?? []
     list.push({
@@ -147,26 +140,121 @@ export async function readOnlineQueue(sql: postgres.Sql, now: Date): Promise<Onl
     })
     linesByOrder.set(l.order_id, list)
   }
+  return linesByOrder
+}
 
-  const cards = await readCards(sql, orders)
+async function readCatLooks(sql: postgres.Sql, customerIds: string[]): Promise<Map<string, CatLook>> {
+  const looks = new Map<string, CatLook>()
+  if (customerIds.length === 0) return looks
+  const rows = await sql<{ customer_id: string; equipped: unknown }[]>`
+    select customer_id, equipped from cats
+    where customer_id in ${sql(customerIds)} and not hidden_by_admin`
+  for (const r of rows) {
+    const look = parseLook(r.equipped)
+    if (look) looks.set(r.customer_id, look)
+  }
+  return looks
+}
 
-  return orders.map((o) => ({
-    id: o.id,
-    businessDay: day(o.business_day),
-    ticketNumber: o.ticket_number,
-    customerName: o.customer_name,
-    fulfilment: o.fulfilment,
-    fulfilAt: new Date(o.fulfil_at).toISOString(),
-    customerNote: o.customer_note ? o.customer_note : null,
-    prepStatus: o.prep_status,
-    createdAt: new Date(o.created_at).toISOString(),
-    updatedAt: new Date(o.updated_at).toISOString(),
-    lines: linesByOrder.get(o.id) ?? [],
-    // The address and phone stay on the till only until hand-off: a completed delivery carries none.
-    delivery:
-      o.fulfilment === 'delivery' && o.prep_status !== 'completed'
-        ? { address: o.delivery_address ?? '', barangay: o.delivery_barangay ?? '', phone: o.customer_phone ?? '' }
-        : null,
-    card: cards.get(o.id) ?? null,
-  }))
+/** Paid online orders for the till queue: unfinished first, then finished within the last 24 h (Ruling 1). */
+export async function readOnlineQueue(sql: postgres.Sql, now: Date): Promise<OnlineQueueOrder[]> {
+  const since = new Date(now.getTime() - ONLINE_RECENT_MS)
+  const orders = await sql<OrderRow[]>`
+    select ${sql(ONLINE_ORDER_COLUMNS as unknown as string[])} from orders
+    where channel = 'online' and payment_status = 'paid'
+      and (prep_status <> 'completed' or updated_at >= ${since})
+    order by (prep_status = 'completed'), created_at desc
+    limit ${ONLINE_PULL_MAX}`
+  if (orders.length === 0) return []
+  const orderIds = orders.map((o) => o.id)
+  const customerIds = [...new Set(orders.map((o) => o.customer_id).filter((id): id is string => id !== null))]
+
+  const [linesByOrder, cards, catLooks] = await Promise.all([
+    loadLinesByOrder(sql, orderIds),
+    readCards(sql, orders),
+    readCatLooks(sql, customerIds),
+  ])
+
+  return orders.map((o) => {
+    const catLook = o.customer_id ? catLooks.get(o.customer_id) ?? null : null
+    return {
+      id: o.id,
+      businessDay: day(o.business_day),
+      ticketNumber: o.ticket_number,
+      customerName: o.customer_name,
+      fulfilment: o.fulfilment,
+      fulfilAt: new Date(o.fulfil_at).toISOString(),
+      customerNote: o.customer_note ? o.customer_note : null,
+      prepStatus: o.prep_status,
+      createdAt: new Date(o.created_at).toISOString(),
+      updatedAt: new Date(o.updated_at).toISOString(),
+      lines: linesByOrder.get(o.id) ?? [],
+      // The address and phone stay on the till only until hand-off: a completed delivery carries none.
+      delivery:
+        o.fulfilment === 'delivery' && o.prep_status !== 'completed'
+          ? { address: o.delivery_address ?? '', barangay: o.delivery_barangay ?? '', phone: o.customer_phone ?? '' }
+          : null,
+      card: cards.get(o.id) ?? null,
+      ...(catLook ? { catLook } : {}),
+    }
+  })
+}
+
+type PendingRow = {
+  id: string
+  payment_id: string
+  order_code: string
+  ticket_number: number
+  customer_name: string
+  fulfilment: 'pickup' | 'delivery'
+  fulfil_at: Date
+  total_centavos: number
+  reference: string | null
+  proof_path: string | null
+  created_at: Date
+}
+
+/** Online orders awaiting GCash payment verification so staff at the till can confirm or reject when online. */
+export async function readPendingPayments(
+  sql: postgres.Sql,
+  proofs?: { signedUrl(path: string, seconds: number): Promise<string> },
+): Promise<PendingPaymentOrder[]> {
+  const rows = await sql<PendingRow[]>`
+    select o.id, p.id as payment_id, o.order_code, o.ticket_number, o.customer_name,
+      o.fulfilment, o.fulfil_at, o.total_centavos, p.reference, p.proof_path, o.created_at
+    from orders o
+    join payments p on p.order_id = o.id
+    where o.channel = 'online'
+      and o.payment_status = 'pending_verification'
+      and p.status = 'pending_verification'
+    order by o.created_at asc
+    limit 25`
+  if (rows.length === 0) return []
+  const linesByOrder = await loadLinesByOrder(sql, rows.map((r) => r.id))
+  return Promise.all(
+    rows.map(async (r) => {
+      let proofUrl: string | null = null
+      if (r.proof_path && proofs) {
+        try {
+          proofUrl = await proofs.signedUrl(r.proof_path, 300)
+        } catch {
+          proofUrl = null
+        }
+      }
+      return {
+        id: r.id,
+        paymentId: r.payment_id,
+        orderCode: r.order_code,
+        ticketNumber: r.ticket_number,
+        customerName: r.customer_name,
+        fulfilment: r.fulfilment,
+        fulfilAt: new Date(r.fulfil_at).toISOString(),
+        totalCentavos: r.total_centavos,
+        reference: r.reference ?? null,
+        proofUrl,
+        createdAt: new Date(r.created_at).toISOString(),
+        lines: linesByOrder.get(r.id) ?? [],
+      }
+    }),
+  )
 }
