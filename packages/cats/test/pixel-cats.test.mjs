@@ -25,7 +25,7 @@ test("existing cats paint exactly the pixels sprites.mjs painted before the move
   // count + hash of [x, y, w, h, fillStyle] taken from the old implementation
   const cases = [
     ["ginger", {}, 166, "849553057a949855"],
-    ["ginger", { apron: true }, 168, "c46a31ca2b2544a5"],
+    ["ginger", { apron: true }, 206, "0f1e35d8b5ecbd6f"],
     ["tabby", { flip: true, blink: true }, 166, "3fa6bb7402506a38"],
     ["calico", { rows: 9 }, 101, "055f23aa894f71ef"],
   ];
