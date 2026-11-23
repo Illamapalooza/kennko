@@ -123,18 +123,27 @@ export function shuffled(list, random = Math.random) {
 // ---------- visiting cats (Plan 8) ----------
 export const MAX_VISITORS = 12;
 
-// The tables, listed in the order they fill. Positions are a cat's feet: centre x, bottom y.
-export const TABLES = [{ x: 172, y: 142 }, { x: 60, y: 142 }, { x: 214, y: 112 }, { x: 258, y: 142 }, { x: 112, y: 142 }, { x: 214, y: 142 }, { x: 258, y: 112 }];
+// 3 indoor tables (1-3) + 4 al fresco outdoor tables (4-7). Positions are a cat's feet: centre x, bottom y.
+export const TABLES = [
+  { x: 48, y: 142 },
+  { x: 102, y: 142 },
+  { x: 156, y: 142 },
+  { x: 210, y: 108 },
+  { x: 262, y: 108 },
+  { x: 210, y: 142 },
+  { x: 262, y: 142 },
+];
 export const SEAT_SPOTS = TABLES.flatMap((t) => [{ x: t.x - 15, y: t.y }, { x: t.x + 15, y: t.y }]);
 
 /**
- * Where visiting cats stand: the free floor below the counter and between the tables, in two staggered rows
- * (so their name tags do not collide) and a short row on the right. None is on the counter or near a seat.
+ * Where visiting cats stand: the free floor below the counter and between the tables,
+ * both indoors and on the al fresco patio. None is on the counter or near a seat.
  */
 export const VISIT_SPOTS = [
-  ...[24, 66, 108, 150].map((x) => ({ x, y: 112, flip: x > 100 })),
-  ...[26, 62, 98, 134, 170].map((x) => ({ x, y: 125, flip: x > 100 })),
-  ...[196, 232, 268].map((x) => ({ x, y: 124, flip: true })),
+  ...[24, 62, 100, 138, 174].map((x) => ({ x, y: 113, flip: x > 100 })),
+  ...[24, 75, 129].map((x) => ({ x, y: 125, flip: x > 100 })),
+  ...[204, 236, 268].map((x) => ({ x, y: 84, flip: true })),
+  { x: 236, y: 125, flip: true },
 ];
 
 /** The visitors still here on the till's clock `now`, newest arrival (latest end) first, at most 12. */

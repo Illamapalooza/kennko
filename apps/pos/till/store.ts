@@ -21,6 +21,8 @@ export type NewOrder = {
   catLook?: CatLook | null
   /** The visit key of the walking cat picked for this sale (a chip on the Sell screen). Empty or absent: none. */
   visitorKey?: string | null
+  /** Optional table number (1-3 indoor, 4-7 al fresco) for dine-in orders. */
+  tableNumber?: number | null
 }
 
 /** Refusals the till screens show as they are. */
@@ -119,6 +121,7 @@ const ADDED_COLUMNS: [table: string, column: string, decl: string][] = [
   // The walking cat this order belongs to (its per-visit key), so the wall moves that cat instead of adding a twin.
   ['orders', 'visitor_key', 'text'],
   ['orders', 'wall_dismissed', 'integer not null default 0'],
+  ['orders', 'table_number', 'integer'],
   ['orders', 'stamp_uid', 'text'],
   ['orders', 'reward_claim_id', 'text'],
   ['cash_moves', 'uid', 'text'],
@@ -197,6 +200,7 @@ function toOrder(row: any): Order {
     freeDrink: row.reward_claim_id != null,
     ...(row.visitor_key ? { visitorKey: row.visitor_key as string } : {}),
     ...(row.cat_look ? (() => { try { const l = parseLook(JSON.parse(row.cat_look)); return l ? { catLook: l } : {} } catch { return {} } })() : {}),
+    ...(Number.isInteger(row.table_number) ? { tableNumber: row.table_number } : {}),
   }
 }
 
@@ -624,6 +628,9 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       const customerName = p.customerName || (cached?.catName ? clean(cached.catName, 24) : visitor ? clean(visitor.name, 24) : '')
       const catLook = visitor?.look ?? (input.catLook ? parseLook(input.catLook) : (cached?.catLook ?? null))
       const visitorKey = visitor?.key ?? null
+      const tableNumber = type === 'dine_in' && Number.isInteger(input.tableNumber) && input.tableNumber! >= 1 && input.tableNumber! <= 7
+        ? input.tableNumber!
+        : null
 
       return tx(() => {
         const shift = openShift()
@@ -634,11 +641,11 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
         const result = db.prepare(`
           insert into orders (day, number, type, customer_name, status, lines, subtotal, discount, discount_label, total,
             payment_method, tendered, change, payment_ref, shift_id, created_at, updated_at, uid, payment_uid, menu_version,
-            customer_code, cat_look, visitor_key, reward_claim_id)
-          values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            customer_code, cat_look, visitor_key, table_number, reward_claim_id)
+          values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(day, number, type, customerName, JSON.stringify(lines), sums.subtotalCentavos, sums.discountCentavos,
           sums.discountCentavos > 0 ? discount!.label : null, sums.totalCentavos, method, tendered, change, ref, shift.id, now, now,
-          randomUuid(), randomUuid(), menuVersion, customerCode, catLook ? JSON.stringify(catLook) : null, visitorKey, claimId)
+          randomUuid(), randomUuid(), menuVersion, customerCode, catLook ? JSON.stringify(catLook) : null, visitorKey, tableNumber, claimId)
         const id = Number(result.lastInsertRowid)
         record('order.created', id, by, now, {
           businessDay: day, ticketNumber: number, fulfilment: type, customerName, menuVersion, lines, discount,
@@ -992,6 +999,19 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       getOrder(id)
       db.prepare('update orders set wall_dismissed = 1 where id = ?').run(id)
       return getOrder(id)
+    },
+
+    /** Assigns or clears a table (1-3 indoor, 4-7 al fresco) on a dine-in order. */
+    setOrderTable(id: number, tableNumber: number | null): Order {
+      const next = tableNumber !== null && Number.isInteger(tableNumber) && tableNumber >= 1 && tableNumber <= 7 ? tableNumber : null
+      if (tableNumber !== null && next === null) throw new OrderError('Pick a table from 1 to 7.')
+      return tx(() => {
+        const order = getOrder(id)
+        if (order.status === 'voided') throw new OrderError('That order is voided.')
+        if (order.type !== 'dine_in') throw new OrderError('Only dine-in orders have a table.')
+        db.prepare('update orders set table_number = ? where id = ?').run(next, id)
+        return getOrder(id)
+      })
     },
 
     ordersForDay(day: string): Order[] {

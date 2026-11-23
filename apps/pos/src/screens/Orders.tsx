@@ -176,6 +176,7 @@ export function Orders({ boot, live, online = true, notify }: { boot: Bootstrap;
             }
           }}
           onAssignCat={(visitor) => act(`c:${selectedCounter.id}`, () => api.assignOrderCat(selectedCounter.id, visitor?.look ?? null, visitor?.name, visitor?.key ?? null))}
+          onSetTable={(tableNumber) => act(`c:${selectedCounter.id}`, () => api.setOrderTable(selectedCounter.id, tableNumber))}
           onClose={closeDetail}
         />
       ) : null}
@@ -212,6 +213,7 @@ function CounterOrderModal({
   onCancelVoid,
   onProceedVoidPin,
   onAssignCat,
+  onSetTable,
   onClose,
 }: {
   order: Order
@@ -226,6 +228,7 @@ function CounterOrderModal({
   onProceedVoidPin: () => void
   /** The walking cat to tie the order to, or null to take the cat away. */
   onAssignCat: (visitor: WallVisitor | null) => void
+  onSetTable: (tableNumber: number | null) => void
   onClose: () => void
 }) {
   // The order's cat is a walking cat by its visit key; an order from before the key existed falls back to the look.
@@ -248,6 +251,38 @@ function CounterOrderModal({
             )
           })}
         </ul>
+
+        {order.type === 'dine_in' && voidStep === 'none' ? (
+          <div className="walking-cats">
+            <small className="muted">Table</small>
+            <div className="walking-cat-chips">
+              {[
+                { n: null, label: 'Any' },
+                { n: 1, label: 'In 1' },
+                { n: 2, label: 'In 2' },
+                { n: 3, label: 'In 3' },
+                { n: 4, label: 'Out 1' },
+                { n: 5, label: 'Out 2' },
+                { n: 6, label: 'Out 3' },
+                { n: 7, label: 'Out 4' },
+              ].map(({ n, label }) => {
+                const active = (order.tableNumber ?? null) === n
+                return (
+                  <button
+                    type="button"
+                    key={label}
+                    className={`pill${active ? ' pill-amber' : ''}`}
+                    disabled={busy}
+                    aria-pressed={active}
+                    onClick={() => onSetTable(n)}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {visitors.length > 0 && voidStep === 'none' ? (
           <div className="walking-cats">

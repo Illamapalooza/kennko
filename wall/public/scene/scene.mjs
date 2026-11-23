@@ -1,6 +1,6 @@
 // The cat cafe: a 288 x 152 pixel room drawn on a canvas, with crisp DOM labels laid over it.
 // Table service: customers sit down, a barista makes the drink, a server cat carries it over.
-import { drawCat, drawLoaf, drawCup, drawText, textWidth, catBounds, CAT_W, CAT_H, INK, BLUE, AMBER } from "./sprites.mjs";
+import { drawCat, drawLoaf, drawCup, drawText, textWidth, catBounds, COAT_COLOURS, CAT_W, CAT_H, INK, BLUE, AMBER } from "./sprites.mjs";
 import { coatFor, assignBaristas, assignSlots, claimVisitors, itemsLabel, TABLES, VISIT_SPOTS, visitorView } from "./logic.mjs";
 
 export const W = 288;
@@ -15,7 +15,7 @@ const STATIONS = [62, 104, 132];
 const BARISTA_TOP = 63;
 const BARISTA_COATS = ["tuxedo", "ginger", "tabby"];
 const TRAY = { x: 160, y: 116 }; // where the server collects drinks
-const SERVER_HOME = { x: 188, y: 102 };
+const SERVER_HOME = { x: 176, y: 102 };
 const WALK = 30; // px per second
 const MAX_TICKETS = 6;
 const RAIL_END = 154; // the ticket rail runs from x 58 to here
@@ -24,17 +24,35 @@ const rand = (a, b) => a + Math.random() * (b - a);
 
 function paintRoom(g) {
   const R = (c, x, y, w, h) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
-  // wall and wainscot
-  R("#f7faff", 0, 0, W, 64); R("#dfe9ff", 0, 44, W, 20); R("#c5d6ff", 0, 44, W, 1);
-  for (let x = 6; x < W; x += 12) R("#d2dffb", x, 46, 1, 17);
-  R("#b3c6f2", 0, 63, W, 1);
-  // floor
+  const IN_W = 182;
+  // indoor wall and wainscot
+  R("#f7faff", 0, 0, IN_W, 64); R("#dfe9ff", 0, 44, IN_W, 20); R("#c5d6ff", 0, 44, IN_W, 1);
+  for (let x = 6; x < IN_W; x += 12) R("#d2dffb", x, 46, 1, 17);
+  R("#b3c6f2", 0, 63, IN_W, 1);
+  // indoor floor (0..181) and al fresco grassy camp floor (184..288)
   for (let y = 64, row = 0; y < H; y += 12, row++) {
-    for (let x = 0, col = 0; x < W; x += 12, col++) R((row + col) % 2 ? "#eef3ff" : "#e0e9fc", x, y, 12, 12);
+    for (let x = 0, col = 0; x < IN_W; x += 12, col++) R((row + col) % 2 ? "#eef3ff" : "#e0e9fc", x, y, Math.min(12, IN_W - x), 12);
   }
+  R("#79c46b", 184, 64, 104, 88);
+  // grassy texture patches, tufts, and tiny camp wildflowers
+  for (let y = 68, row = 0; y < H; y += 10, row++) {
+    for (let x = 188, col = 0; x < W - 4; x += 14, col++) {
+      const gx = x + ((row * 5 + col * 3) % 6);
+      R((row + col) % 2 ? "#87d178" : "#6bb55d", gx, y, 4, 2);
+      R("#599e4c", gx + 1, y - 1, 1, 1);
+      R("#599e4c", gx + 3, y - 1, 1, 1);
+      if ((row + col) % 5 === 0) R("#fff5b8", gx + 6, y + 3, 2, 2);
+      else if ((row * 3 + col) % 7 === 0) R("#ffffff", gx + 5, y + 4, 1, 1);
+    }
+  }
+  // wooden stepping planks at the doorway into the grass camp
+  R("#b3834c", 184, 114, 6, 18); R("#cfa067", 184, 115, 5, 4); R("#cfa067", 184, 121, 5, 4); R("#cfa067", 184, 127, 5, 4);
   R("#cdd9f3", 12, 64, 166, 12);
-  // lamps
-  for (const x of [70, 164, 260]) {
+  // glass doorway divider between indoor and al fresco
+  R(INK, 181, 0, 3, 64); R("#d7e8ff", 182, 2, 1, 60);
+  R("#c5d2ee", 181, 64, 3, 88); R("#9fb4e0", 182, 64, 1, 88);
+  // indoor lamps
+  for (const x of [70, 142]) {
     R(INK, x, 0, 1, 6); R(AMBER, x - 3, 6, 7, 3); R(INK, x - 4, 9, 9, 1); R("#fff7d6", x - 1, 10, 3, 1);
   }
   // menu board
@@ -43,20 +61,20 @@ function paintRoom(g) {
   for (let i = 0; i < 5; i++) { R("#bcd0ff", 18, 22 + i * 4, 20, 1); R(AMBER, 44, 22 + i * 4, 5, 1); }
   // the Kennko wordmark hangs at the centre of this wall; it is the real logo, laid over the canvas by the page
   // ticket rail
-  R(INK, 58, 28, 96, 1);
+  R(INK, 58, 28, 86, 1);
   // cup shelf
-  R("#8fa4d6", 155, 40, 30, 2);
-  for (let i = 0; i < 4; i++) drawCup(g, 158 + i * 7, 34);
-  // window frame and sill (the sky is painted live)
-  R(INK, 189, 9, 44, 39); R("#ffffff", 187, 46, 48, 3); R(INK, 187, 49, 48, 1);
-  // framed portrait of the house cat
-  R(INK, 245, 16, 26, 24); R("#ffffff", 246, 17, 24, 22); R(AMBER, 248, 19, 20, 18);
-  drawCat(g, 251, 23, "tuxedo", { rows: 10 });
-  // plants
-  R("#2f8f55", 185, 62, 2, 9); R("#3fae6a", 188, 58, 2, 13); R("#2f8f55", 191, 63, 2, 8); R("#3fae6a", 186, 60, 1, 4);
-  R(INK, 183, 70, 11, 8); R("#e9eefb", 184, 71, 9, 6); R(BLUE, 184, 73, 9, 1);
-  R("#2f8f55", 276, 60, 2, 11); R("#3fae6a", 279, 56, 2, 15); R("#2f8f55", 282, 62, 2, 9);
-  R(INK, 274, 70, 11, 8); R("#e9eefb", 275, 71, 9, 6); R(BLUE, 275, 73, 9, 1);
+  R("#8fa4d6", 152, 50, 26, 2);
+  for (let i = 0; i < 3; i++) drawCup(g, 155 + i * 7, 44);
+  // indoor window frame and sill (the sky is painted live, matching the outdoor camp sky)
+  R(INK, 150, 8, 30, 28); R("#ffffff", 148, 34, 34, 3); R(INK, 148, 37, 34, 1);
+  // al fresco wooden camp fence, string-light poles, and leafy bushes (the sky above y=53 is painted live)
+  R(INK, 184, 5, 3, 59); R("#9c6635", 185, 6, 1, 58);
+  R(INK, 285, 5, 3, 59); R("#9c6635", 286, 6, 1, 58);
+  R("#257344", 189, 50, 18, 13); R("#349658", 192, 47, 12, 10); R("#43b36b", 195, 49, 6, 5);
+  R("#257344", 267, 49, 17, 14); R("#349658", 270, 46, 11, 11); R("#43b36b", 273, 48, 5, 5);
+  R(INK, 184, 55, 104, 5); R("#b37943", 184, 56, 104, 3);
+  R(INK, 184, 62, 104, 2); R("#61a654", 184, 63, 104, 1);
+  for (const x of [198, 218, 238, 258, 276]) { R(INK, x, 53, 4, 11); R("#9c6635", x + 1, 54, 2, 9); }
   // door mat
   R(AMBER, 0, 127, 8, 18); R("#e09a1c", 0, 127, 8, 1); R("#e09a1c", 0, 144, 8, 1);
 }
@@ -109,6 +127,11 @@ export function createScene(canvas, tagLayer, opts = {}) {
   const server = { x: SERVER_HOME.x, y: SERVER_HOME.y, tx: SERVER_HOME.x, ty: SERVER_HOME.y, state: "idle", job: null, carrying: false, flip: true, moving: false };
   const steam = [];
   /** @type {Map<string, any>} visiting cats by their per-visit key */ const visitors = new Map();
+  const campCats = [
+    { x: 236, y: 88, tx: 236, ty: 88, flip: true, moving: false, seed: 301, look: { coat: "ginger" }, spot: { x: 236, y: 88, flip: true }, nextAct: 1.5 },
+    { x: 236, y: 124, tx: 236, ty: 124, flip: false, moving: false, seed: 302, look: { coat: "calico" }, spot: { x: 236, y: 124, flip: false }, nextAct: 2.8 },
+    { x: 196, y: 84, tx: 196, ty: 84, flip: false, moving: false, seed: 303, look: { coat: "tabby" }, spot: { x: 196, y: 84, flip: false }, nextAct: 4.1 },
+  ];
   let visitSlots = new Map();
   let lastVisitors = []; // the feed's visitors as last given to sync(), claimed ones included
   const tags = new Map();
@@ -116,7 +139,16 @@ export function createScene(canvas, tagLayer, opts = {}) {
   let last = performance.now();
   let raf = 0;
 
-  const freeSeat = () => { const used = new Set(seatOf.values()); for (let i = 0; i < SEATS.length; i++) if (!used.has(i)) return i; return -1; };
+  const freeSeat = (tableNum) => {
+    const used = new Set(seatOf.values());
+    if (tableNum >= 1 && tableNum <= TABLES.length) {
+      const base = (tableNum - 1) * 2;
+      if (!used.has(base)) return base;
+      if (!used.has(base + 1)) return base + 1;
+    }
+    for (let i = 0; i < SEATS.length; i++) if (!used.has(i)) return i;
+    return -1;
+  };
   const go = (c, p) => { c.tx = p.x; c.ty = p.y; };
   const isActive = (o) => o.status === "queued" || o.status === "preparing" || o.status === "serving";
 
@@ -161,8 +193,16 @@ export function createScene(canvas, tagLayer, opts = {}) {
     // seats first, oldest order first; whoever is left stands and waits
     const active = orders.filter(isActive).sort((a, b) => a.id - b.id);
     for (const o of active) {
-      if (seatOf.has(o.id)) continue;
-      const seat = freeSeat();
+      if (seatOf.has(o.id)) {
+        if (o.table >= 1 && o.table <= TABLES.length && Math.floor(seatOf.get(o.id) / 2) + 1 !== o.table) {
+          const used = new Set(seatOf.values());
+          const base = (o.table - 1) * 2;
+          if (!used.has(base)) seatOf.set(o.id, base);
+          else if (!used.has(base + 1)) seatOf.set(o.id, base + 1);
+        }
+        continue;
+      }
+      const seat = freeSeat(o.table);
       if (seat >= 0) seatOf.set(o.id, seat);
     }
     waitSlots = assignSlots(waitSlots, active.filter((o) => !seatOf.has(o.id)).map((o) => o.id), WAIT.length);
@@ -203,6 +243,15 @@ export function createScene(canvas, tagLayer, opts = {}) {
         go(c, seat !== undefined ? SEATS[seat] : slot >= 0 ? WAIT[slot] : { x: 20 + (o.id % 6) * 17, y: 150 });
       } else if (o.status === "done") {
         const dineIn = o.fulfilment === "dine_in";
+        if (dineIn && o.table >= 1 && o.table <= TABLES.length && seatOf.has(o.id) && Math.floor(seatOf.get(o.id) / 2) + 1 !== o.table) {
+          const used = new Set(seatOf.values());
+          const base = (o.table - 1) * 2;
+          const nextSeat = !used.has(base) ? base : !used.has(base + 1) ? base + 1 : -1;
+          if (nextSeat >= 0) {
+            seatOf.set(o.id, nextSeat);
+            go(c, SEATS[nextSeat]);
+          }
+        }
         if (c.phase === "in") {
           c.cup = true;
           c.phase = "finish";
@@ -349,6 +398,11 @@ export function createScene(canvas, tagLayer, opts = {}) {
         }
       }
     }
+    for (const n of campCats) {
+      if (!walk(n, dt)) { n.act = "idle"; continue; }
+      if (n.spot && n.act !== "wander" && n.act !== "look") n.flip = n.spot.flip;
+      if (t > n.nextAct) pickIdleAction(n, { canWander: true, canNap: true });
+    }
     if (baristaCount > 0) stepServer(dt);
     baristas.forEach((b, i) => {
       const working = assignment[i] != null;
@@ -372,27 +426,60 @@ export function createScene(canvas, tagLayer, opts = {}) {
 
   function drawWindow() {
     const sky = skyFor(manilaHour());
+    // indoor window sky (x: 152..178, y: 10..34)
     ctx.save();
-    ctx.beginPath(); ctx.rect(191, 11, 40, 34); ctx.clip();
-    ctx.fillStyle = sky.top; ctx.fillRect(191, 11, 40, 22);
-    ctx.fillStyle = sky.low; ctx.fillRect(191, 33, 40, 12);
+    ctx.beginPath(); ctx.rect(152, 10, 26, 24); ctx.clip();
+    ctx.fillStyle = sky.top; ctx.fillRect(152, 10, 26, 15);
+    ctx.fillStyle = sky.low; ctx.fillRect(152, 25, 26, 9);
     if (sky.stars) {
       ctx.fillStyle = "#ffffff";
-      for (const [x, y] of [[196, 15], [207, 19], [221, 14], [226, 24], [201, 27], [214, 30]]) {
+      for (const [x, y] of [[156, 13], [164, 16], [173, 12], [160, 21]]) {
         if (Math.floor(t * 1.5 + x) % 5) ctx.fillRect(x, y, 1, 1);
       }
-      ctx.fillStyle = "#fff3c4"; ctx.fillRect(222, 16, 4, 4);
+      ctx.fillStyle = "#fff3c4"; ctx.fillRect(171, 14, 3, 3);
     } else {
       ctx.fillStyle = "#ffffff";
-      for (const [speed, y, w] of [[2.2, 15, 12], [1.4, 24, 9]]) {
-        const x = 185 + ((t * speed + y * 7) % 56);
-        ctx.fillRect(Math.round(x), y, w, 3); ctx.fillRect(Math.round(x) + 2, y - 2, w - 5, 2);
+      for (const [speed, y, w] of [[2.2, 14, 9], [1.4, 21, 7]]) {
+        const x = 146 + ((t * speed + y * 5) % 40);
+        ctx.fillRect(Math.round(x), y, w, 2); ctx.fillRect(Math.round(x) + 2, y - 1, w - 4, 1);
       }
     }
     ctx.restore();
-    ctx.fillStyle = INK; ctx.fillRect(210, 11, 1, 34); ctx.fillRect(191, 27, 40, 1);
-    drawLoaf(ctx, 196, 37, "cream", Math.floor(t / 1.6) % 2);
-    drawZzz(216, 30);
+    ctx.fillStyle = INK; ctx.fillRect(165, 10, 1, 24); ctx.fillRect(152, 21, 26, 1);
+    drawLoaf(ctx, 155, 26, "cream", Math.floor(t / 1.6) % 2);
+    drawZzz(170, 20);
+
+    // outdoor al fresco sky (x: 184..288, y: 0..53), matching the exact same atmosphere as the window
+    ctx.save();
+    ctx.beginPath(); ctx.rect(184, 0, 104, 53); ctx.clip();
+    ctx.fillStyle = sky.top; ctx.fillRect(184, 0, 104, 33);
+    ctx.fillStyle = sky.low; ctx.fillRect(184, 33, 104, 20);
+    if (sky.stars) {
+      ctx.fillStyle = "#ffffff";
+      for (const [x, y] of [[194, 8], [212, 15], [228, 6], [244, 18], [260, 10], [276, 20], [202, 26], [238, 29], [268, 32]]) {
+        if (Math.floor(t * 1.5 + x) % 5) ctx.fillRect(x, y, 1, 1);
+      }
+      ctx.fillStyle = "#fff3c4"; ctx.fillRect(264, 10, 6, 6);
+    } else {
+      ctx.fillStyle = "#ffffff";
+      for (const [speed, y, w] of [[2.2, 11, 16], [1.4, 23, 12], [1.8, 34, 14]]) {
+        const x = 176 + ((t * speed + y * 7) % 124);
+        ctx.fillRect(Math.round(x), y, w, 3); ctx.fillRect(Math.round(x) + 3, y - 2, w - 6, 2);
+      }
+    }
+    // festoon patio string lights
+    ctx.fillStyle = INK;
+    for (let px = 184; px < 288; px += 2) {
+      const sag = Math.round(Math.sin(((px - 184) / 104) * Math.PI) * 7);
+      ctx.fillRect(px, 5 + sag, 2, 1);
+    }
+    for (const bx of [196, 214, 234, 254, 274]) {
+      const sag = Math.round(Math.sin(((bx - 184) / 104) * Math.PI) * 7);
+      ctx.fillStyle = INK; ctx.fillRect(bx, 6 + sag, 1, 2);
+      ctx.fillStyle = AMBER; ctx.fillRect(bx - 1, 8 + sag, 3, 2);
+      ctx.fillStyle = "#fff7d6"; ctx.fillRect(bx, 8 + sag, 1, 1);
+    }
+    ctx.restore();
   }
 
   function drawZzz(x, y) {
@@ -404,9 +491,20 @@ export function createScene(canvas, tagLayer, opts = {}) {
 
   function drawTable(tb) {
     const R = (c, x, y, w, h) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
-    R("rgba(26,35,64,.12)", tb.x - 7, tb.y, 14, 2);
-    R(INK, tb.x - 1, tb.y - 7, 2, 7); R(INK, tb.x - 4, tb.y - 1, 8, 2);
-    R(INK, tb.x - 8, tb.y - 12, 16, 5); R("#ffffff", tb.x - 7, tb.y - 11, 14, 3); R(BLUE, tb.x - 7, tb.y - 9, 14, 1);
+    const outdoor = tb.x >= 184;
+    R("rgba(26,35,64,.14)", tb.x - 7, tb.y, 14, 2);
+    if (outdoor) {
+      // wooden camp table
+      R(INK, tb.x - 5, tb.y - 7, 2, 7); R(INK, tb.x + 3, tb.y - 7, 2, 7);
+      R("#8a572a", tb.x - 4, tb.y - 7, 1, 6); R("#8a572a", tb.x + 3, tb.y - 7, 1, 6);
+      R(INK, tb.x - 8, tb.y - 12, 16, 5);
+      R("#d19858", tb.x - 7, tb.y - 11, 14, 2);
+      R("#a86e37", tb.x - 7, tb.y - 9, 14, 1);
+    } else {
+      R(INK, tb.x - 1, tb.y - 7, 2, 7); R(INK, tb.x - 4, tb.y - 1, 8, 2);
+      R(INK, tb.x - 8, tb.y - 12, 16, 5); R("#ffffff", tb.x - 7, tb.y - 11, 14, 3);
+      R(BLUE, tb.x - 7, tb.y - 9, 14, 1);
+    }
   }
 
   function drawHeart(x, y, age) {
@@ -457,6 +555,51 @@ export function createScene(canvas, tagLayer, opts = {}) {
     ctx.fillStyle = "rgba(26,35,64,.14)"; ctx.fillRect(x + 1, Math.round(v.y) - 1, 12, 2);
     drawCat(ctx, x, y, v.look, { flip, blink: blink(200 + v.seed) });
     if (!v.moving && v.act === "happy") drawHeart(x + 5, y - 6, t - (v.actAt ?? t));
+  }
+
+  /** Compact ambient camp cat (smaller, 4-legged/loafing style, distinct from upright user sprites). */
+  function drawCampCat(n) {
+    const coat = COAT_COLOURS[n.look?.coat] ?? COAT_COLOURS.ginger;
+    const base = coat.m ?? coat.b ?? "#e68a3c";
+    const dark = coat.d ?? coat.s ?? "#b86220";
+    const flip = !n.moving && n.act === "look" && n.lookFlip !== undefined ? n.lookFlip : n.flip;
+    if (!n.moving && n.act === "nap") {
+      const x = Math.round(n.x) - 7, y = Math.round(n.y) - 8;
+      ctx.fillStyle = "rgba(26,35,64,.16)"; ctx.fillRect(x + 1, Math.round(n.y) - 1, 12, 2);
+      drawLoaf(ctx, x, y, n.look?.coat ?? "ginger", Math.floor(t / 1.4) % 2);
+      drawZzz(x + 11, y - 2);
+      return;
+    }
+    const hop = hopOffset(n);
+    const stepFrame = n.moving ? Math.floor(t * 8 + n.seed) % 2 : 0;
+    const cx = Math.round(n.x), cy = Math.round(n.y) - hop;
+    const x = cx - 5, y = cy - 8;
+    ctx.fillStyle = "rgba(26,35,64,.16)"; ctx.fillRect(x + 1, Math.round(n.y) - 1, 9, 2);
+    ctx.save();
+    if (flip) { ctx.translate(cx * 2, 0); ctx.scale(-1, 1); }
+    // tail (wags gently when idle, perks up when walking)
+    const tailWag = Math.floor(t * 3 + n.seed) % 2;
+    ctx.fillStyle = INK; ctx.fillRect(x - 2, y + 3 - tailWag, 2, 3);
+    ctx.fillStyle = dark; ctx.fillRect(x - 1, y + 3 - tailWag, 1, 2);
+    // compact body + head
+    ctx.fillStyle = INK;
+    ctx.fillRect(x, y + 3, 9, 4);
+    ctx.fillRect(x + 4, y + 1, 6, 4);
+    ctx.fillRect(x + 4, y, 2, 1); ctx.fillRect(x + 8, y, 2, 1); // ears
+    ctx.fillStyle = base;
+    ctx.fillRect(x + 1, y + 4, 7, 2);
+    ctx.fillRect(x + 5, y + 2, 4, 3);
+    ctx.fillRect(x + 5, y + 1, 1, 1); ctx.fillRect(x + 8, y + 1, 1, 1);
+    // legs
+    ctx.fillStyle = INK;
+    ctx.fillRect(x + 1 + stepFrame, y + 7, 2, 1);
+    ctx.fillRect(x + 6 - stepFrame, y + 7, 2, 1);
+    // eye (blinks periodically)
+    if (!blink(300 + n.seed)) {
+      ctx.fillStyle = INK; ctx.fillRect(x + 8, y + 3, 1, 1);
+    }
+    ctx.restore();
+    if (!n.moving && n.act === "happy") drawHeart(cx - 2, y - 6, t - (n.actAt ?? t));
   }
 
   function drawServer() {
@@ -522,7 +665,8 @@ export function createScene(canvas, tagLayer, opts = {}) {
     // floor: tables, customers and the server, back to front
     const things = [...TABLES.map((tb) => ({ y: tb.y + 0.5, draw: () => drawTable(tb) })),
       ...[...custs.values()].map((c) => ({ y: c.y, draw: () => drawCust(c) })),
-      ...[...visitors.values()].map((v) => ({ y: v.y, draw: () => drawVisitor(v) }))];
+      ...[...visitors.values()].map((v) => ({ y: v.y, draw: () => drawVisitor(v) })),
+      ...campCats.map((n) => ({ y: n.y, draw: () => drawCampCat(n) }))];
     if (baristaCount > 0) things.push({ y: server.y, draw: drawServer });
     things.sort((a, b) => a.y - b.y).forEach((th) => th.draw());
   }

@@ -59,6 +59,7 @@ export function Pay({ boot, cart, totalCentavos, onPaid, onClose, notify }: Prop
       ...(freeIndex < 0 && cart.customer ? { customerCode: cart.customer.code } : {}),
       ...(cart.catLook ? { catLook: cart.catLook } : {}),
       ...(cart.visitorKey ? { visitorKey: cart.visitorKey } : {}),
+      ...(cart.type === 'dine_in' && cart.tableNumber ? { tableNumber: cart.tableNumber } : {}),
     })
     setCard(cart.customer)
     setOrder(saved)

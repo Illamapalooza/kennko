@@ -136,11 +136,47 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
       </header>
       <div className="segmented" role="group" aria-label="Order type">
         {(Object.keys(ORDER_TYPE_LABELS) as OrderType[]).map((type) => (
-          <button type="button" key={type} className={cart.type === type ? 'on' : ''} aria-pressed={cart.type === type} onClick={() => setCart((c) => ({ ...c, type }))}>
+          <button
+            type="button"
+            key={type}
+            className={cart.type === type ? 'on' : ''}
+            aria-pressed={cart.type === type}
+            onClick={() => setCart((c) => ({ ...c, type, tableNumber: type === 'dine_in' ? c.tableNumber ?? null : null }))}
+          >
             {ORDER_TYPE_LABELS[type]}
           </button>
         ))}
       </div>
+      {cart.type === 'dine_in' ? (
+        <div className="walking-cats" aria-label="Table">
+          <small className="muted">Table</small>
+          <div className="walking-cat-chips">
+            {[
+              { n: null, label: 'Any' },
+              { n: 1, label: 'In 1' },
+              { n: 2, label: 'In 2' },
+              { n: 3, label: 'In 3' },
+              { n: 4, label: 'Out 1' },
+              { n: 5, label: 'Out 2' },
+              { n: 6, label: 'Out 3' },
+              { n: 7, label: 'Out 4' },
+            ].map(({ n, label }) => {
+              const active = (cart.tableNumber ?? null) === n
+              return (
+                <button
+                  type="button"
+                  key={label}
+                  className={`pill${active ? ' pill-amber' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => setCart((c) => ({ ...c, tableNumber: n }))}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
       <input className="input" value={cart.customerName} maxLength={24} placeholder="Customer name (optional)" aria-label="Customer name" onChange={(e) => setCart((c) => ({ ...c, customerName: e.target.value }))} />
 
       {customer ? (

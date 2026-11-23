@@ -20,6 +20,8 @@ export type WallOrder = {
   look?: CatLook
   /** The visit key of the walking cat this order belongs to: the wall seats that cat instead of adding a second one. */
   visitor?: string
+  /** Optional table number (1-3 indoor, 4-7 al fresco). */
+  table?: number
 }
 
 /** How long a finished dine-in order stays in the feed (2 hours) unless explicitly removed from the cafe. */
@@ -75,6 +77,7 @@ export function wallOrders(
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       fulfilment: order.type,
+      ...(order.tableNumber ? { table: order.tableNumber } : {}),
       ...(look ? { look } : {}),
       ...(key ? { visitor: key } : {}),
     }

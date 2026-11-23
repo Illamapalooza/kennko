@@ -27,6 +27,7 @@ export function fromPosFeed(feed, baristas) {
     const look = cleanLook(o.look);
     const fulfilment = typeof o.fulfilment === "string" ? o.fulfilment : undefined;
     const prepStatus = typeof o.prepStatus === "string" ? o.prepStatus : undefined;
+    const table = Number.isInteger(o.table) && o.table >= 1 && o.table <= 7 ? o.table : undefined;
     const visitor = typeof o.visitor === "string" && o.visitor !== "" && o.visitor.length <= 64 ? o.visitor : undefined;
     orders.push({
       id,
@@ -38,6 +39,7 @@ export function fromPosFeed(feed, baristas) {
       updatedAt: o.updatedAt,
       ...(fulfilment ? { fulfilment } : {}),
       ...(prepStatus ? { prepStatus } : {}),
+      ...(table ? { table } : {}),
       ...(look ? { look } : {}),
       ...(visitor ? { visitor } : {}),
     });

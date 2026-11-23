@@ -42,6 +42,8 @@ export type Order = {
   voidedByName?: string | null
   /** Assigned customer cat look for the wall, if any. */
   catLook?: CatLook | null
+  /** Optional table number (1-3 indoor, 4-7 al fresco) for dine-in orders. */
+  tableNumber?: number | null
   /**
    * The visit key of the walking cat this order belongs to, when the customer's cat is on the wall. The wall then
    * moves that same cat to a seat instead of bringing in a second one. Absent or null: no visiting cat.

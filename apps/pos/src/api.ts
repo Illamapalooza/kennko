@@ -95,6 +95,7 @@ export const api = {
   unlinkCustomer: (id: number) => call<Order>('POST', `/api/orders/${id}/customer/remove`, {}),
   /** With `visitorKey` the order is tied to that walking cat; the till takes its look and name from the visit. */
   assignOrderCat: (id: number, catLook: CatLook | null, customerName?: string, visitorKey?: string | null) => call<Order>('POST', `/api/orders/${id}/cat`, { catLook, customerName, visitorKey: visitorKey ?? null }),
+  setOrderTable: (id: number, tableNumber: number | null) => call<Order>('POST', `/api/orders/${id}/table`, { tableNumber }),
   removeFromWall: (id: number) => call<Order>('POST', `/api/orders/${id}/wall-remove`, {}),
   stampOrder: (id: number) => call<Order>('POST', `/api/orders/${id}/stamp`, {}),
   stampOnline: (id: string) => call<OnlineQueueOrder>('POST', `/api/online/${id}/stamp`, {}),
