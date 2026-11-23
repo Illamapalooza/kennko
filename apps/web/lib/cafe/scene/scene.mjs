@@ -79,9 +79,10 @@ function paintRoom(g) {
   for (let i = 0; i < 4; i++) { R("#9db6ee", 34, 22 + i * 4, 15, 1); R(AMBER, 53, 22 + i * 4, 4, 1); }
   // ticket rail
   R(INK, 64, 28, 80, 1);
-  // red velvet couch + framed cat portraits behind indoor table 3 (x=156, y=142)
-  R(INK, 145, 120, 22, 10); R("#a8242c", 146, 121, 20, 8); R("#c9323b", 147, 122, 18, 4);
-  R("#f2d6a2", 148, 123, 3, 3); R("#ffffff", 160, 123, 3, 3);
+  // big red velvet sofa with cushions behind indoor table 3 (x=156, y=142)
+  R(INK, 136, 114, 38, 14); R("#8f1c23", 137, 115, 36, 12); R("#c9323b", 139, 117, 32, 8);
+  R("#75151b", 137, 118, 3, 9); R("#75151b", 170, 118, 3, 9); // sofa armrests
+  R("#f2d6a2", 141, 118, 4, 4); R("#ffffff", 153, 118, 4, 4); R("#5478c4", 164, 118, 4, 4); // cushions
   // indoor window frame and sill (the sky is painted live, matching the outdoor camp sky)
   R(INK, 150, 9, 30, 27); R("#ffffff", 148, 34, 34, 3); R(INK, 148, 37, 34, 1);
   // striped cafe awning peeking outside the storefront doorway
@@ -529,14 +530,17 @@ export function createScene(canvas, tagLayer, opts = {}) {
         R("#fff7d6", tb.x, tb.y - 14, 1, 1);
       }
     } else if (tb.x > 130) {
-      // wooden coffee table by the red couch (In 3)
-      R(INK, tb.x - 6, tb.y - 7, 2, 7); R(INK, tb.x + 4, tb.y - 7, 2, 7);
-      R(INK, tb.x - 9, tb.y - 11, 18, 4); R("#cfa067", tb.x - 8, tb.y - 10, 16, 2);
+      // flat long wooden table in front of the big red sofa (In 3)
+      R("rgba(26,35,64,.14)", tb.x - 13, tb.y, 26, 2);
+      R(INK, tb.x - 11, tb.y - 7, 2, 7); R(INK, tb.x + 9, tb.y - 7, 2, 7);
+      R(INK, tb.x - 14, tb.y - 11, 28, 4); R("#cfa067", tb.x - 13, tb.y - 10, 26, 2);
+      R("#a86e37", tb.x - 13, tb.y - 8, 26, 1);
     } else {
-      // black round pedestal tables (In 1 & In 2)
+      // flat circular wooden tables on black pedestal (In 1 & In 2)
       R(INK, tb.x - 1, tb.y - 7, 2, 7); R(INK, tb.x - 4, tb.y - 1, 8, 2);
-      R(INK, tb.x - 8, tb.y - 12, 16, 5); R("#2a3040", tb.x - 7, tb.y - 11, 14, 3);
-      R("#454e66", tb.x - 7, tb.y - 11, 14, 1);
+      R(INK, tb.x - 7, tb.y - 12, 14, 4); R(INK, tb.x - 8, tb.y - 11, 16, 2);
+      R("#cfa067", tb.x - 6, tb.y - 11, 12, 2);
+      R("#a86e37", tb.x - 7, tb.y - 10, 14, 1);
     }
   }
 
