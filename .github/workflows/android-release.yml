@@ -1,0 +1,112 @@
+name: Android Release (OTA)
+
+on:
+  push:
+    tags:
+      - 'apk-v*'
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Which app to release
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - pos
+          - wall
+      notes:
+        description: Release notes shown in the POS update banner
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release-apks:
+    name: Build & Publish Signed APKs
+    # Disabled while developing on-site in Kennko. Enable via GitHub repo variable:
+    # gh variable set ENABLE_ANDROID_RELEASE --body "true"
+    if: vars.ENABLE_ANDROID_RELEASE == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore Android release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p "$HOME/.kennko"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$HOME/.kennko/kennko-release.jks"
+          cat > "$HOME/.kennko/keystore.properties" <<EOF
+          storeFile=$HOME/.kennko/kennko-release.jks
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Build Kennko POS release APK
+        if: inputs.app != 'wall'
+        env:
+          KENNKO_API_URL: https://kennko-api.vercel.app
+        run: |
+          rm -rf android/kennko-kit/build
+          npm run pos:apk -- --release
+          cp apps/pos/android/app/build/outputs/apk/release/app-release.apk /tmp/kennko-pos.apk
+
+      - name: Build Kennko Wall release APK
+        if: inputs.app != 'pos'
+        run: |
+          rm -rf android/kennko-kit/build
+          npm run wall:apk -- --release
+          cp apps/wall-app/android/app/build/outputs/apk/release/app-release.apk /tmp/kennko-wall.apk
+
+      - name: Publish GitHub Release & update updates.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ inputs.notes }}
+          APP_CHOICE: ${{ inputs.app || 'both' }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="apk-$(date -u +%Y%m%d-%H%M%S)"
+          fi
+          ASSETS=()
+          [[ -f /tmp/kennko-pos.apk ]] && ASSETS+=("/tmp/kennko-pos.apk")
+          [[ -f /tmp/kennko-wall.apk ]] && ASSETS+=("/tmp/kennko-wall.apk")
+          gh release create "$TAG" "${ASSETS[@]}" --title "Kennko Android $TAG" --notes "${NOTES:-Automated Android OTA release}"
+
+          BASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
+          if [[ "$APP_CHOICE" != "wall" && -f /tmp/kennko-pos.apk ]]; then
+            node scripts/release-apk.mjs pos "${BASE_URL}/kennko-pos.apk" --notes "$NOTES" || true
+          fi
+          if [[ "$APP_CHOICE" != "pos" && -f /tmp/kennko-wall.apk ]]; then
+            node scripts/release-apk.mjs wall "${BASE_URL}/kennko-wall.apk" --notes "$NOTES" || true
+          fi
+
+          if ! git diff --quiet apps/web/public/apps/updates.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add apps/web/public/apps/updates.json
+            git commit -m "chore(release): publish Android OTA updates (${TAG})"
+            git push origin main
+          fi
