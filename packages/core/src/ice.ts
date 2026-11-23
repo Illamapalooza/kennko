@@ -14,9 +14,9 @@ export const ICE_SERVES: { value: IceServe; label: string; hint: string }[] = [
   { value: 'side', label: 'Ice on the side', hint: 'Keeps it from watering down' },
 ]
 
-/** Hot drinks have no ice to configure. */
+/** Hot drinks and food have no ice to configure. */
 export function takesIce(size: DrinkSize): boolean {
-  return size !== 'HOT'
+  return size !== 'HOT' && size !== 'REG'
 }
 
 /** "Ice on the side" is meaningless when there is no ice. */

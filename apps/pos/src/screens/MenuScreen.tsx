@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { formatPesos, type Menu } from '@kennko/core'
+import { formatPesos, sizeTag, type Menu } from '@kennko/core'
 import { api, type Bootstrap, type Live } from '../api.ts'
 import { PinPrompt } from '../components/PinPrompt.tsx'
 import { menuLine } from '../syncText.ts'
@@ -77,7 +77,7 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
               <li key={item.id}>
                 <span>
                   {item.name} {item.isBestseller ? <i className="star-inline" aria-label="Bestseller">★</i> : null}
-                  <small>{item.prices.map((p) => `${p.size} ${formatPesos(p.priceCentavos)}`).join(' · ')}</small>
+                  <small>{item.prices.map((p) => [sizeTag(p.size), formatPesos(p.priceCentavos)].filter(Boolean).join(' ')).join(' · ')}</small>
                 </span>
                 <button type="button" role="switch" aria-checked={item.isAvailable} aria-label={`${item.name} available`} className={`switch${item.isAvailable ? ' on' : ''}`} disabled={busy === item.id} onClick={() => toggle(item.id, !item.isAvailable)}>
                   <i />

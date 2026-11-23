@@ -287,7 +287,7 @@ server.listen(port, '0.0.0.0', () => {
     console.log(`  Secure address:  ${[...(named ? [named] : []), ...LAN()].map((n) => `https://${n}:${config.securePort}/`).join('   ') || `https://localhost:${config.securePort}/`}`)
   } else if (!DEV) console.log(`  Install as app:  not available. ${secureProblem}`)
   const snap = till.loadedSnapshot()
-  console.log(`  Menu:            ${snap ? `from the website, version ${snap.version}` : baseMenu.source === 'website' ? 'from the website (saved before sync)' : 'built-in'}, ${baseMenu.categories.reduce((n, c) => n + c.items.length, 0)} drinks`)
+  console.log(`  Menu:            ${snap ? `from the website, version ${snap.version}` : baseMenu.source === 'website' ? 'from the website (saved before sync)' : 'built-in'}, ${baseMenu.categories.reduce((n, c) => n + c.items.length, 0)} items`)
   console.log(`  Till:            ${shift ? `open, expecting ${formatPesos(till.store.shiftSummary(shift).expectedCashCentavos)} in the drawer` : 'closed'}`)
   console.log(`  Backup:          ${till.lastBackup()}`)
   const device = loadDevice(files)

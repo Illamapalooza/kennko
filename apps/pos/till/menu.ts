@@ -1,32 +1,58 @@
-import { SIZE_ORDER, liveDrinkMenu, type Discount, type Menu, type MenuSnapshot } from '@kennko/core'
+import { FOOD_SIZE, SIZE_ORDER, liveDrinkMenu, liveTillMenu, type Discount, type Menu, type MenuSnapshot } from '@kennko/core'
 // The same list the website's seeder loads, so the till and the website start from one menu.
-import { SEED_CATEGORIES, SEED_MODIFIER_GROUPS } from '@kennko/core/seed-menu'
+import { SEED_CATEGORIES, SEED_FOOD, SEED_MODIFIER_GROUPS } from '@kennko/core/seed-menu'
 import type { TillFiles } from './files.ts'
 
 const slug = (text: string) => text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
 /** The menu that ships with the till, used until a copy is pulled from the website. */
 export function builtInMenu(now: number): Menu {
+  const drinkGroupIds = SEED_MODIFIER_GROUPS.map((group) => slug(group.name))
   return {
     source: 'built-in',
     updatedAt: now,
-    categories: SEED_CATEGORIES.map((category) => ({
-      id: slug(category.name),
-      name: category.name,
-      items: category.items.map((item) => ({
-        id: slug(`${category.name}-${item.name}`),
-        name: item.name,
-        isBestseller: item.isBestseller,
-        isAvailable: true,
-        prices: SIZE_ORDER.filter((size) => item.prices[size] !== null).map((size) => ({ size, priceCentavos: item.prices[size] as number })),
+    categories: [
+      ...SEED_CATEGORIES.map((category) => ({
+        id: slug(category.name),
+        name: category.name,
+        items: category.items.map((item) => ({
+          id: slug(`${category.name}-${item.name}`),
+          name: item.name,
+          isBestseller: item.isBestseller,
+          isAvailable: true,
+          prices: SIZE_ORDER.filter((size) => item.prices[size] !== null).map((size) => ({ size, priceCentavos: item.prices[size] as number })),
+          modifierGroupIds: drinkGroupIds,
+        })),
       })),
-    })),
-    modifierGroups: SEED_MODIFIER_GROUPS.map((group) => ({
-      id: slug(group.name),
-      name: group.name,
-      isMultiSelect: group.isMultiSelect,
-      modifiers: group.modifiers.map((m) => ({ id: slug(`${group.name}-${m.name}`), name: m.name, priceCentavos: m.priceCentavos, isAvailable: true })),
-    })),
+      {
+        id: 'food',
+        name: 'Food',
+        kind: 'food' as const,
+        items: SEED_FOOD.map((food) => ({
+          id: slug(`food-${food.name}`),
+          name: food.name,
+          isBestseller: false,
+          isAvailable: true,
+          prices: [{ size: FOOD_SIZE, priceCentavos: food.priceCentavos }],
+          modifierGroupIds: food.flavours ? [slug(food.flavours.groupName)] : [],
+        })),
+      },
+    ],
+    modifierGroups: [
+      ...SEED_MODIFIER_GROUPS.map((group) => ({
+        id: slug(group.name),
+        name: group.name,
+        isMultiSelect: group.isMultiSelect,
+        modifiers: group.modifiers.map((m) => ({ id: slug(`${group.name}-${m.name}`), name: m.name, priceCentavos: m.priceCentavos, isAvailable: true })),
+      })),
+      ...SEED_FOOD.flatMap((food) => (food.flavours ? [{
+        id: slug(food.flavours.groupName),
+        name: food.flavours.groupName,
+        isMultiSelect: false,
+        minSelect: 1,
+        modifiers: food.flavours.options.map((name) => ({ id: slug(`${food.flavours!.groupName}-${name}`), name, priceCentavos: 0, isAvailable: true })),
+      }] : [])),
+    ],
   }
 }
 
@@ -68,6 +94,7 @@ export async function fetchApiMenu(apiUrl: string, now: number, fetchFn: typeof 
   let raw: unknown
   try { raw = await res.json() } catch { throw new Error('Could not reach the website. Check the internet and try again.') }
   if (!isMenuSnapshot(raw)) throw new Error('The website gave a menu the till could not understand, so the current menu was kept.')
+  // A menu with no drinks is a broken publish, even if food is left: keep the current one.
   if (liveDrinkMenu(raw, now).categories.length === 0) throw empty()
   return raw
 }
@@ -93,7 +120,7 @@ export function splitSoldOut(snap: MenuSnapshot): { snapshot: MenuSnapshot; sold
 
 /**
  * The menu the till sells from. With a pulled snapshot: a copy with every item, variant and option in `soldOut` marked
- * unavailable, built with `liveDrinkMenu` (so it carries `version`; a sold-out variant loses its price). Without one:
+ * unavailable, built with `liveTillMenu` (drinks and food; it carries `version`; a sold-out variant loses its price). Without one:
  * `fallback` (the old menu.json or the built-in menu) with item-level marks.
  */
 export function tillMenu(snapshot: MenuSnapshot | null, fallback: Menu, soldOut: Set<string>, now: number): Menu {
@@ -104,7 +131,7 @@ export function tillMenu(snapshot: MenuSnapshot | null, fallback: Menu, soldOut:
     }
   }
   const off = <T extends { id: string; isAvailable: boolean }>(x: T): T => (soldOut.has(x.id) ? { ...x, isAvailable: false } : x)
-  return liveDrinkMenu({
+  return liveTillMenu({
     ...snapshot,
     categories: snapshot.categories.map((c) => ({ ...c, items: c.items.map((i) => ({ ...off(i), variants: i.variants.map(off) })) })),
     optionGroups: snapshot.optionGroups.map((g) => ({ ...g, options: g.options.map(off) })),

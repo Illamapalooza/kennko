@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  ICE_LEVELS, ICE_SERVES, MAX_QUANTITY, NOTE_MAX, SIZE_LABELS, formatPesos, groupsFor, normaliseIce, takesIce, takesIceServe,
+  FOOD_SIZE, ICE_LEVELS, ICE_SERVES, MAX_QUANTITY, NOTE_MAX, SIZE_LABELS, formatPesos, groupsFor, normaliseIce, takesIce, takesIceServe,
   type IceLevel, type IceServe, type LineInput, type Menu, type MenuItem,
 } from '@kennko/core'
 import { Modal } from '../components/Modal.tsx'
@@ -34,6 +34,10 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
     return base + extras
   }, [item, groups, size, picked])
 
+  // A food item has one size (REG), so there is nothing to pick; a required flavour must be picked before adding.
+  const oneSize = item.prices.length === 1 && item.prices[0].size === FOOD_SIZE
+  const missing = groups.find((g) => g.modifiers.filter((m) => picked.has(m.id)).length < (g.minSelect ?? 0))
+
   const toggle = (groupId: string, id: string) => {
     const { next, refused } = toggleAddon(groups, picked, groupId, id)
     setPicked(next)
@@ -55,13 +59,13 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
             <button type="button" onClick={() => setQuantity((q) => Math.min(MAX_QUANTITY, q + 1))} aria-label="One more">+</button>
           </div>
           {onRemove ? <button type="button" className="btn btn-ghost-danger" onClick={onRemove}>Remove</button> : null}
-          <button type="button" className="btn btn-primary grow" onClick={save}>
-            {initial ? 'Update' : 'Add'} · {formatPesos(unit * quantity)}
+          <button type="button" className="btn btn-primary grow" onClick={save} disabled={Boolean(missing)}>
+            {missing ? `Pick a ${missing.name.toLowerCase()}` : `${initial ? 'Update' : 'Add'} · ${formatPesos(unit * quantity)}`}
           </button>
         </div>
       }
     >
-      <section className="field">
+      {oneSize ? null : <section className="field">
         <h3>Size</h3>
         <div className="choices">
           {item.prices.map((p) => (
@@ -71,7 +75,7 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
             </button>
           ))}
         </div>
-      </section>
+      </section>}
 
       {takesIce(size) ? (
         <section className="field">
@@ -98,12 +102,12 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
       {addonLimit ? <p className="error" role="alert">{addonLimit}</p> : null}
       {groups.map((group) => (
         <section className="field" key={group.id}>
-          <h3>{group.name} <small>{group.isMultiSelect ? 'any' : 'pick one'}</small></h3>
+          <h3>{group.name} <small>{group.isMultiSelect ? 'any' : (group.minSelect ?? 0) > 0 ? 'pick one, required' : 'pick one'}</small></h3>
           <div className="choices">
             {group.modifiers.map((m) => (
               <button type="button" key={m.id} disabled={!m.isAvailable} className={`choice${picked.has(m.id) ? ' on' : ''}`} aria-pressed={picked.has(m.id)} onClick={() => toggle(group.id, m.id)}>
                 <span>{m.name}</span>
-                <small>+{formatPesos(m.priceCentavos)}</small>
+                {m.priceCentavos > 0 ? <small>+{formatPesos(m.priceCentavos)}</small> : null}
               </button>
             ))}
           </div>
@@ -112,7 +116,7 @@ export function Customise({ menu, item, initial, onSave, onRemove, onClose }: Pr
 
       <section className="field">
         <h3><label htmlFor="line-note">Note for the barista</label></h3>
-        <input id="line-note" className="input" value={note} maxLength={NOTE_MAX} placeholder="Less sweet, extra hot…" onChange={(e) => setNote(e.target.value)} />
+        <input id="line-note" className="input" value={note} maxLength={NOTE_MAX} placeholder={oneSize ? 'Warm it up, no sauce…' : 'Less sweet, extra hot…'} onChange={(e) => setNote(e.target.value)} />
       </section>
     </Modal>
   )

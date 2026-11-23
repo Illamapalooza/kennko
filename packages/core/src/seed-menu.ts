@@ -109,3 +109,20 @@ export const SEED_MODIFIER_GROUPS: SeedModifierGroup[] = [
     ],
   },
 ]
+
+export type SeedFood = {
+  name: string
+  priceCentavos: number
+  /** A required pick-one flavour group, when the item has one. */
+  flavours: { groupName: string; options: string[] } | null
+}
+
+/**
+ * The food the published menu carries (migration 0012: one `REG` variant each, flavours free). Only the till's built-in
+ * menu reads this, so a till that never pulled the menu can still sell food; the website's seeder seeds drinks only.
+ */
+export const SEED_FOOD: SeedFood[] = [
+  { name: 'Cookies',  priceCentavos: 6000, flavours: { groupName: 'Cookie flavour', options: ['Original', 'Chocolate', 'Red Velvet'] } },
+  { name: 'Empanada', priceCentavos: 4500, flavours: null },
+  { name: 'Fries',    priceCentavos: 8500, flavours: { groupName: 'Fries flavour', options: ['Original', 'Cheese', 'BBQ', 'Sour Cream'] } },
+]

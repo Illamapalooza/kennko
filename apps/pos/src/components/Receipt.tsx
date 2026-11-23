@@ -1,4 +1,4 @@
-import { ORDER_TYPE_LABELS, PAYMENT_LABELS, formatPesos, iceLabel, type Order } from '@kennko/core'
+import { ORDER_TYPE_LABELS, PAYMENT_LABELS, formatPesos, iceLabel, sizeTag, type Order } from '@kennko/core'
 import type { Bootstrap } from '../api.ts'
 
 const when = (ms: number) => new Date(ms).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })
@@ -26,7 +26,7 @@ export function Receipt({ order, shop }: { order: Order; shop: Bootstrap['shop']
               <tr key={i}>
                 <td>{line.quantity}×</td>
                 <td>
-                  {line.name} <span className="receipt-size">{line.size}</span>
+                  {line.name}{sizeTag(line.size) ? <> <span className="receipt-size">{sizeTag(line.size)}</span></> : null}
                   {extras ? <small>{extras}</small> : null}
                 </td>
                 <td>{formatPesos(line.lineTotalCentavos)}</td>

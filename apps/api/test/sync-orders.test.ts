@@ -568,3 +568,51 @@ test('an order event re-sent under a new device id (re-paired till) answers alre
   const [o] = await db.sql`select prep_status from orders where id = ${other.payload.orderId}`
   expect(o!.prep_status).toBe('cancelled')
 })
+
+test('a food line from the till (Cookies, REG, a flavour) is applied and stored with its variant', async () => {
+  const { token, shiftId } = await tillWithShift()
+  // Migration 0012 puts the food on the menu: Cookies ₱60 (REG) with a free, required flavour.
+  const [cookies] = await db.sql`select i.id as item_id, v.id as variant_id from menu_items i
+    join menu_variants v on v.item_id = i.id and v.code = 'REG' where i.name = 'Cookies'`
+  const [choc] = await db.sql`select o.id from options o join option_groups g on g.id = o.group_id
+    where g.name = 'Cookie flavour' and o.name = 'Chocolate'`
+  const sale = orderCreated({
+    shiftId,
+    ticketNumber: 41,
+    menuVersion: menu.v2,
+    lines: [{
+      menuItemId: cookies!.item_id,
+      name: 'Cookies',
+      size: 'REG',
+      basePriceCentavos: 6000,
+      modifiers: [{ id: choc!.id, name: 'Chocolate', priceCentavos: 0 }],
+      quantity: 2,
+      iceLevel: null,
+      iceServe: null,
+      note: '',
+      lineTotalCentavos: 12000,
+    }],
+    subtotalCentavos: 12000,
+    discountCentavos: 0,
+    totalCentavos: 12000,
+    payment: { id: randomUUID(), method: 'cash', tenderedCentavos: 20000, changeCentavos: 8000, reference: null },
+  })
+  const res = await api.push(token, [sale])
+  expect(res).toEqual({ results: [{ id: sale.id, result: 'applied', reason: null, flags: [] }], held: 0 })
+
+  const [line] = await db.sql`select * from order_lines where order_id = ${sale.payload.orderId}`
+  expect(line).toMatchObject({
+    item_id: cookies!.item_id,
+    variant_id: cookies!.variant_id,
+    item_name: 'Cookies',
+    variant_code: 'REG',
+    variant_label: 'Regular',
+    unit_price_centavos: 6000,
+    quantity: 2,
+    line_total_centavos: 12000,
+    ice_level: null,
+    ice_serve: null,
+  })
+  const options = await db.sql`select group_name, option_name from order_line_options where line_id = ${line!.id}`
+  expect(options.map((o) => [o.group_name, o.option_name])).toEqual([['Cookie flavour', 'Chocolate']])
+})

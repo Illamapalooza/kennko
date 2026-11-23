@@ -92,7 +92,7 @@ and the wall gains an order board with numbers. Open the pad address the termina
 | `baristas` | 2 | Barista cats behind the counter in the self-running cafe (1 to 3) |
 
 - **Sound effects:** Web Audio chimes and synth cues play for new orders, prep steps, ready orders and visiting cats. Press `M` to mute.
-- **Menu:** drink names come from the till (its published menu) and are remembered in `data/menu.json`; there is nothing to edit.
+- **Menu:** drink and food names (Cookies, Empanada, Fries) come from the till (its published menu) and are remembered in `data/menu.json`; there is nothing to edit.
   A wall that has never reached a till uses four generic names in the self-running cafe, and the order pad says "No drinks yet".
   Without `--pos` it asks the till (`posUrl` or `http://localhost:4466`) for the menu at start and every 10 minutes.
 

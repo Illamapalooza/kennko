@@ -28,7 +28,7 @@ Needs Node.js 24 or newer (it uses Node's built-in SQLite).
 
 | Screen | For |
 |---|---|
-| **Sell** | Tap a drink, pick size, ice, add-ons and a note. Dine in or take out, optional name, discount, then charge. |
+| **Sell** | Tap a drink, pick size, ice, add-ons and a note. Food (Cookies, Empanada, Fries) has one size and no ice; Cookies and Fries need a flavour. Dine in or take out, optional name, discount, then charge. The free drink on a full Kennko card is always a drink, never food. |
 | **Payment** | Cash with one-tap amounts and change, or GCash with an optional reference. Shows the order number and a printable receipt. |
 | **Orders** | The barista queue: Queued → Preparing → Serving → Done. Every tablet follows live. |
 | **History** | Every order of a day, its receipt, and voiding (manager PIN). CSV export. |

@@ -20,8 +20,13 @@ const order = (over: Partial<NewOrder> = {}): NewOrder => ({
 
 describe('built-in menu', () => {
   it('carries the whole printed menu with prices', () => {
-    expect(menu.categories.map((c) => c.name)).toEqual(['Premium Classics', "Barista's Choice", 'Sweet Sips', 'Matcha Series'])
-    expect(menu.categories.flatMap((c) => c.items)).toHaveLength(22)
+    expect(menu.categories.map((c) => c.name)).toEqual(['Premium Classics', "Barista's Choice", 'Sweet Sips', 'Matcha Series', 'Food'])
+    expect(menu.categories.filter((c) => c.kind !== 'food').flatMap((c) => c.items)).toHaveLength(22)
+    expect(menu.categories[4].items.map((i) => [i.name, i.prices])).toEqual([
+      ['Cookies', [{ size: 'REG', priceCentavos: 6000 }]],
+      ['Empanada', [{ size: 'REG', priceCentavos: 4500 }]],
+      ['Fries', [{ size: 'REG', priceCentavos: 8500 }]],
+    ])
     expect(latte.prices).toEqual([{ size: 'M', priceCentavos: 10000 }, { size: 'L', priceCentavos: 11500 }, { size: 'XL', priceCentavos: 13000 }, { size: 'HOT', priceCentavos: 12500 }])
     const hojicha = menu.categories[3].items.find((i) => i.name === 'Hojicha')!
     expect(hojicha.prices.map((p) => p.size)).toEqual(['M', 'L', 'HOT'])
@@ -175,5 +180,40 @@ describe('till', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('food on the built-in menu', () => {
+  const food = menu.categories.find((c) => c.kind === 'food')!
+  const byName = (name: string) => food.items.find((i) => i.name === name)!
+  const flavour = (group: string, name: string) => menu.modifierGroups.find((g) => g.name === group)!.modifiers.find((m) => m.name === name)!
+
+  it('sells Cookies, Empanada and Fries at their REG prices, with no ice, and queues them for the outbox', () => {
+    const store = createStore(':memory:', openNodeSqlite)
+    store.startShift(0, T, null)
+    const sale = store.createOrder(menu, order({
+      lines: [
+        { menuItemId: byName('Cookies').id, size: 'REG', modifierIds: [flavour('Cookie flavour', 'Red Velvet').id], quantity: 2, iceLevel: 'regular', iceServe: 'mixed', note: '' },
+        { menuItemId: byName('Empanada').id, size: 'REG', modifierIds: [], quantity: 1, iceLevel: null, iceServe: null, note: '' },
+        { menuItemId: byName('Fries').id, size: 'REG', modifierIds: [flavour('Fries flavour', 'Cheese').id], quantity: 1, iceLevel: null, iceServe: null, note: '' },
+      ],
+    }), T, null)
+    expect(sale.lines.map((l) => [l.name, l.size, l.lineTotalCentavos, l.iceLevel, l.modifiers.map((m) => m.name)])).toEqual([
+      ['Cookies', 'REG', 12000, null, ['Red Velvet']],
+      ['Empanada', 'REG', 4500, null, []],
+      ['Fries', 'REG', 8500, null, ['Cheese']],
+    ])
+    expect(sale.totalCentavos).toBe(25000)
+  })
+
+  it('refuses Cookies or Fries without a flavour', () => {
+    const store = createStore(':memory:', openNodeSqlite)
+    store.startShift(0, T, null)
+    const plain = { menuItemId: byName('Fries').id, size: 'REG' as const, modifierIds: [], quantity: 1, iceLevel: null, iceServe: null, note: '' }
+    expect(() => store.createOrder(menu, order({ lines: [plain] }), T, null)).toThrow('Pick a fries flavour for Fries.')
+  })
+
+  it('keeps the flavour groups off the drinks', () => {
+    expect(latte.modifierGroupIds).toEqual(['add-ons', 'milk-of-choice', 'cream-supreme'])
   })
 })

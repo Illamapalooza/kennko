@@ -1,4 +1,4 @@
-import { SIZE_ORDER, type DrinkSize, type Menu, type MenuItem, type ModifierGroup } from './menu.ts'
+import { FOOD_SIZE, SIZE_ORDER, type DrinkSize, type Menu, type MenuItem, type ModifierGroup } from './menu.ts'
 
 export type Temperature = 'iced' | 'hot' | 'none'
 export type SnapshotVariant = { id: string; code: string; label: string; priceCentavos: number; temperature: Temperature; isAvailable: boolean }
@@ -10,16 +10,32 @@ export type DiscountPreset = { id: string; label: string; kind: 'percent' | 'amo
 export type SnapshotBody = { categories: SnapshotCategory[]; optionGroups: SnapshotOptionGroup[]; discountPresets: DiscountPreset[] }
 export type MenuSnapshot = SnapshotBody & { version: number; publishedAt: string }
 
-/** Adapts a published snapshot to the drink-only `Menu` shape the till and website drink screens use. */
+/** Adapts a published snapshot to the drink-only `Menu` shape the website's drink screens use. */
 export function liveDrinkMenu(snapshot: MenuSnapshot, now: number): Menu {
+  return adaptSnapshot(snapshot, now, false)
+}
+
+/**
+ * The till's menu from a published snapshot: the drinks as `liveDrinkMenu`, plus the food categories (Cookies, Empanada,
+ * Fries), each item priced by its one `REG` variant and offering its own option groups (a required flavour has
+ * `minSelect` 1).
+ */
+export function liveTillMenu(snapshot: MenuSnapshot, now: number): Menu {
+  return adaptSnapshot(snapshot, now, true)
+}
+
+function adaptSnapshot(snapshot: MenuSnapshot, now: number, withFood: boolean): Menu {
   const usedGroupIds = new Set<string>()
   const categories: Menu['categories'] = []
 
   for (const category of snapshot.categories) {
-    if (category.kind !== 'drink') continue
+    const food = category.kind === 'food'
+    if (food && !withFood) continue
+    if (!food && category.kind !== 'drink') continue
+    const sizes: DrinkSize[] = food ? [FOOD_SIZE] : [...SIZE_ORDER]
     const items: MenuItem[] = []
     for (const item of category.items) {
-      const prices = SIZE_ORDER.flatMap((size: DrinkSize) => {
+      const prices = sizes.flatMap((size: DrinkSize) => {
         const variant = item.variants.find((v) => v.code === size && v.isAvailable)
         return variant ? [{ size, priceCentavos: variant.priceCentavos }] : []
       })
@@ -30,7 +46,7 @@ export function liveDrinkMenu(snapshot: MenuSnapshot, now: number): Menu {
       })
       for (const groupId of item.optionGroupIds) usedGroupIds.add(groupId)
     }
-    if (items.length > 0) categories.push({ id: category.id, name: category.name, items })
+    if (items.length > 0) categories.push({ id: category.id, name: category.name, items, ...(food ? { kind: 'food' as const } : {}) })
   }
 
   const modifierGroups: ModifierGroup[] = snapshot.optionGroups
@@ -40,6 +56,7 @@ export function liveDrinkMenu(snapshot: MenuSnapshot, now: number): Menu {
       name: g.name,
       isMultiSelect: g.maxSelect > 1,
       modifiers: g.options.map((o) => ({ id: o.id, name: o.name, priceCentavos: o.priceCentavos, isAvailable: o.isAvailable })),
+      ...(g.minSelect > 0 ? { minSelect: g.minSelect } : {}),
     }))
 
   return { categories, modifierGroups, source: 'website', updatedAt: now, version: snapshot.version }
