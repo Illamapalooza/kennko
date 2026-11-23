@@ -116,11 +116,24 @@ export function drawCat(ctx, x, y, look, o = {}) {
     }
   }
   if (o.apron) {
-    // barista visor and apron bib
+    // barista visor, blue apron straps, wide blue apron bib, and white badge
     ctx.fillStyle = BLUE;
-    ctx.fillRect(x + (o.flip ? 5 : 4), y + 2, 5, 1);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(x + (o.flip ? 7 : 6), y + 11, 1, 1);
+    if (rows > 2) ctx.fillRect(x + (o.flip ? 5 : 4), y + 2, 5, 1);
+    if (rows > 9) {
+      ctx.fillRect(px(3), y + 9, 1, rows > 10 ? 2 : 1);
+      ctx.fillRect(px(9), y + 9, 1, rows > 10 ? 2 : 1);
+    }
+    for (let r = 10; r < Math.min(15, rows); r++) {
+      for (let c = 3; c <= 9; c++) ctx.fillRect(px(c), y + r, 1, 1);
+    }
+    if (rows > 11) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(px(6), y + 11, 1, 1);
+      if (rows > 13) {
+        ctx.fillStyle = AMBER;
+        ctx.fillRect(px(5), y + 13, 3, 1);
+      }
+    }
   }
   for (const cos of overlaysOf(l)) {
     cos.rows.forEach((line, r) => {
