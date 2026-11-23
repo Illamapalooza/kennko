@@ -15,10 +15,7 @@ const scene = createScene($("scene"), $("tags"), { clock: () => Date.now() + til
 
 // ---------- layout ----------
 function fit() {
-  const stage = $("stage");
-  const deliv = $("deliveries");
-  const delivH = deliv && !deliv.hidden ? deliv.offsetHeight + 16 : 0;
-  const px = Math.max(1, Math.floor(Math.min((stage.clientWidth - 16) / W, (stage.clientHeight - delivH - 24) / H)));
+  const px = Math.max(1, Math.min(innerWidth / W, innerHeight / H));
   document.documentElement.style.setProperty("--px", `${px}px`);
 }
 addEventListener("resize", fit);
@@ -118,7 +115,7 @@ function renderQr() {
   document.body.classList.toggle("has-qr", Boolean(qrModules));
   if (!qrModules) return;
   const n = qrModules.length;
-  const cell = qrCell(n, Math.min(innerHeight * 0.27, innerWidth * 0.2));
+  const cell = qrCell(n, Math.min(innerHeight * 0.14, innerWidth * 0.1));
   const size = (n + 8) * cell; // 4-module quiet zone on every side, whole pixels per module
   const canvas = $("checkin");
   canvas.width = size; canvas.height = size;

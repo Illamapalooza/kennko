@@ -10,7 +10,7 @@ export const H = 152;
 const WAIT = [26, 48, 70, 92, 114, 136].map((x) => ({ x, y: 122 })); // standing room, only when every seat is taken
 // listed in the order they fill, so the room looks evenly busy
 const SEATS = TABLES.flatMap((t) => [{ x: t.x - 15, y: t.y, flip: false, table: t }, { x: t.x + 15, y: t.y, flip: true, table: t }]);
-const DOOR = { x: -12, y: 136 };
+const DOOR = { x: 298, y: 122 };
 const STATIONS = [62, 104, 132];
 const BARISTA_TOP = 63;
 const BARISTA_COATS = ["tuxedo", "ginger", "tabby"];
@@ -25,13 +25,28 @@ const rand = (a, b) => a + Math.random() * (b - a);
 function paintRoom(g) {
   const R = (c, x, y, w, h) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
   const IN_W = 182;
-  // indoor wall and wainscot
-  R("#f7faff", 0, 0, IN_W, 64); R("#dfe9ff", 0, 44, IN_W, 20); R("#c5d6ff", 0, 44, IN_W, 1);
-  for (let x = 6; x < IN_W; x += 12) R("#d2dffb", x, 46, 1, 17);
-  R("#b3c6f2", 0, 63, IN_W, 1);
-  // indoor floor (0..181) and al fresco grassy camp floor (184..288)
+  // indoor walls: charcoal-slate left wall (0..33), deep Kennko blue counter wall (34..181)
+  R("#2c3242", 0, 0, 34, 64);
+  R("#0d2c7a", 34, 0, IN_W - 34, 64);
+  // red/terracotta tile backsplash & storefront header trim
+  R("#9c332b", 34, 44, IN_W - 34, 20);
+  for (let y = 44; y < 64; y += 4) R("#7c241d", 34, y, IN_W - 34, 1);
+  for (let x = 36; x < IN_W; x += 4) R("#7c241d", x, 44, 1, 20);
+  R("#9c332b", 148, 2, 34, 6);
+  for (let x = 150; x < IN_W; x += 4) R("#7c241d", x, 2, 1, 6);
+  R("#1e2433", 0, 63, IN_W, 1);
+  // 3 posters on the charcoal left wall (quote, sausage dogs, vinyl)
+  R(INK, 6, 12, 7, 9); R("#d9432b", 7, 13, 5, 7); R("#ffd8c8", 8, 15, 3, 1); R("#ffd8c8", 8, 17, 3, 1);
+  R(INK, 15, 12, 7, 9); R("#f7f2ea", 16, 13, 5, 7); R("#a86a44", 17, 15, 3, 1); R("#a86a44", 17, 18, 3, 1);
+  R(INK, 24, 12, 7, 9); R("#e8523f", 25, 13, 5, 7); R(INK, 26, 14, 3, 3);
+  // vertical warm corner floor lamp (left)
+  R("#fff3c4", 2, 34, 2, 28); R("#ffd27d", 1, 34, 1, 28);
+  // white fridge with black-cat portrait on left
+  R(INK, 10, 26, 16, 37); R("#eef2f8", 11, 27, 14, 35); R("#d0d8e8", 11, 44, 14, 1);
+  R(INK, 13, 30, 8, 8); R("#d9432b", 14, 31, 6, 6); R(INK, 15, 33, 4, 4);
+  // cream-marble indoor floor (0..181) and al fresco grassy camp floor (184..288)
   for (let y = 64, row = 0; y < H; y += 12, row++) {
-    for (let x = 0, col = 0; x < IN_W; x += 12, col++) R((row + col) % 2 ? "#eef3ff" : "#e0e9fc", x, y, Math.min(12, IN_W - x), 12);
+    for (let x = 0, col = 0; x < IN_W; x += 12, col++) R((row + col) % 2 ? "#ebe5dc" : "#e1dad0", x, y, Math.min(12, IN_W - x), 12);
   }
   R("#79c46b", 184, 64, 104, 88);
   // grassy texture patches, tufts, and tiny camp wildflowers
@@ -45,28 +60,33 @@ function paintRoom(g) {
       else if ((row * 3 + col) % 7 === 0) R("#ffffff", gx + 5, y + 4, 1, 1);
     }
   }
-  // wooden stepping planks at the doorway into the grass camp
+  // wooden stepping planks at the glass door into the grass camp
   R("#b3834c", 184, 114, 6, 18); R("#cfa067", 184, 115, 5, 4); R("#cfa067", 184, 121, 5, 4); R("#cfa067", 184, 127, 5, 4);
-  R("#cdd9f3", 12, 64, 166, 12);
-  // glass doorway divider between indoor and al fresco
-  R(INK, 181, 0, 3, 64); R("#d7e8ff", 182, 2, 1, 60);
-  R("#c5d2ee", 181, 64, 3, 88); R("#9fb4e0", 182, 64, 1, 88);
-  // indoor lamps
-  for (const x of [70, 142]) {
-    R(INK, x, 0, 1, 6); R(AMBER, x - 3, 6, 7, 3); R(INK, x - 4, 9, 9, 1); R("#fff7d6", x - 1, 10, 3, 1);
+  R("#cbc3b8", 12, 64, 166, 12);
+  // glass storefront doorway divider with frosted stripes
+  R(INK, 181, 0, 3, 64); R("#9fc3f5", 182, 2, 1, 60);
+  R("#1e2433", 181, 64, 3, 88); R("#d8e4f5", 182, 66, 1, 84);
+  R("#ffffff", 181, 108, 3, 3); R("#ffffff", 181, 114, 3, 3);
+  // 3 black hanging pendant lamps over the counter
+  for (const x of [66, 102, 136]) {
+    R(INK, x, 0, 1, 7); R("#1a1e2b", x - 2, 7, 5, 4); R("#fff3c4", x - 1, 11, 3, 1);
   }
-  // menu board
-  R(INK, 13, 9, 42, 34); R(BLUE, 14, 10, 40, 32);
-  drawText(g, "MENU", 34 - Math.floor(textWidth("MENU") / 2), 13, "#ffffff");
-  for (let i = 0; i < 5; i++) { R("#bcd0ff", 18, 22 + i * 4, 20, 1); R(AMBER, 44, 22 + i * 4, 5, 1); }
-  // the Kennko wordmark hangs at the centre of this wall; it is the real logo, laid over the canvas by the page
+  // convex safety mirror in corner above glass door
+  R("#d9432b", 142, 4, 7, 7); R("#9bb6db", 143, 5, 5, 5); R("#ffffff", 144, 6, 2, 1);
+  // menu board on the blue back wall
+  R(INK, 30, 10, 32, 30); R("#162344", 31, 11, 30, 28);
+  drawText(g, "MENU", 46 - Math.floor(textWidth("MENU") / 2), 14, "#ffffff");
+  for (let i = 0; i < 4; i++) { R("#9db6ee", 34, 22 + i * 4, 15, 1); R(AMBER, 53, 22 + i * 4, 4, 1); }
   // ticket rail
-  R(INK, 58, 28, 86, 1);
-  // cup shelf
-  R("#8fa4d6", 152, 50, 26, 2);
-  for (let i = 0; i < 3; i++) drawCup(g, 155 + i * 7, 44);
+  R(INK, 64, 28, 80, 1);
+  // red velvet couch + framed cat portraits behind indoor table 3 (x=156, y=142)
+  R(INK, 145, 120, 22, 10); R("#a8242c", 146, 121, 20, 8); R("#c9323b", 147, 122, 18, 4);
+  R("#f2d6a2", 148, 123, 3, 3); R("#ffffff", 160, 123, 3, 3);
   // indoor window frame and sill (the sky is painted live, matching the outdoor camp sky)
-  R(INK, 150, 8, 30, 28); R("#ffffff", 148, 34, 34, 3); R(INK, 148, 37, 34, 1);
+  R(INK, 150, 9, 30, 27); R("#ffffff", 148, 34, 34, 3); R(INK, 148, 37, 34, 1);
+  // striped cafe awning peeking outside the storefront doorway
+  for (let i = 0; i < 6; i++) R(i % 2 ? "#ffffff" : "#1c2b4f", 184 + i * 4, 48, 4, 5);
+  R(INK, 184, 53, 24, 1);
   // al fresco wooden camp fence, string-light poles, and leafy bushes (the sky above y=53 is painted live)
   R(INK, 184, 5, 3, 59); R("#9c6635", 185, 6, 1, 58);
   R(INK, 285, 5, 3, 59); R("#9c6635", 286, 6, 1, 58);
@@ -75,19 +95,21 @@ function paintRoom(g) {
   R(INK, 184, 55, 104, 5); R("#b37943", 184, 56, 104, 3);
   R(INK, 184, 62, 104, 2); R("#61a654", 184, 63, 104, 1);
   for (const x of [198, 218, 238, 258, 276]) { R(INK, x, 53, 4, 11); R("#9c6635", x + 1, 54, 2, 9); }
-  // door mat
-  R(AMBER, 0, 127, 8, 18); R("#e09a1c", 0, 127, 8, 1); R("#e09a1c", 0, 144, 8, 1);
+  // welcome mat at the glass storefront door (al fresco side)
+  R(AMBER, 174, 114, 7, 18); R("#e09a1c", 174, 114, 7, 1); R("#e09a1c", 174, 131, 7, 1);
 }
 
 function paintCounter(g) {
   const R = (c, x, y, w, h) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
-  R(INK, 11, 75, 168, 27);
-  R("#ffffff", 12, 76, 166, 5); R("#c5d2ee", 12, 81, 166, 1);
-  R(BLUE, 12, 82, 166, 17); R("#0041c4", 12, 99, 166, 2);
-  for (const x of [40, 68, 124, 152]) R("#0047d9", x, 84, 1, 13); // the centre panel carries the logo
+  R(INK, 26, 75, 152, 27);
+  // warm wood countertop + subtle LED under-glow
+  R("#b37943", 27, 76, 150, 4); R("#8a572a", 27, 80, 150, 1);
+  R("#9ec2ff", 27, 81, 150, 1);
+  R(BLUE, 27, 82, 150, 17); R("#0041c4", 27, 99, 150, 2);
+  for (const x of [52, 76, 126, 150]) R("#0047d9", x, 84, 1, 13);
   // espresso machine
-  R(INK, 23, 57, 29, 20); R("#dfe4ef", 24, 58, 27, 18); R("#f5f7fb", 24, 58, 27, 3); R(BLUE, 24, 63, 27, 2);
-  R(INK, 29, 67, 5, 3); R(INK, 40, 67, 5, 3); R("#8d97b3", 26, 74, 23, 2); R(AMBER, 46, 59, 2, 1);
+  R(INK, 34, 57, 29, 20); R("#2a3040", 35, 58, 27, 18); R("#40485e", 35, 58, 27, 3); R(BLUE, 35, 63, 27, 2);
+  R(INK, 40, 67, 5, 3); R(INK, 51, 67, 5, 3); R("#8d97b3", 37, 74, 23, 2); R(AMBER, 57, 59, 2, 1);
   // the counter tablet
   R(INK, 84, 71, 2, 5); R(INK, 78, 62, 14, 10); R("#7fb0ff", 79, 63, 12, 8); R("#ffffff", 81, 65, 5, 1); R("#ffffff", 81, 67, 8, 1);
   // milk pitcher
@@ -506,10 +528,15 @@ export function createScene(canvas, tagLayer, opts = {}) {
         R(AMBER, tb.x, tb.y - 15, 1, 2);
         R("#fff7d6", tb.x, tb.y - 14, 1, 1);
       }
+    } else if (tb.x > 130) {
+      // wooden coffee table by the red couch (In 3)
+      R(INK, tb.x - 6, tb.y - 7, 2, 7); R(INK, tb.x + 4, tb.y - 7, 2, 7);
+      R(INK, tb.x - 9, tb.y - 11, 18, 4); R("#cfa067", tb.x - 8, tb.y - 10, 16, 2);
     } else {
+      // black round pedestal tables (In 1 & In 2)
       R(INK, tb.x - 1, tb.y - 7, 2, 7); R(INK, tb.x - 4, tb.y - 1, 8, 2);
-      R(INK, tb.x - 8, tb.y - 12, 16, 5); R("#ffffff", tb.x - 7, tb.y - 11, 14, 3);
-      R(BLUE, tb.x - 7, tb.y - 9, 14, 1);
+      R(INK, tb.x - 8, tb.y - 12, 16, 5); R("#2a3040", tb.x - 7, tb.y - 11, 14, 3);
+      R("#454e66", tb.x - 7, tb.y - 11, 14, 1);
     }
   }
 
@@ -690,10 +717,15 @@ export function createScene(canvas, tagLayer, opts = {}) {
   function drawLighting(sky) {
     if (sky.phase === "day") return;
     const warmPool = (cx, cy, rx, ry, outer, inner) => {
-      ctx.fillStyle = outer;
-      ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
-      ctx.fillStyle = inner;
-      ctx.fillRect(cx - Math.round(rx * 0.55), cy - Math.round(ry * 0.55), Math.round(rx * 1.1), Math.round(ry * 1.1));
+      const r = Math.max(rx, ry);
+      const grad = ctx.createRadialGradient(cx, cy, 1, cx, cy, r);
+      grad.addColorStop(0, inner);
+      grad.addColorStop(0.55, outer);
+      grad.addColorStop(1, "rgba(255, 200, 90, 0)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
     };
     const lampCone = (lx, alphaOuter, alphaInner) => {
       ctx.fillStyle = `rgba(255, 210, 115, ${alphaOuter})`;
@@ -725,7 +757,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
       ctx.beginPath();
       ctx.moveTo(152, 10); ctx.lineTo(178, 10); ctx.lineTo(164, 76); ctx.lineTo(128, 76);
       ctx.closePath(); ctx.fill();
-      for (const lx of [70, 142]) lampCone(lx, 0.12, 0.14);
+      for (const lx of [66, 102, 136]) lampCone(lx, 0.12, 0.14);
       for (const bx of [196, 214, 234, 254, 274]) {
         const sag = Math.round(Math.sin(((bx - 184) / 104) * Math.PI) * 7);
         warmPool(bx, 9 + sag, 4, 4, "rgba(255, 210, 100, 0.22)", "rgba(255, 242, 185, 0.25)");
@@ -739,7 +771,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
       ctx.fillRect(0, 0, 181, H);
       ctx.fillStyle = "rgba(110, 132, 210, 0.16)";
       ctx.fillRect(184, 53, 104, H - 53);
-      for (const lx of [70, 142]) lampCone(lx, 0.10, 0.12);
+      for (const lx of [66, 102, 136]) lampCone(lx, 0.10, 0.12);
       for (const bx of [196, 214, 234, 254, 274]) {
         const sag = Math.round(Math.sin(((bx - 184) / 104) * Math.PI) * 7);
         warmPool(bx, 9 + sag, 4, 4, "rgba(255, 210, 100, 0.18)", "rgba(255, 242, 185, 0.20)");
@@ -753,10 +785,12 @@ export function createScene(canvas, tagLayer, opts = {}) {
     ctx.fillStyle = "rgba(14, 22, 56, 0.42)";
     ctx.fillRect(184, 53, 104, H - 53);
 
-    for (const lx of [70, 142]) {
-      lampCone(lx, 0.20, 0.22);
-      warmPool(lx, 10, 4, 3, "rgba(255, 214, 110, 0.32)", "rgba(255, 247, 214, 0.45)");
+    for (const lx of [66, 102, 136]) {
+      lampCone(lx, 0.18, 0.20);
+      warmPool(lx, 11, 5, 4, "rgba(255, 214, 110, 0.30)", "rgba(255, 247, 214, 0.42)");
     }
+    // left corner floor lamp & right couch mushroom lamp warm glow
+    warmPool(3, 48, 12, 18, "rgba(255, 210, 110, 0.24)", "rgba(255, 242, 185, 0.32)");
     // subtle counter POS screen glow
     warmPool(85, 67, 8, 5, "rgba(127, 176, 255, 0.16)", "rgba(195, 224, 255, 0.18)");
     // outdoor festoon string light glow
