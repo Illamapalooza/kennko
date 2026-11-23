@@ -559,14 +559,13 @@ export function createScene(canvas, tagLayer, opts = {}) {
 
   /** Compact ambient camp cat (smaller, 4-legged/loafing style, distinct from upright user sprites). */
   function drawCampCat(n) {
-    const coat = COAT_COLOURS[n.look?.coat] ?? COAT_COLOURS.ginger;
-    const base = coat.m ?? coat.b ?? "#e68a3c";
-    const dark = coat.d ?? coat.s ?? "#b86220";
+    const coatKey = n.look?.coat ?? "ginger";
+    const coat = COAT_COLOURS[coatKey] ?? COAT_COLOURS.ginger;
     const flip = !n.moving && n.act === "look" && n.lookFlip !== undefined ? n.lookFlip : n.flip;
     if (!n.moving && n.act === "nap") {
       const x = Math.round(n.x) - 7, y = Math.round(n.y) - 8;
       ctx.fillStyle = "rgba(26,35,64,.16)"; ctx.fillRect(x + 1, Math.round(n.y) - 1, 12, 2);
-      drawLoaf(ctx, x, y, n.look?.coat ?? "ginger", Math.floor(t / 1.4) % 2);
+      drawLoaf(ctx, x, y, coatKey, Math.floor(t / 1.4) % 2);
       drawZzz(x + 11, y - 2);
       return;
     }
@@ -577,26 +576,36 @@ export function createScene(canvas, tagLayer, opts = {}) {
     ctx.fillStyle = "rgba(26,35,64,.16)"; ctx.fillRect(x + 1, Math.round(n.y) - 1, 9, 2);
     ctx.save();
     if (flip) { ctx.translate(cx * 2, 0); ctx.scale(-1, 1); }
-    // tail (wags gently when idle, perks up when walking)
+    // tail (wags gently)
     const tailWag = Math.floor(t * 3 + n.seed) % 2;
     ctx.fillStyle = INK; ctx.fillRect(x - 2, y + 3 - tailWag, 2, 3);
-    ctx.fillStyle = dark; ctx.fillRect(x - 1, y + 3 - tailWag, 1, 2);
-    // compact body + head
+    ctx.fillStyle = coat.k !== coat.f ? coat.k : coat.d; ctx.fillRect(x - 1, y + 3 - tailWag, 1, 2);
+    // outline + body + head
     ctx.fillStyle = INK;
     ctx.fillRect(x, y + 3, 9, 4);
     ctx.fillRect(x + 4, y + 1, 6, 4);
-    ctx.fillRect(x + 4, y, 2, 1); ctx.fillRect(x + 8, y, 2, 1); // ears
-    ctx.fillStyle = base;
+    ctx.fillRect(x + 4, y, 2, 1); ctx.fillRect(x + 8, y, 2, 1);
+    // fur
+    ctx.fillStyle = coat.f;
     ctx.fillRect(x + 1, y + 4, 7, 2);
     ctx.fillRect(x + 5, y + 2, 4, 3);
-    ctx.fillRect(x + 5, y + 1, 1, 1); ctx.fillRect(x + 8, y + 1, 1, 1);
+    // coat markings (stripes or patches) matching drawLoaf/drawCat
+    ctx.fillStyle = coat.c !== coat.f ? coat.c : coat.d;
+    ctx.fillRect(x + 5, y + 1, 1, 1);
+    ctx.fillRect(x + 2, y + 4, 2, 1);
+    ctx.fillStyle = coat.k !== coat.f ? coat.k : coat.d;
+    ctx.fillRect(x + 8, y + 1, 1, 1);
+    if (coat.d !== coat.f) ctx.fillRect(x + 5, y + 4, 1, 1);
+    // chest/muzzle accent
+    ctx.fillStyle = coat.w;
+    ctx.fillRect(x + 8, y + 4, 1, 1);
     // legs
     ctx.fillStyle = INK;
     ctx.fillRect(x + 1 + stepFrame, y + 7, 2, 1);
     ctx.fillRect(x + 6 - stepFrame, y + 7, 2, 1);
     // eye (blinks periodically)
     if (!blink(300 + n.seed)) {
-      ctx.fillStyle = INK; ctx.fillRect(x + 8, y + 3, 1, 1);
+      ctx.fillStyle = coat.e; ctx.fillRect(x + 8, y + 3, 1, 1);
     }
     ctx.restore();
     if (!n.moving && n.act === "happy") drawHeart(cx - 2, y - 6, t - (n.actAt ?? t));
