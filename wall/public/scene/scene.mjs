@@ -79,6 +79,11 @@ function paintRoom(g) {
   for (let i = 0; i < 4; i++) { R("#9db6ee", 34, 22 + i * 4, 15, 1); R(AMBER, 53, 22 + i * 4, 4, 1); }
   // ticket rail
   R(INK, 64, 28, 80, 1);
+  // 2 framed cat paintings (red two-cats & cream/black cat from the sofa wall)
+  R(INK, 113, 31, 10, 10); R("#d9432b", 114, 32, 8, 8);
+  R("#ffffff", 115, 35, 2, 4); R(INK, 115, 34, 1, 1); R(INK, 119, 35, 2, 4); R(INK, 119, 34, 1, 1);
+  R(INK, 125, 31, 10, 10); R("#f2ebd9", 126, 32, 8, 8);
+  R(INK, 127, 34, 3, 5); R(INK, 131, 35, 2, 4);
   // plush pure-red velvet sofa with rounded armrests, seat crease, legs & throw pillows behind In 3
   R(INK, 139, 112, 32, 1); R(INK, 137, 113, 36, 13); R(INK, 135, 117, 40, 10); // silhouette
   R("#b8252d", 138, 113, 34, 9); R("#d1363e", 140, 113, 30, 2); // rounded backrest
