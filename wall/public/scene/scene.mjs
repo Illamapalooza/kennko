@@ -97,10 +97,10 @@ function paintCounter(g) {
 }
 
 function skyFor(hour) {
-  if (hour >= 6 && hour < 16.5) return { top: "#7cc4ff", low: "#c6e8ff", stars: false };
-  if (hour >= 16.5 && hour < 18.5) return { top: "#ff9f6b", low: "#ffd98a", stars: false };
-  if (hour >= 5 && hour < 6) return { top: "#8fa6e8", low: "#ffd0b0", stars: false };
-  return { top: "#24336e", low: "#3d4f96", stars: true };
+  if (hour >= 6 && hour < 16) return { phase: "day", top: "#7cc4ff", low: "#c6e8ff", stars: false };
+  if (hour >= 16 && hour < 18.5) return { phase: "afternoon", top: "#ff9f6b", low: "#ffd98a", stars: false };
+  if (hour >= 5 && hour < 6) return { phase: "dawn", top: "#8fa6e8", low: "#ffd0b0", stars: false };
+  return { phase: "night", top: "#1e2b5e", low: "#36478c", stars: true };
 }
 
 /**
@@ -500,6 +500,12 @@ export function createScene(canvas, tagLayer, opts = {}) {
       R(INK, tb.x - 8, tb.y - 12, 16, 5);
       R("#d19858", tb.x - 7, tb.y - 11, 14, 2);
       R("#a86e37", tb.x - 7, tb.y - 9, 14, 1);
+      if (skyFor(manilaHour()).phase !== "day") {
+        // tiny lit camp lantern on the table
+        R(INK, tb.x - 1, tb.y - 16, 3, 4);
+        R(AMBER, tb.x, tb.y - 15, 1, 2);
+        R("#fff7d6", tb.x, tb.y - 14, 1, 1);
+      }
     } else {
       R(INK, tb.x - 1, tb.y - 7, 2, 7); R(INK, tb.x - 4, tb.y - 1, 8, 2);
       R(INK, tb.x - 8, tb.y - 12, 16, 5); R("#ffffff", tb.x - 7, tb.y - 11, 14, 3);
@@ -678,6 +684,90 @@ export function createScene(canvas, tagLayer, opts = {}) {
       ...campCats.map((n) => ({ y: n.y, draw: () => drawCampCat(n) }))];
     if (baristaCount > 0) things.push({ y: server.y, draw: drawServer });
     things.sort((a, b) => a.y - b.y).forEach((th) => th.draw());
+    drawLighting(skyFor(manilaHour()));
+  }
+
+  function drawLighting(sky) {
+    if (sky.phase === "day") return;
+    const warmPool = (cx, cy, rx, ry, outer, inner) => {
+      ctx.fillStyle = outer;
+      ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
+      ctx.fillStyle = inner;
+      ctx.fillRect(cx - Math.round(rx * 0.55), cy - Math.round(ry * 0.55), Math.round(rx * 1.1), Math.round(ry * 1.1));
+    };
+    const lampCone = (lx, alphaOuter, alphaInner) => {
+      ctx.fillStyle = `rgba(255, 210, 115, ${alphaOuter})`;
+      ctx.beginPath();
+      ctx.moveTo(lx - 4, 10);
+      ctx.lineTo(lx + 5, 10);
+      ctx.lineTo(lx + 26, 62);
+      ctx.lineTo(lx - 25, 62);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = `rgba(255, 240, 185, ${alphaInner})`;
+      ctx.beginPath();
+      ctx.moveTo(lx - 2, 10);
+      ctx.lineTo(lx + 3, 10);
+      ctx.lineTo(lx + 14, 48);
+      ctx.lineTo(lx - 13, 48);
+      ctx.closePath();
+      ctx.fill();
+    };
+
+    if (sky.phase === "afternoon") {
+      // warm golden-hour wash indoors & outdoors
+      ctx.fillStyle = "rgba(255, 168, 76, 0.12)";
+      ctx.fillRect(0, 0, 181, H);
+      ctx.fillStyle = "rgba(255, 152, 64, 0.15)";
+      ctx.fillRect(184, 53, 104, H - 53);
+      // golden sunbeam from indoor window
+      ctx.fillStyle = "rgba(255, 224, 145, 0.12)";
+      ctx.beginPath();
+      ctx.moveTo(152, 10); ctx.lineTo(178, 10); ctx.lineTo(164, 76); ctx.lineTo(128, 76);
+      ctx.closePath(); ctx.fill();
+      for (const lx of [70, 142]) lampCone(lx, 0.12, 0.14);
+      for (const bx of [196, 214, 234, 254, 274]) {
+        const sag = Math.round(Math.sin(((bx - 184) / 104) * Math.PI) * 7);
+        warmPool(bx, 9 + sag, 4, 4, "rgba(255, 210, 100, 0.22)", "rgba(255, 242, 185, 0.25)");
+      }
+      for (const tb of TABLES.slice(3)) warmPool(tb.x, tb.y - 12, 11, 7, "rgba(255, 198, 92, 0.12)", "rgba(255, 235, 165, 0.14)");
+      return;
+    }
+
+    if (sky.phase === "dawn") {
+      ctx.fillStyle = "rgba(125, 148, 225, 0.12)";
+      ctx.fillRect(0, 0, 181, H);
+      ctx.fillStyle = "rgba(110, 132, 210, 0.16)";
+      ctx.fillRect(184, 53, 104, H - 53);
+      for (const lx of [70, 142]) lampCone(lx, 0.10, 0.12);
+      for (const bx of [196, 214, 234, 254, 274]) {
+        const sag = Math.round(Math.sin(((bx - 184) / 104) * Math.PI) * 7);
+        warmPool(bx, 9 + sag, 4, 4, "rgba(255, 210, 100, 0.18)", "rgba(255, 242, 185, 0.20)");
+      }
+      return;
+    }
+
+    // night mode: cozy twilight indoors, starry camp outdoors with warm lamps, string lights & table lanterns
+    ctx.fillStyle = "rgba(16, 26, 66, 0.30)";
+    ctx.fillRect(0, 0, 181, H);
+    ctx.fillStyle = "rgba(14, 22, 56, 0.42)";
+    ctx.fillRect(184, 53, 104, H - 53);
+
+    for (const lx of [70, 142]) {
+      lampCone(lx, 0.20, 0.22);
+      warmPool(lx, 10, 4, 3, "rgba(255, 214, 110, 0.32)", "rgba(255, 247, 214, 0.45)");
+    }
+    // subtle counter POS screen glow
+    warmPool(85, 67, 8, 5, "rgba(127, 176, 255, 0.16)", "rgba(195, 224, 255, 0.18)");
+    // outdoor festoon string light glow
+    for (const bx of [196, 214, 234, 254, 274]) {
+      const sag = Math.round(Math.sin(((bx - 184) / 104) * Math.PI) * 7);
+      warmPool(bx, 9 + sag, 6, 5, "rgba(255, 200, 90, 0.26)", "rgba(255, 242, 180, 0.36)");
+    }
+    // outdoor camp table lantern pools
+    for (const tb of TABLES.slice(3)) {
+      warmPool(tb.x, tb.y - 11, 14, 9, "rgba(255, 194, 85, 0.22)", "rgba(255, 238, 175, 0.24)");
+    }
   }
 
   // ---------- labels ----------
