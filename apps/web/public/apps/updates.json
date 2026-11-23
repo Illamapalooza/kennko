@@ -6,9 +6,9 @@
     "notes": ""
   },
   "wall": {
-    "versionCode": 0,
-    "versionName": "0.0.0",
-    "url": "https://kennko.vercel.app/apps/kennko-wall.apk",
-    "notes": ""
+    "versionCode": 2,
+    "versionName": "0.0.2",
+    "url": "https://github.com/Illamapalooza/kennko/releases/download/apk-20261123-162306/kennko-wall.apk",
+    "notes": "Blue barista aprons"
   }
 }
