@@ -79,10 +79,19 @@ function paintRoom(g) {
   for (let i = 0; i < 4; i++) { R("#9db6ee", 34, 22 + i * 4, 15, 1); R(AMBER, 53, 22 + i * 4, 4, 1); }
   // ticket rail
   R(INK, 64, 28, 80, 1);
-  // big red velvet sofa with cushions behind indoor table 3 (x=156, y=142)
-  R(INK, 136, 114, 38, 14); R("#8f1c23", 137, 115, 36, 12); R("#c9323b", 139, 117, 32, 8);
-  R("#75151b", 137, 118, 3, 9); R("#75151b", 170, 118, 3, 9); // sofa armrests
-  R("#f2d6a2", 141, 118, 4, 4); R("#ffffff", 153, 118, 4, 4); R("#5478c4", 164, 118, 4, 4); // cushions
+  // plush pure-red velvet sofa with rounded armrests, seat crease, legs & throw pillows behind In 3
+  R(INK, 139, 112, 32, 1); R(INK, 137, 113, 36, 13); R(INK, 135, 117, 40, 10); // silhouette
+  R("#b8252d", 138, 113, 34, 9); R("#d1363e", 140, 113, 30, 2); // rounded backrest
+  R("#941b22", 136, 117, 4, 9); R("#b8252d", 137, 117, 2, 3); // left rounded armrest
+  R("#941b22", 170, 117, 4, 9); R("#b8252d", 171, 117, 2, 3); // right rounded armrest
+  R("#7a141a", 140, 121, 30, 1); // backrest-to-seat crease
+  R("#c9323b", 140, 122, 30, 3); // seat cushion
+  R("#8a1820", 136, 125, 38, 2); // front skirt
+  R(INK, 137, 127, 36, 1); R(INK, 138, 128, 2, 2); R(INK, 170, 128, 2, 2); // sofa legs
+  // soft throw pillows (tucked at corners, not stiff squares)
+  R("#f2e6d5", 141, 117, 4, 4); R("#dfd0bc", 141, 120, 4, 1);
+  R("#ffffff", 162, 117, 4, 4); R("#e2e8f5", 162, 120, 4, 1);
+  R("#e8b85d", 165, 118, 4, 3); R("#c99438", 165, 120, 4, 1);
   // indoor window frame and sill (the sky is painted live, matching the outdoor camp sky)
   R(INK, 150, 9, 30, 27); R("#ffffff", 148, 34, 34, 3); R(INK, 148, 37, 34, 1);
   // striped cafe awning peeking outside the storefront doorway
