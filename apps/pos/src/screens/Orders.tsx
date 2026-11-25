@@ -14,6 +14,19 @@ const COLUMNS: { status: OrderStatus; title: string; action: string }[] = [
 
 const VOID_REASONS = ['Wrong drink', 'Customer left', 'Duplicate order']
 
+const TABLE_LABELS: Record<number, string> = {
+  1: 'In 1',
+  2: 'In 2',
+  3: 'In 3',
+  4: 'Out 1',
+  5: 'Out 2',
+  6: 'Out 3',
+  7: 'Out 4',
+}
+
+const tableLabel = (tableNumber?: number | null) =>
+  (tableNumber && TABLE_LABELS[tableNumber]) || 'Seated'
+
 const waited = (createdAt: number, now: number) => {
   const minutes = Math.max(0, Math.floor((now - createdAt) / 60000))
   return minutes < 1 ? 'just now' : `${minutes} min`
@@ -66,9 +79,44 @@ export function Orders({ boot, live, online = true, notify }: { boot: Bootstrap;
   const selectedCounter = selected?.kind === 'c' ? live.active.find((o) => o.id === selected.id) ?? null : null
   const selectedOnline = selected?.kind === 'w' ? (live.online ?? []).find((o) => o.id === selected.id) ?? null : null
   const pending = live.pendingPayments ?? []
+  const seated = live.seated ?? []
 
   return (
-    <div className={`board${pending.length > 0 ? ' board-has-pending' : ''}`}>
+    <div className="orders-view">
+      {seated.length > 0 ? (
+        <section className="seated-bar" aria-label="Seated at tables">
+          <div className="seated-head">
+            <b>Seated at tables</b>
+            <span className="pill">{seated.length}</span>
+          </div>
+          <div className="seated-list">
+            {seated.map((order) => {
+              const key = `s:${order.id}`
+              const where = tableLabel(order.tableNumber)
+              return (
+                <div className="seated-chip" key={key}>
+                  <span className="pill pill-amber">{where}</span>
+                  <b>#{order.number}</b>
+                  {order.customerName ? <span className="seated-name">{order.customerName}</span> : null}
+                  <small className="muted">{waited(order.updatedAt, now)}</small>
+                  <button
+                    type="button"
+                    className="btn btn-quiet seated-remove"
+                    disabled={busy === key}
+                    onClick={() => act(key, async () => {
+                      await api.removeFromWall(order.id)
+                      notify(`Removed #${order.number} from ${where}.`)
+                    })}
+                  >
+                    Remove cat
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
+      <div className={`board${pending.length > 0 ? ' board-has-pending' : ''}`}>
       {pending.length > 0 ? (
         <section className="column column-pending" aria-label="Pending payment">
           <h2>To confirm <b>{pending.length}</b></h2>
@@ -121,6 +169,7 @@ export function Orders({ boot, live, online = true, notify }: { boot: Bootstrap;
                     <b className="ticket-number">#{order.number}</b>
                     <span className="ticket-who">{order.customerName || ORDER_TYPE_LABELS[order.type]}</span>
                     {order.customerCode ? <span className="pill pill-card">{maskCode(order.customerCode)}</span> : null}
+                    {order.type === 'dine_in' && order.tableNumber ? <span className="pill pill-amber">{tableLabel(order.tableNumber)}</span> : null}
                     <span className={`pill${order.type === 'takeout' ? ' pill-amber' : ''}`}>{ORDER_TYPE_LABELS[order.type]}</span>
                   </header>
                   <ul>
@@ -197,6 +246,7 @@ export function Orders({ boot, live, online = true, notify }: { boot: Bootstrap;
           }}
         />
       ) : null}
+      </div>
     </div>
   )
 }

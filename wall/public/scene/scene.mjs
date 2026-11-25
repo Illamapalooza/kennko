@@ -110,6 +110,17 @@ function paintRoom(g) {
   R(INK, 184, 55, 104, 5); R("#b37943", 184, 56, 104, 3);
   R(INK, 184, 62, 104, 2); R("#61a654", 184, 63, 104, 1);
   for (const x of [198, 218, 238, 258, 276]) { R(INK, x, 53, 4, 11); R("#9c6635", x + 1, 54, 2, 9); }
+  // raised wooden acoustic stage against the al fresco fence (x: 207..265, y: 62..75)
+  R("rgba(26,35,64,.22)", 206, 75, 60, 2);
+  R(INK, 207, 62, 58, 13);
+  R("#c99052", 208, 63, 56, 7);
+  R("#b87d40", 208, 65, 56, 1); R("#b87d40", 208, 68, 56, 1);
+  for (const px of [222, 236, 250]) R("#a86e37", px, 63, 1, 7);
+  R("#8a572a", 208, 70, 56, 4); R("#6e431e", 208, 73, 56, 1);
+  for (let px = 214; px < 262; px += 8) R("#6e431e", px, 70, 1, 4);
+  R(INK, 231, 73, 10, 3); R("#b37943", 232, 73, 8, 2); // center stage step
+  for (const lx of [216, 236, 256]) { R(INK, lx - 1, 69, 3, 2); R(AMBER, lx, 69, 1, 1); } // footlights
+  R(INK, 209, 63, 5, 5); R("#3a2a20", 210, 64, 3, 3); R("#c99052", 211, 65, 1, 1); // mini acoustic amp
   // welcome mat at the glass storefront door (al fresco side)
   R(AMBER, 174, 104, 7, 18); R("#e09a1c", 174, 104, 7, 1); R("#e09a1c", 174, 121, 7, 1);
 }
@@ -165,7 +176,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
   const steam = [];
   /** @type {Map<string, any>} visiting cats by their per-visit key */ const visitors = new Map();
   const campCats = [
-    { x: 236, y: 78, tx: 236, ty: 78, flip: true, moving: false, seed: 301, look: { coat: "ginger" }, spot: { x: 236, y: 78, flip: true }, nextAct: 1.5 },
+    { x: 236, y: 86, tx: 236, ty: 86, flip: true, moving: false, seed: 301, look: { coat: "ginger" }, spot: { x: 236, y: 86, flip: true }, nextAct: 1.5 },
     { x: 236, y: 109, tx: 236, ty: 109, flip: false, moving: false, seed: 302, look: { coat: "calico" }, spot: { x: 236, y: 109, flip: false }, nextAct: 2.8 },
     { x: 196, y: 76, tx: 196, ty: 76, flip: false, moving: false, seed: 303, look: { coat: "tabby" }, spot: { x: 196, y: 76, flip: false }, nextAct: 4.1 },
   ];
@@ -293,7 +304,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
           c.cup = true;
           c.phase = "finish";
           c.dineIn = dineIn;
-          c.leaveAt = dineIn ? Infinity : t + rand(6, 14);
+          c.leaveAt = dineIn ? Infinity : t + rand(1, 2);
         } else {
           c.dineIn = dineIn;
         }
@@ -617,6 +628,86 @@ export function createScene(canvas, tagLayer, opts = {}) {
     ctx.globalAlpha = 1;
   }
 
+  function drawMusicNote(x, y, colour, doubleNote) {
+    ctx.fillStyle = colour;
+    if (doubleNote) {
+      ctx.fillRect(x, y + 3, 2, 2);
+      ctx.fillRect(x + 3, y + 2, 2, 2);
+      ctx.fillRect(x + 1, y, 1, 4);
+      ctx.fillRect(x + 4, y - 1, 1, 4);
+      ctx.fillRect(x + 1, y - 1, 4, 1);
+    } else {
+      ctx.fillRect(x, y + 3, 2, 2);
+      ctx.fillRect(x + 1, y, 1, 4);
+      ctx.fillRect(x + 2, y, 2, 1);
+      ctx.fillRect(x + 3, y + 1, 1, 1);
+    }
+  }
+
+  /** 3-piece acoustic cat band on the al fresco wooden stage: guitarist, vocalist on mic, and cajón percussionist. */
+  function drawAcousticBand() {
+    const R = (c, x, y, w, h) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+    const beat = t * 3.4; // ~102 BPM cozy acoustic groove
+    const bobA = Math.floor(beat) % 2;
+    const bobB = Math.floor(beat + 0.5) % 2;
+    const strum = Math.floor(beat * 2) % 2;
+
+    // 1. Left: Ginger cat on acoustic guitar (feet at x=221, y=68)
+    const gx = 221, gy = 68;
+    R("rgba(26,35,64,.2)", gx - 5, gy - 1, 11, 2);
+    drawCat(ctx, gx - 7, gy - CAT_H - bobA, "ginger", { flip: false, blink: blink(501) });
+    // acoustic guitar slung across chest
+    const gTop = gy - CAT_H - bobA + 9;
+    R(INK, gx - 4, gTop, 6, 5);
+    R("#d99b52", gx - 3, gTop + 1, 4, 3);
+    R("#2a1d15", gx - 2, gTop + 2, 2, 1); // soundhole
+    R(INK, gx + 2, gTop - 2, 4, 2);
+    R("#8a572a", gx + 2, gTop - 1, 3, 1); // guitar neck
+    R("#f7d7b5", gx - 1 + strum, gTop + 2, 2, 1); // strumming paw
+
+    // 2. Center: Tuxedo lead vocalist at microphone stand (feet at x=236, y=67)
+    const vx = 236, vy = 67;
+    R("rgba(26,35,64,.2)", vx - 5, vy - 1, 11, 2);
+    const vTop = vy - CAT_H - bobB;
+    drawCat(ctx, vx - 7, vTop, "tuxedo", { flip: false, blink: blink(502) });
+    if (Math.floor(beat * 1.5) % 2 === 0) {
+      // singing mouth
+      R("#ff8fab", vx - 1, vTop + 7, 2, 1);
+    }
+    // mic stand in front of singer
+    R(INK, vx - 2, vy - 1, 5, 1);
+    R("#3b4459", vx, vy - 10, 1, 9);
+    R(INK, vx - 1, vy - 11, 3, 2);
+    R("#cfd8eb", vx, vy - 11, 1, 1);
+
+    // 3. Right: Calico percussionist playing a wooden cajón (feet at x=253, y=68)
+    const cx = 253, cy = 68;
+    R("rgba(26,35,64,.2)", cx - 7, cy - 1, 13, 2);
+    const cTop = cy - CAT_H - bobA;
+    drawCat(ctx, cx - 7, cTop, "calico", { flip: true, blink: blink(503) });
+    // wooden cajón box in front of cat
+    R(INK, cx - 8, cy - 7, 6, 7);
+    R("#c99052", cx - 7, cy - 6, 4, 5);
+    R("#8a572a", cx - 7, cy - 3, 4, 1);
+    // alternating tapping paws on top of cajón
+    R("#ffffff", cx - 7 + strum * 2, cy - 7 - (1 - strum), 2, 1);
+
+    // floating pixel musical notes drifting up from the band
+    const notes = [
+      { ox: 221, oy: 49, phase: 0.0, col: "#fff7d6", dbl: false },
+      { ox: 236, oy: 47, phase: 0.33, col: AMBER, dbl: true },
+      { ox: 251, oy: 49, phase: 0.66, col: "#9ec2ff", dbl: false },
+    ];
+    for (const n of notes) {
+      const p = (t * 0.45 + n.phase) % 1;
+      const nx = Math.round(n.ox + Math.sin(p * Math.PI * 2 + n.phase * 6) * 2.5);
+      const ny = Math.round(n.oy - p * 14);
+      ctx.globalAlpha = p < 0.15 ? p / 0.15 : Math.max(0, 1 - p);
+      drawMusicNote(nx, ny, n.col, n.dbl);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   function drawTable(tb) {
     const R = (c, x, y, w, h) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
     const outdoor = tb.x >= 184;
@@ -858,11 +949,14 @@ export function createScene(canvas, tagLayer, opts = {}) {
     }
     ctx.globalAlpha = 1;
 
-    // floor: tables, customers and the server, back to front
-    const things = [...TABLES.map((tb) => ({ y: tb.y + 0.5, draw: () => drawTable(tb) })),
+    // floor: tables, acoustic stage band, customers and the server, back to front
+    const things = [
+      { y: 70, draw: drawAcousticBand },
+      ...TABLES.map((tb) => ({ y: tb.y + 0.5, draw: () => drawTable(tb) })),
       ...[...custs.values()].map((c) => ({ y: c.y, draw: () => drawCust(c) })),
       ...[...visitors.values()].map((v) => ({ y: v.y, draw: () => drawVisitor(v) })),
-      ...campCats.map((n) => ({ y: n.y, draw: () => drawCampCat(n) }))];
+      ...campCats.map((n) => ({ y: n.y, draw: () => drawCampCat(n) })),
+    ];
     if (baristaCount > 0) things.push({ y: server.y, draw: drawServer });
     things.sort((a, b) => a.y - b.y).forEach((th) => th.draw());
     drawLighting(skyFor(manilaHour()));
@@ -955,6 +1049,10 @@ export function createScene(canvas, tagLayer, opts = {}) {
     // outdoor camp table lantern pools
     for (const tb of TABLES.slice(3)) {
       warmPool(tb.x, tb.y - 11, 14, 9, "rgba(255, 194, 85, 0.22)", "rgba(255, 238, 175, 0.24)");
+    }
+    // warm footlight glow across the al fresco acoustic stage
+    for (const sx of [219, 236, 253]) {
+      warmPool(sx, 65, 13, 10, "rgba(255, 200, 95, 0.22)", "rgba(255, 240, 180, 0.28)");
     }
   }
 

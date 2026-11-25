@@ -34,7 +34,7 @@ export type SyncStatus = {
   importing: number
 }
 
-export type Live = { version: number; now: number; day: string; active: Order[]; online: OnlineQueueOrder[]; pendingPayments?: PendingPaymentOrder[]; shift: Shift | null; menuKey: string; sync: SyncStatus }
+export type Live = { version: number; now: number; day: string; active: Order[]; seated?: Order[]; online: OnlineQueueOrder[]; pendingPayments?: PendingPaymentOrder[]; shift: Shift | null; menuKey: string; sync: SyncStatus }
 
 export type TillState = {
   shift: Shift | null
