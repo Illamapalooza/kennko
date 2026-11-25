@@ -1,14 +1,14 @@
 {
   "pos": {
-    "versionCode": 0,
-    "versionName": "0.0.0",
-    "url": "https://kennko.vercel.app/apps/kennko-pos.apk",
-    "notes": ""
+    "versionCode": 101,
+    "versionName": "0.1.1",
+    "url": "https://github.com/Illamapalooza/kennko/releases/download/apk-20261125-192644/kennko-pos.apk",
+    "notes": "Barista custom cats, multi-barista login, bonus points, shop hours"
   },
   "wall": {
-    "versionCode": 2,
-    "versionName": "0.0.2",
-    "url": "https://github.com/Illamapalooza/kennko/releases/download/apk-20261123-162306/kennko-wall.apk",
-    "notes": "Blue barista aprons"
+    "versionCode": 3,
+    "versionName": "0.0.3",
+    "url": "https://github.com/Illamapalooza/kennko/releases/download/apk-20261125-192644/kennko-wall.apk",
+    "notes": "Barista custom cats, multi-barista login, bonus points, shop hours"
   }
 }
