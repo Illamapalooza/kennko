@@ -737,7 +737,7 @@ describe('every route as kennko_api', () => {
     await asSuper(() => db.sql`delete from shop_secrets where id = 1`)
     const first = await ok('GET', '/v1/sync/pull', deviceToken)
     const [row] = await asSuper(() => db.sql<{ checkin_secret: string }[]>`select checkin_secret from shop_secrets where id = 1`)
-    expect(first.checkin).toEqual({ secret: row!.checkin_secret, url: 'https://kennko.vercel.app/here' })
+    expect(first.checkin).toEqual({ secret: row!.checkin_secret, url: 'https://kennkokape.com/here' })
 
     const scanner = '00000000-0000-4000-8000-0000000000a8'
     await asSuper(() => db.sql`insert into auth.users (id, email) values (${scanner}, 'scan@x.test')`)

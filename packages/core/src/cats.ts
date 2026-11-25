@@ -8,7 +8,7 @@ export const CAT_NAME_MAX = 16
 export const VISIT_MS = 5_400_000
 export const MAX_VISITORS = 12
 export const CHECKINS_PER_MINUTE = 6
-export const CHECKIN_URL = 'https://kennko.vercel.app/here'
+export const CHECKIN_URL = 'https://kennkokape.com/here'
 export const WALL_CODE_LENGTH = 8
 
 export type CatLook = { coat: string } & Partial<Record<'hat' | 'face' | 'neck' | 'held', string>>

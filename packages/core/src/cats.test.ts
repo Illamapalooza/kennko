@@ -78,7 +78,7 @@ describe('wall code', () => {
     expect(accepted.has(await wallCode('s', m - 2))).toBe(false)
   })
   it('floors the minute', () => expect(wallMinute(60_000 * 5 + 59_999)).toBe(5))
-  it('builds the link', () => expect(checkinLink(CHECKIN_URL, 'abcd2345')).toBe('https://kennko.vercel.app/here?c=abcd2345'))
+  it('builds the link', () => expect(checkinLink(CHECKIN_URL, 'abcd2345')).toBe('https://kennkokape.com/here?c=abcd2345'))
 })
 
 describe('parseLook', () => {

@@ -40,7 +40,7 @@ describe('currentCheckin', () => {
 
   it('links to the pulled URL with ?c= and 8 base32 characters, never the secret', async () => {
     const c = (await currentCheckin(withSecret(), T))!
-    expect(c.url).toMatch(/^https:\/\/kennko\.vercel\.app\/here\?c=[a-z2-7]{8}$/)
+    expect(c.url).toMatch(/^https:\/\/kennkokape\.com\/here\?c=[a-z2-7]{8}$/)
     expect(JSON.stringify(c)).not.toContain(SECRET)
   })
 

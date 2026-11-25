@@ -56,7 +56,7 @@ describe('POST /v1/checkin and the visitors in the pull', () => {
     const first = await pull()
     const [row] = await db.sql<{ checkin_secret: string }[]>`select checkin_secret from shop_secrets where id = 1`
     secret = row!.checkin_secret
-    expect(first.checkin).toEqual({ secret, url: 'https://kennko.vercel.app/here' })
+    expect(first.checkin).toEqual({ secret, url: 'https://kennkokape.com/here' })
   })
   afterAll(async () => {
     await db.stop()
