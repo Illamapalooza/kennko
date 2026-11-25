@@ -83,6 +83,7 @@ export function OrderClient({
   const [submitting, setSubmitting] = useState(false)
   const [orderCode, setOrderCode] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
   // Read by the popstate handler, which is registered once.
   const cartCountRef = useRef(0)
   // Strict mode runs mount effects twice; the first run rewrites the URL, so a
@@ -334,30 +335,66 @@ export function OrderClient({
 
           <div className="order-main">
             {notice ? <p className="order-notice" role="status">{notice}</p> : null}
-            {categories.map((category, index) => (
-              <section className="order-cat" key={category.id}>
-                <div className="order-cat-head">
-                  <CatToon
-                    coat={CATEGORY_CATS[index % CATEGORY_CATS.length].coat}
-                    pose={CATEGORY_CATS[index % CATEGORY_CATS.length].pose}
-                    className={`perch ${CATEGORY_CATS[index % CATEGORY_CATS.length].spot}`}
-                  />
-                  <h2>{category.name}</h2>
-                  <span className="order-cat-count">{category.items.length} drinks</span>
-                </div>
+            <div className="order-search">
+              <input
+                type="search"
+                className="order-search-input"
+                value={query}
+                placeholder="Search drinks &amp; food…"
+                aria-label="Search products"
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              {query ? (
+                <button type="button" className="btn btn-secondary order-search-clear" onClick={() => setQuery('')}>
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            {(() => {
+              const q = query.trim().toLowerCase()
+              const shownCategories = !q
+                ? categories
+                : categories
+                    .map((cat) =>
+                      cat.name.toLowerCase().includes(q)
+                        ? cat
+                        : { ...cat, items: cat.items.filter((i) => i.name.toLowerCase().includes(q)) },
+                    )
+                    .filter((cat) => cat.items.length > 0)
 
-                <div className="drink-grid">
-                  {category.items.map((item) => (
-                    <DrinkCard
-                      key={item.id}
-                      item={item}
-                      imageUrl={null}
-                      onPick={(picked, size) => setEditing({ item: picked, size })}
+              if (q && shownCategories.length === 0) {
+                return (
+                  <p className="order-notice" role="status">
+                    No products match “{query.trim()}”.
+                  </p>
+                )
+              }
+
+              return shownCategories.map((category, index) => (
+                <section className="order-cat" key={category.id}>
+                  <div className="order-cat-head">
+                    <CatToon
+                      coat={CATEGORY_CATS[index % CATEGORY_CATS.length].coat}
+                      pose={CATEGORY_CATS[index % CATEGORY_CATS.length].pose}
+                      className={`perch ${CATEGORY_CATS[index % CATEGORY_CATS.length].spot}`}
                     />
-                  ))}
-                </div>
-              </section>
-            ))}
+                    <h2>{category.name}</h2>
+                    <span className="order-cat-count">{category.items.length} drinks</span>
+                  </div>
+
+                  <div className="drink-grid">
+                    {category.items.map((item) => (
+                      <DrinkCard
+                        key={item.id}
+                        item={item}
+                        imageUrl={null}
+                        onPick={(picked, size) => setEditing({ item: picked, size })}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))
+            })()}
           </div>
         </>
       ) : null}

@@ -33,6 +33,7 @@ const sameDrink = (a: LineInput, b: LineInput) =>
 
 export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props) {
   const [tab, setTab] = useState(STARS)
+  const [query, setQuery] = useState('')
   const [adding, setAdding] = useState<MenuItem | null>(null)
   const [editing, setEditing] = useState<CartLine | null>(null)
   const [discounting, setDiscounting] = useState(false)
@@ -46,6 +47,22 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
     return [...(stars.length ? [{ id: STARS, name: STARS, items: stars }] : []), ...menu.categories]
   }, [menu])
   const current = tabs.find((t) => t.name === tab) ?? tabs[0]
+  const trimmedQuery = query.trim().toLowerCase()
+  const visibleItems = useMemo(() => {
+    if (!trimmedQuery) return current?.items ?? []
+    const seen = new Set<string>()
+    const hits: MenuItem[] = []
+    for (const cat of menu.categories) {
+      for (const item of cat.items) {
+        if (seen.has(item.id)) continue
+        if (item.name.toLowerCase().includes(trimmedQuery) || cat.name.toLowerCase().includes(trimmedQuery)) {
+          seen.add(item.id)
+          hits.push(item)
+        }
+      }
+    }
+    return hits
+  }, [trimmedQuery, current, menu.categories])
 
   // Price every line from the live menu. A line the menu no longer allows is flagged, not silently dropped.
   const priced = useMemo(() => cart.lines.map((line) => {
@@ -266,21 +283,41 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
   return (
     <div className="sell">
       <section className="catalog">
-        <div className="tabs" role="tablist" aria-label="Menu categories">
-          {tabs.map((t) => (
-            <button type="button" key={t.name} role="tab" aria-selected={t.name === current?.name} className={t.name === current?.name ? 'on' : ''} onClick={() => setTab(t.name)}>
-              {t.name}
-            </button>
-          ))}
+        <div className="row-actions" style={{ marginBottom: 10 }}>
+          <input
+            type="search"
+            className="input grow"
+            value={query}
+            placeholder="Search products…"
+            aria-label="Search products"
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query ? (
+            <button type="button" className="btn btn-quiet" onClick={() => setQuery('')}>Clear</button>
+          ) : null}
         </div>
+        {!trimmedQuery ? (
+          <div className="tabs" role="tablist" aria-label="Menu categories">
+            {tabs.map((t) => (
+              <button type="button" key={t.name} role="tab" aria-selected={t.name === current?.name} className={t.name === current?.name ? 'on' : ''} onClick={() => setTab(t.name)}>
+                {t.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="grid">
-          {current?.items.map((item) => (
+          {visibleItems.map((item) => (
             <button type="button" key={item.id} className="drink" disabled={!item.isAvailable} onClick={() => setAdding(item)}>
               {item.isBestseller ? <span className="star" aria-label="Bestseller">★</span> : null}
               <span className="drink-name">{item.name}</span>
               <span className="drink-price">{item.isAvailable ? formatPesos(Math.min(...item.prices.map((p) => p.priceCentavos))) : 'Sold out'}</span>
             </button>
           ))}
+          {trimmedQuery && visibleItems.length === 0 ? (
+            <p className="muted" style={{ gridColumn: '1 / -1', padding: '16px 4px' }}>
+              No products match “{query.trim()}”.
+            </p>
+          ) : null}
         </div>
       </section>
 
