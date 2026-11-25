@@ -26,6 +26,7 @@ export type WallOrder = {
 
 /** How long a finished dine-in order stays in the feed (2 hours) unless explicitly removed from the cafe. */
 export const WALL_LINGER_MS = 2 * 60 * 60 * 1000
+const WALL_ACTIVE_MAX_MS = 12 * 60 * 60 * 1000
 
 /**
  * An online order's step as a wall status (Plan 5 Ruling 11). Out for delivery is `done`: the customer is not in the
@@ -113,25 +114,37 @@ export type WallFeedVisitor = { key: string; name: string; look: CatLook; endsAt
  */
 export function wallSnapshot(store: Store, menu: Menu, now: number, checkin: WallCheckin | null) {
   const since = now - WALL_LINGER_MS
+  const activeSince = now - WALL_ACTIVE_MAX_MS
   const skew = storedSkew(store) ?? 0
-  const visitors: WallFeedVisitor[] = store.activeVisitors(now + skew).map((v) => ({
-    key: v.key,
-    name: v.name,
-    look: wallLook(v.look),
-    endsAt: Date.parse(v.endsAt) - skew,
-  }))
   const openNow = isShopOpenNow(store.shopStatus?.() ?? DEFAULT_SHOP_STATUS, now)
+  const visitors: WallFeedVisitor[] = openNow
+    ? store.activeVisitors(now + skew).map((v) => ({
+        key: v.key,
+        name: v.name,
+        look: wallLook(v.look),
+        endsAt: Date.parse(v.endsAt) - skew,
+      }))
+    : []
   return {
     now, day: manilaDay(now),
     baristas: openNow ? 2 : 0,
     menu: wallMenu(menu),
-    orders: [
-      ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)], (code) => {
-        const c = store.cachedCustomer?.(code)
-        return c ? { name: c.catName, look: c.catLook ?? null } : null
-      }, visitors),
-      ...wallOnlineOrders([...store.activeOnlineOrders(), ...store.recentlyFinishedOnline(since)]),
-    ],
+    orders: openNow
+      ? [
+          ...wallOrders(
+            [...store.activeOrders().filter((o) => o.updatedAt >= activeSince), ...store.recentlyFinished(since)],
+            (code) => {
+              const c = store.cachedCustomer?.(code)
+              return c ? { name: c.catName, look: c.catLook ?? null } : null
+            },
+            visitors,
+          ),
+          ...wallOnlineOrders([
+            ...store.activeOnlineOrders().filter((o) => Date.parse(o.updatedAt) >= activeSince),
+            ...store.recentlyFinishedOnline(since),
+          ]),
+        ]
+      : [],
     checkin: checkin ? { url: checkin.url, modules: checkin.modules } : null,
     visitors,
   }

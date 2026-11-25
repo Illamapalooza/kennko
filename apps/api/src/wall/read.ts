@@ -4,6 +4,7 @@ import { readVisitors } from '../loyalty/visits.js'
 import { readShopStatus } from '../shop/status.js'
 
 const WALL_LINGER_MS = 2 * 60 * 60 * 1000
+const WALL_ACTIVE_MAX_MS = 12 * 60 * 60 * 1000
 
 export type PublicWallOrder = {
   id: number
@@ -56,10 +57,23 @@ type OrderRow = {
  */
 export async function readPublicWall(sql: postgres.Sql, now: Date): Promise<PublicWallSnapshot> {
   const since = new Date(now.getTime() - WALL_LINGER_MS)
+  const activeSince = new Date(now.getTime() - WALL_ACTIVE_MAX_MS)
   const [openShift] = await sql<{ id: string }[]>`select id from shifts where closed_at is null limit 1`
   const shopStatus = await readShopStatus(sql)
   const openNow = isShopOpenNow(shopStatus, now.getTime())
   const baristas = openNow && openShift ? 2 : 0
+
+  if (!openNow) {
+    return {
+      now: now.getTime(),
+      baristas: 0,
+      openNow: false,
+      isOpen: shopStatus.isOpen,
+      closingTime: shopStatus.closingTime,
+      orders: [],
+      visitors: [],
+    }
+  }
 
   const rows = await sql<OrderRow[]>`
     select o.id, o.channel, o.ticket_number, o.fulfilment, o.prep_status, o.created_at, o.updated_at,
@@ -68,7 +82,7 @@ export async function readPublicWall(sql: postgres.Sql, now: Date): Promise<Publ
     left join cats ca on ca.customer_id = o.customer_id
     where o.payment_status = 'paid'
       and (
-        o.prep_status in ('placed', 'preparing', 'ready', 'out_for_delivery')
+        (o.prep_status in ('placed', 'preparing', 'ready', 'out_for_delivery') and o.updated_at >= ${activeSince})
         or (o.prep_status = 'completed' and o.updated_at >= ${since})
       )
     order by o.created_at asc, o.ticket_number asc
