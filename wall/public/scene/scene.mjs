@@ -354,14 +354,77 @@ export function createScene(canvas, tagLayer, opts = {}) {
     return seat ? { x: seat.table.x, y: seat.table.y + 9 } : { x: c.tx + 13, y: c.ty };
   }
 
-  const sendHome = () => { server.job = null; server.carrying = false; server.state = "return"; go(server, SERVER_HOME); };
+  const sendHome = () => {
+    server.job = null; server.carrying = false; server.chore = null; server.choreStage = 0; server.choreUntil = 0;
+    server.state = "return"; go(server, SERVER_HOME);
+  };
+
+  function pickServerChore() {
+    const r = Math.random();
+    if (r < 0.30) {
+      // clean the floor (indoors or al fresco)
+      const outdoor = Math.random() < 0.45;
+      const spot = outdoor ? { x: Math.round(rand(196, 266)), y: Math.round(rand(84, 118)) } : { x: Math.round(rand(28, 162)), y: Math.round(rand(108, 128)) };
+      server.chore = "sweep"; server.choreStage = 0; server.state = "chore";
+      go(server, spot);
+    } else if (r < 0.62) {
+      // wipe a table
+      const tb = TABLES[Math.floor(Math.random() * TABLES.length)];
+      server.chore = "wipe_table"; server.choreStage = 0; server.state = "chore";
+      go(server, { x: tb.x, y: tb.y + 7 });
+    } else if (r < 0.84) {
+      // take out trash from behind/beside counter out the al fresco door
+      server.chore = "trash"; server.choreStage = 0; server.state = "chore";
+      go(server, { x: 34, y: 106 });
+    } else {
+      // water the patio bushes
+      const bush = Math.random() < 0.5 ? { x: 198, y: 69 } : { x: 272, y: 69 };
+      server.chore = "water_plants"; server.choreStage = 0; server.state = "chore";
+      go(server, bush);
+    }
+  }
 
   function stepServer(dt) {
     const arrived = walk(server, dt);
-    if (server.state === "idle") {
+    if (server.state === "idle" || server.state === "chore") {
       const next = orders.filter((o) => o.status === "serving").sort((a, b) => a.updatedAt - b.updatedAt)
         .map((o) => custs.get(o.id)).find((c) => c && c.phase === "in" && !c.cup && !c.moving);
-      if (next) { server.job = next.id; server.state = "toTray"; go(server, TRAY); }
+      if (next) {
+        server.chore = null; server.choreStage = 0;
+        server.job = next.id; server.state = "toTray"; go(server, TRAY);
+        return;
+      }
+      if (server.state === "idle") {
+        if (server.nextChore === undefined) server.nextChore = t + rand(2.5, 5.5);
+        if (t > server.nextChore) pickServerChore();
+        return;
+      }
+      // execute chore stages
+      if (server.chore === "trash") {
+        if (server.choreStage === 0 && arrived) {
+          server.choreStage = 1; // picked up bag, walk out the glass door to the outdoor gate
+          go(server, { x: 282, y: 112 });
+        } else if (server.choreStage === 1 && arrived) {
+          server.choreStage = 2; server.choreUntil = t + 0.9; // drop bag outside
+        } else if (server.choreStage === 2 && t > server.choreUntil) {
+          server.nextChore = t + rand(5, 10);
+          sendHome();
+        }
+        return;
+      }
+      if (server.choreStage === 0 && arrived) {
+        server.choreStage = 1;
+        server.choreUntil = t + rand(3.2, 5.5);
+      } else if (server.choreStage === 1 && t > server.choreUntil) {
+        if (server.chore === "sweep" && Math.random() < 0.45) {
+          // sweep a second nearby spot before heading back
+          server.choreStage = 0;
+          go(server, { x: Math.max(24, Math.min(268, Math.round(server.x + rand(-28, 28)))), y: Math.max(82, Math.min(126, Math.round(server.y + rand(-10, 10)))) });
+        } else {
+          server.nextChore = t + rand(4, 9);
+          sendHome();
+        }
+      }
       return;
     }
     if (server.state === "return") {
@@ -443,12 +506,40 @@ export function createScene(canvas, tagLayer, opts = {}) {
     if (baristaCount > 0) stepServer(dt);
     baristas.forEach((b, i) => {
       const working = assignment[i] != null;
-      if (working) b.tx = STATIONS[i];
-      else if (t > b.nextMove) { b.tx = STATIONS[i] + Math.round(rand(-9, 9)); b.nextMove = t + rand(3, 8); }
+      if (working) {
+        b.tx = STATIONS[i]; b.chore = null; b.choreStage = 0;
+      } else if (t > b.nextMove) {
+        const r = Math.random();
+        if (r < 0.35) {
+          b.chore = "wipe_counter"; b.choreStage = 0;
+          b.tx = Math.round(rand(58, 152));
+          b.nextMove = t + rand(4, 7);
+        } else if (r < 0.65) {
+          b.chore = "espresso"; b.choreStage = 0;
+          b.tx = 48;
+          b.nextMove = t + rand(4, 7);
+        } else if (r < 0.85) {
+          b.chore = "fridge"; b.choreStage = 0;
+          b.tx = 32;
+          b.nextMove = t + rand(6, 9);
+        } else {
+          b.chore = null; b.choreStage = 0;
+          b.tx = STATIONS[i] + Math.round(rand(-9, 9));
+          b.nextMove = t + rand(3, 6);
+        }
+      }
       const dx = b.tx - b.x;
       b.moving = Math.abs(dx) > 0.5;
-      if (b.moving) { b.x += Math.sign(dx) * Math.min(Math.abs(dx), 18 * dt); b.flip = dx < 0; } else b.x = b.tx;
-      if (working && !b.moving && Math.random() < dt * 5) steam.push({ x: b.x + rand(-3, 6), y: BARISTA_TOP + 5, life: 1 });
+      if (b.moving) { b.x += Math.sign(dx) * Math.min(Math.abs(dx), 18 * dt); b.flip = dx < 0; }
+      else {
+        b.x = b.tx;
+        if (!working && b.chore === "fridge" && b.choreStage === 0) {
+          b.choreStage = 1; b.tx = 118; // carry milk carton to pitcher
+        } else if (!working && b.chore === "fridge" && b.choreStage === 1) {
+          b.chore = null; b.choreStage = 0;
+        }
+      }
+      if ((working || (!b.moving && b.chore === "espresso")) && Math.random() < dt * 5) steam.push({ x: b.x + rand(-3, 6), y: BARISTA_TOP + 5, life: 1 });
     });
     if (assignment.some((id) => id != null) && Math.random() < dt * 6) steam.push({ x: rand(29, 45), y: 57, life: 1 });
     for (let i = steam.length - 1; i >= 0; i--) {
@@ -663,11 +754,46 @@ export function createScene(canvas, tagLayer, opts = {}) {
   }
 
   function drawServer() {
-    const bob = server.moving ? Math.floor(t * 7) % 2 : 0;
+    const busyChore = !server.moving && server.state === "chore" && server.choreStage === 1;
+    const sweepDx = busyChore && server.chore === "sweep" ? Math.round(Math.sin(t * 9) * 2) : 0;
+    const bob = server.moving ? Math.floor(t * 7) % 2 : busyChore ? Math.floor(t * 5) % 2 : 0;
     const x = Math.round(server.x) - 7, y = Math.round(server.y) - CAT_H - bob;
     ctx.fillStyle = "rgba(26,35,64,.14)"; ctx.fillRect(x + 1, Math.round(server.y) - 1, 12, 2);
     drawCat(ctx, x, y, "white", { apron: true, flip: server.flip, blink: blink(77) });
-    if (server.carrying) drawCup(ctx, server.flip ? x - 2 : x + CAT_W - 2, y + 8);
+    if (server.carrying) {
+      drawCup(ctx, server.flip ? x - 2 : x + CAT_W - 2, y + 8);
+      return;
+    }
+    const pawX = server.flip ? x - 2 : x + CAT_W - 1;
+    if (server.state === "chore" && server.chore === "sweep") {
+      // broom
+      const bx = pawX + sweepDx;
+      ctx.fillStyle = "#8a572a"; ctx.fillRect(bx, y + 5, 1, 8);
+      ctx.fillStyle = INK; ctx.fillRect(bx - 1, y + 13, 3, 1);
+      ctx.fillStyle = AMBER; ctx.fillRect(bx - 1, y + 14, 3, 2);
+      if (busyChore && Math.floor(t * 4) % 2 === 0) {
+        ctx.fillStyle = "rgba(255,255,255,.7)"; ctx.fillRect(bx + (sweepDx > 0 ? -3 : 3), y + 14, 2, 1);
+      }
+    } else if (busyChore && server.chore === "wipe_table") {
+      // wiping cloth + clean sparkle
+      const wx = Math.round(server.x) + Math.round(Math.sin(t * 10) * 3) - 1;
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(wx, Math.round(server.y) - 18, 3, 2);
+      ctx.fillStyle = "#9ec2ff"; ctx.fillRect(wx, Math.round(server.y) - 17, 3, 1);
+      if (Math.floor(t * 4) % 2 === 0) {
+        ctx.fillStyle = "#fff7d6"; ctx.fillRect(wx + 2, Math.round(server.y) - 21, 1, 2); ctx.fillRect(wx + 1, Math.round(server.y) - 20, 3, 1);
+      }
+    } else if (server.state === "chore" && server.chore === "trash" && server.choreStage === 1) {
+      // tied trash bag
+      ctx.fillStyle = INK; ctx.fillRect(pawX - 1, y + 9, 4, 5);
+      ctx.fillStyle = "#3a4563"; ctx.fillRect(pawX, y + 10, 2, 3);
+      ctx.fillStyle = AMBER; ctx.fillRect(pawX, y + 9, 2, 1);
+    } else if (busyChore && server.chore === "water_plants") {
+      // blue watering can + droplets
+      ctx.fillStyle = INK; ctx.fillRect(pawX - 1, y + 9, 4, 3);
+      ctx.fillStyle = BLUE; ctx.fillRect(pawX, y + 10, 2, 1);
+      const dropY = y + 12 + (Math.floor(t * 6) % 3);
+      ctx.fillStyle = "#7cc4ff"; ctx.fillRect(pawX + (server.flip ? -2 : 3), dropY, 1, 2);
+    }
   }
 
   function draw() {
@@ -698,10 +824,20 @@ export function createScene(canvas, tagLayer, opts = {}) {
     // baristas, then the counter in front of them
     baristas.forEach((b, i) => {
       const working = assignment[i] != null && !b.moving;
-      const bob = working ? Math.floor(t * 6 + i) % 2 : b.moving ? Math.floor(t * 7 + i) % 2 : 0;
+      const choreActive = !working && !b.moving && b.chore != null;
+      const bob = (working || choreActive) ? Math.floor(t * 6 + i) % 2 : b.moving ? Math.floor(t * 7 + i) % 2 : 0;
       const x = Math.round(b.x) - 7;
       drawCat(ctx, x, BARISTA_TOP - bob, b.coat, { apron: true, flip: b.flip, blink: blink(100 + i) });
       if (working) drawCup(ctx, x + CAT_W - 3, BARISTA_TOP + 6 + (Math.floor(t * 3 + i) % 2));
+      else if (b.chore === "fridge" && b.choreStage === 1) {
+        // carrying milk carton from fridge to pitcher
+        ctx.fillStyle = INK; ctx.fillRect(x + CAT_W - 2, BARISTA_TOP + 7, 4, 5);
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(x + CAT_W - 1, BARISTA_TOP + 8, 2, 3);
+        ctx.fillStyle = BLUE; ctx.fillRect(x + CAT_W - 1, BARISTA_TOP + 9, 2, 1);
+      } else if (choreActive && b.chore === "wipe_counter") {
+        const wx = Math.round(b.x) + Math.round(Math.sin(t * 9 + i) * 3) - 1;
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(wx, BARISTA_TOP + 11, 3, 2);
+      }
     });
     paintCounter(ctx);
     if (baristaCount === 0) {
