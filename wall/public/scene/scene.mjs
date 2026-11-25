@@ -7,10 +7,10 @@ export const W = 288;
 export const H = 152;
 
 // Positions are a cat's feet: centre x, bottom y.
-const WAIT = [26, 48, 70, 92, 114, 136].map((x) => ({ x, y: 122 })); // standing room, only when every seat is taken
+const WAIT = [26, 48, 70, 92, 114, 136].map((x) => ({ x, y: 112 })); // standing room, only when every seat is taken
 // listed in the order they fill, so the room looks evenly busy
 const SEATS = TABLES.flatMap((t) => [{ x: t.x - 15, y: t.y, flip: false, table: t }, { x: t.x + 15, y: t.y, flip: true, table: t }]);
-const DOOR = { x: 298, y: 122 };
+const DOOR = { x: 298, y: 112 };
 const STATIONS = [62, 104, 132];
 const BARISTA_TOP = 63;
 const BARISTA_COATS = ["tuxedo", "ginger", "tabby"];
@@ -61,7 +61,7 @@ function paintRoom(g) {
     }
   }
   // wooden stepping planks at the glass door into the grass camp
-  R("#b3834c", 184, 114, 6, 18); R("#cfa067", 184, 115, 5, 4); R("#cfa067", 184, 121, 5, 4); R("#cfa067", 184, 127, 5, 4);
+  R("#b3834c", 184, 104, 6, 18); R("#cfa067", 184, 105, 5, 4); R("#cfa067", 184, 111, 5, 4); R("#cfa067", 184, 117, 5, 4);
   R("#cbc3b8", 12, 64, 166, 12);
   // glass storefront doorway divider with frosted stripes
   R(INK, 181, 0, 3, 64); R("#9fc3f5", 182, 2, 1, 60);
@@ -84,19 +84,19 @@ function paintRoom(g) {
   R("#ffffff", 115, 35, 2, 4); R(INK, 115, 34, 1, 1); R(INK, 119, 35, 2, 4); R(INK, 119, 34, 1, 1);
   R(INK, 125, 31, 10, 10); R("#f2ebd9", 126, 32, 8, 8);
   R(INK, 127, 34, 3, 5); R(INK, 131, 35, 2, 4);
-  // plush pure-red velvet sofa with rounded armrests, seat crease, legs & throw pillows behind In 3
-  R(INK, 139, 112, 32, 1); R(INK, 137, 113, 36, 13); R(INK, 135, 117, 40, 10); // silhouette
-  R("#b8252d", 138, 113, 34, 9); R("#d1363e", 140, 113, 30, 2); // rounded backrest
-  R("#941b22", 136, 117, 4, 9); R("#b8252d", 137, 117, 2, 3); // left rounded armrest
-  R("#941b22", 170, 117, 4, 9); R("#b8252d", 171, 117, 2, 3); // right rounded armrest
-  R("#7a141a", 140, 121, 30, 1); // backrest-to-seat crease
-  R("#c9323b", 140, 122, 30, 3); // seat cushion
-  R("#8a1820", 136, 125, 38, 2); // front skirt
-  R(INK, 137, 127, 36, 1); R(INK, 138, 128, 2, 2); R(INK, 170, 128, 2, 2); // sofa legs
+  // plush pure-red velvet sofa with rounded armrests, seat crease, legs & throw pillows behind In 3 (y=128)
+  R(INK, 139, 102, 32, 1); R(INK, 137, 103, 36, 13); R(INK, 135, 107, 40, 10); // silhouette
+  R("#b8252d", 138, 103, 34, 9); R("#d1363e", 140, 103, 30, 2); // rounded backrest
+  R("#941b22", 136, 107, 4, 9); R("#b8252d", 137, 107, 2, 3); // left rounded armrest
+  R("#941b22", 170, 107, 4, 9); R("#b8252d", 171, 107, 2, 3); // right rounded armrest
+  R("#7a141a", 140, 111, 30, 1); // backrest-to-seat crease
+  R("#c9323b", 140, 112, 30, 3); // seat cushion
+  R("#8a1820", 136, 115, 38, 2); // front skirt
+  R(INK, 137, 117, 36, 1); R(INK, 138, 118, 2, 2); R(INK, 170, 118, 2, 2); // sofa legs
   // soft throw pillows (tucked at corners, not stiff squares)
-  R("#f2e6d5", 141, 117, 4, 4); R("#dfd0bc", 141, 120, 4, 1);
-  R("#ffffff", 162, 117, 4, 4); R("#e2e8f5", 162, 120, 4, 1);
-  R("#e8b85d", 165, 118, 4, 3); R("#c99438", 165, 120, 4, 1);
+  R("#f2e6d5", 141, 107, 4, 4); R("#dfd0bc", 141, 110, 4, 1);
+  R("#ffffff", 162, 107, 4, 4); R("#e2e8f5", 162, 110, 4, 1);
+  R("#e8b85d", 165, 108, 4, 3); R("#c99438", 165, 110, 4, 1);
   // indoor window frame and sill (the sky is painted live, matching the outdoor camp sky)
   R(INK, 150, 9, 30, 27); R("#ffffff", 148, 34, 34, 3); R(INK, 148, 37, 34, 1);
   // striped cafe awning peeking outside the storefront doorway
@@ -111,7 +111,7 @@ function paintRoom(g) {
   R(INK, 184, 62, 104, 2); R("#61a654", 184, 63, 104, 1);
   for (const x of [198, 218, 238, 258, 276]) { R(INK, x, 53, 4, 11); R("#9c6635", x + 1, 54, 2, 9); }
   // welcome mat at the glass storefront door (al fresco side)
-  R(AMBER, 174, 114, 7, 18); R("#e09a1c", 174, 114, 7, 1); R("#e09a1c", 174, 131, 7, 1);
+  R(AMBER, 174, 104, 7, 18); R("#e09a1c", 174, 104, 7, 1); R("#e09a1c", 174, 121, 7, 1);
 }
 
 function paintCounter(g) {
@@ -165,9 +165,9 @@ export function createScene(canvas, tagLayer, opts = {}) {
   const steam = [];
   /** @type {Map<string, any>} visiting cats by their per-visit key */ const visitors = new Map();
   const campCats = [
-    { x: 236, y: 88, tx: 236, ty: 88, flip: true, moving: false, seed: 301, look: { coat: "ginger" }, spot: { x: 236, y: 88, flip: true }, nextAct: 1.5 },
-    { x: 236, y: 124, tx: 236, ty: 124, flip: false, moving: false, seed: 302, look: { coat: "calico" }, spot: { x: 236, y: 124, flip: false }, nextAct: 2.8 },
-    { x: 196, y: 84, tx: 196, ty: 84, flip: false, moving: false, seed: 303, look: { coat: "tabby" }, spot: { x: 196, y: 84, flip: false }, nextAct: 4.1 },
+    { x: 236, y: 78, tx: 236, ty: 78, flip: true, moving: false, seed: 301, look: { coat: "ginger" }, spot: { x: 236, y: 78, flip: true }, nextAct: 1.5 },
+    { x: 236, y: 109, tx: 236, ty: 109, flip: false, moving: false, seed: 302, look: { coat: "calico" }, spot: { x: 236, y: 109, flip: false }, nextAct: 2.8 },
+    { x: 196, y: 76, tx: 196, ty: 76, flip: false, moving: false, seed: 303, look: { coat: "tabby" }, spot: { x: 196, y: 76, flip: false }, nextAct: 4.1 },
   ];
   let visitSlots = new Map();
   let lastVisitors = []; // the feed's visitors as last given to sync(), claimed ones included

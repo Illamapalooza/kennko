@@ -1,7 +1,7 @@
 // The wall's offline copy: keeps the scene's files so the page still opens if the LAN server restarts.
 // Saved copies are shown at once and refreshed in the background, so an update arrives on the next open.
 // Nothing under /api/ is ever kept (orders, the event streams, the PIN), and neither is any non-GET request.
-const CACHE = "kennko-wall-v7";
+const CACHE = "kennko-wall-v8";
 const SHELL = ["/", "/wall.css", "/wall.mjs", "/scene/scene.mjs", "/scene/sprites.mjs", "/scene/cats.mjs", "/scene/logic.mjs", "/brand/icon.png", "/brand/wordmark-white.png", "/brand/wordmark-blue.png"];
 const STATIC = /\.(html|css|mjs|js|png|svg|webmanifest)$/;
 
