@@ -13,6 +13,9 @@ type Pending =
 /** The cash drawer: open it with starting cash, track cash in and out, and count it at closing. */
 export function Till({ live, notify }: { live: Live; notify: (message: string) => void }) {
   const [state, setState] = useState<TillState | null>(null)
+  const [shop, setShop] = useState<{ isOpen: boolean; closingTime: string | null; openNow: boolean } | null>(null)
+  const [closingDraft, setClosingDraft] = useState('23:00')
+  const [shopBusy, setShopBusy] = useState(false)
   const [float, setFloat] = useState('')
   const [error, setError] = useState('')
   const [moveKind, setMoveKind] = useState<'in' | 'out' | null>(null)
@@ -20,8 +23,25 @@ export function Till({ live, notify }: { live: Live; notify: (message: string) =
   const [pending, setPending] = useState<Pending | null>(null)
   const [closed, setClosed] = useState<{ summary: Summary; countedCentavos: number } | null>(null)
 
-  const load = useCallback(() => { api.till().then(setState).catch((err) => notify(err.message)) }, [notify])
+  const load = useCallback(() => {
+    api.till().then(setState).catch((err) => notify(err.message))
+    api.shopStatus().then((s) => { setShop(s); setClosingDraft(s.closingTime ?? '') }).catch(() => {})
+  }, [notify])
   useEffect(load, [load, live.version])
+
+  const updateShop = async (patch: { isOpen?: boolean; closingTime?: string | null }) => {
+    setShopBusy(true)
+    try {
+      const next = await api.setShopStatus(patch)
+      setShop(next)
+      setClosingDraft(next.closingTime ?? '')
+      notify(next.openNow ? 'Kennko is now open.' : 'Kennko is now closed.')
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not update shop status.')
+    } finally {
+      setShopBusy(false)
+    }
+  }
 
   if (!state) return <div className="loading">Loading the till…</div>
 
@@ -39,6 +59,55 @@ export function Till({ live, notify }: { live: Live; notify: (message: string) =
         <h1>Till</h1>
         {shift ? <span className="pill pill-open">Open since {when(shift.openedAt)}</span> : <span className="pill">Closed</span>}
       </header>
+
+      {shop ? (
+        <section className="card">
+          <div className="page-head" style={{ marginBottom: 8 }}>
+            <h2>Shop status &amp; closing time</h2>
+            <span className={`pill${shop.openNow ? ' pill-open' : ''}`}>{shop.openNow ? 'Kennko Open' : 'Kennko Closed'}</span>
+          </div>
+          <p className="muted" style={{ marginBottom: 12 }}>
+            Opens 10:00 AM weekdays · 3:00 PM weekends. Closes automatically at your closing time unless opened manually.
+          </p>
+          <div className="foot-row" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <button
+              type="button"
+              className={`btn ${shop.openNow ? 'btn-danger' : 'btn-primary'}`}
+              disabled={shopBusy}
+              onClick={() => updateShop({ isOpen: !shop.openNow })}
+            >
+              {shop.openNow ? 'Close Kennko' : 'Open Kennko'}
+            </button>
+            <label htmlFor="pos-closing-time" className="muted">Closing time</label>
+            <input
+              id="pos-closing-time"
+              type="time"
+              className="input"
+              style={{ width: 'auto' }}
+              value={closingDraft}
+              onChange={(e) => setClosingDraft(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={shopBusy || !closingDraft}
+              onClick={() => updateShop({ closingTime: closingDraft })}
+            >
+              Save closing time
+            </button>
+            {shop.closingTime ? (
+              <button
+                type="button"
+                className="btn btn-quiet"
+                disabled={shopBusy}
+                onClick={() => updateShop({ closingTime: null })}
+              >
+                No auto-close
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {!shift || !summary ? (
         <section className="card card-narrow">

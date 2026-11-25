@@ -10,6 +10,8 @@ import { readOnlineQueue, readPendingPayments } from '../sync/online-orders.js'
 import { readPullState } from '../sync/pull.js'
 import { pushEvents } from '../sync/push.js'
 import { pushBodySchema } from '../sync/schema.js'
+import { shopStatusPatchSchema } from './shop.js'
+import { updateShopStatus, withOpenNow } from '../shop/status.js'
 
 const onlinePaymentSchema = z.object({
   paymentId: z.string().uuid(),
@@ -69,6 +71,14 @@ export function syncRoutes(deps: AppDeps): Hono<AppEnv> {
     ])
     c.header('Cache-Control', 'no-store')
     return c.json({ ok: true, pendingPayments, onlineOrders })
+  })
+
+  app.patch('/shop', requireDevice(deps), async (c) => {
+    const body = shopStatusPatchSchema.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return invalid(body.error.issues[0]?.message ?? 'Send isOpen or closingTime.')
+    const status = await updateShopStatus(deps.sql, body.data, deps.now())
+    c.header('Cache-Control', 'no-store')
+    return c.json(withOpenNow(status, deps.now().getTime()))
   })
 
   return app

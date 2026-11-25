@@ -46,7 +46,9 @@ export function fromPosFeed(feed, baristas) {
   }
   orders.sort((a, b) => a.id - b.id);
   return {
-    day: feed.day, seq: orders.reduce((max, o) => Math.max(max, o.id), 0), baristas, orders,
+    day: feed.day, seq: orders.reduce((max, o) => Math.max(max, o.id), 0),
+    baristas: Number.isInteger(feed.baristas) ? feed.baristas : baristas,
+    orders,
     visitors: cleanVisitors(feed.visitors), checkin: cleanCheckin(feed.checkin),
     tillNow: Number.isFinite(feed.now) ? feed.now : null,
   };

@@ -15,6 +15,7 @@ import { ordersRoutes } from './routes/orders.js'
 import { paymentRoutes } from './routes/payments.js'
 import { pushRoutes } from './routes/push.js'
 import { reportRoutes } from './routes/reports.js'
+import { shopRoutes } from './routes/shop.js'
 import { staffRoutes } from './routes/staff.js'
 import { syncRoutes } from './routes/sync.js'
 import { wallRoutes } from './routes/wall.js'
@@ -75,6 +76,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route('/v1/payments', paymentRoutes(deps))
   app.route('/v1/push', pushRoutes(deps))
   app.route('/v1/reports', reportRoutes(deps))
+  app.route('/v1/shop', shopRoutes(deps))
   app.route('/v1/staff', staffRoutes(deps))
   app.route('/v1/stamp-cards', stampCardRoutes(deps))
   app.route('/v1/stamps', stampRoutes(deps))

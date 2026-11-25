@@ -109,6 +109,9 @@ export const api = {
   syncMenu: (managerPin?: string) => call<Menu & { notice?: string }>('POST', '/api/menu/sync', { managerPin }),
   pairDevice: (code: string, managerPin: string) => call<{ name: string }>('POST', '/api/device/pair', { code, managerPin }),
   till: () => call<TillState>('GET', '/api/till'),
+  shopStatus: () => call<{ isOpen: boolean; closingTime: string | null; updatedAt: number; openNow: boolean }>('GET', '/api/shop'),
+  setShopStatus: (patch: { isOpen?: boolean; closingTime?: string | null }) =>
+    call<{ isOpen: boolean; closingTime: string | null; updatedAt: number; openNow: boolean }>('POST', '/api/shop', patch),
   openTill: (floatCentavos: number) => call<Shift>('POST', '/api/till/open', { floatCentavos }),
   cashMove: (kind: 'in' | 'out', amountCentavos: number, reason: string, managerPin: string) =>
     call<CashMove>('POST', '/api/till/cash', { kind, amountCentavos, reason, managerPin }),

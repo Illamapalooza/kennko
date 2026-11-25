@@ -32,7 +32,15 @@ describe('GET /v1/wall', () => {
   it('returns baristas=0 when closed, then baristas=2 and safe order/visitor fields when open', async () => {
     const closedRes = await app.request('/v1/wall')
     expect(closedRes.status).toBe(200)
-    expect(await closedRes.json()).toEqual({ now: NOW.getTime(), baristas: 0, orders: [], visitors: [] })
+    expect(await closedRes.json()).toEqual({
+      now: NOW.getTime(),
+      baristas: 0,
+      openNow: true,
+      isOpen: true,
+      closingTime: '23:00',
+      orders: [],
+      visitors: [],
+    })
 
     const staffId = await seedStaff(db.sql, { fullName: 'Olive', role: 'owner' })
     const dev = await seedDevice(db.sql, 'Counter tablet')

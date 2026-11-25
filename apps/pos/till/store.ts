@@ -3,6 +3,7 @@ import type { SqlDb, SqlOpen } from './sql.ts'
 import {
   ADDON_LIMIT_MESSAGE, MAX_MODIFIERS, MAX_PUSH_EVENTS, NOTE_MAX, OrderError, TILL_TO_PREP, canMovePrep, cleanDiscount, isOnlineQueueOrder,
   formatPublicCode, hasDrink, manilaDay, nextPrepStatus, nextStatus, normalisePublicCode, prevStatus, priceLines, summarise, totals,
+  DEFAULT_SHOP_STATUS, parseClosingTime, type ShopStatus,
   type CashMove, type CatLook, type CounterOrderPayload, type Discount, type LineInput, type Menu, type OnlineQueueOrder, type Order, type OrderStatus,
   type OrderType, type PaymentMethod, type PendingPaymentOrder, type PrepStatus, type PricedLine, type Shift, type Summary, type SyncEvent, type SyncEventKind,
   type TillCustomer, type WallVisitor, MAX_VISITORS, cleanVisitorKey, findVisitor, isWallVisitor, parseLook,
@@ -901,6 +902,31 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       const secret = kvGet('checkin_secret')
       const url = kvGet('checkin_url')
       return secret !== null && url !== null ? { secret, url } : null
+    },
+
+    shopStatus(): ShopStatus {
+      const raw = kvGet('shop_status')
+      if (!raw) return DEFAULT_SHOP_STATUS
+      try {
+        const parsed = JSON.parse(raw) as Partial<ShopStatus>
+        return {
+          isOpen: typeof parsed.isOpen === 'boolean' ? parsed.isOpen : true,
+          closingTime: parsed.closingTime === null ? null : parseClosingTime(parsed.closingTime) ?? DEFAULT_SHOP_STATUS.closingTime,
+          updatedAt: typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0,
+        }
+      } catch {
+        return DEFAULT_SHOP_STATUS
+      }
+    },
+
+    setShopStatus(status: ShopStatus): ShopStatus {
+      const next: ShopStatus = {
+        isOpen: Boolean(status.isOpen),
+        closingTime: status.closingTime === null ? null : parseClosingTime(status.closingTime) ?? DEFAULT_SHOP_STATUS.closingTime,
+        updatedAt: status.updatedAt,
+      }
+      kvSet('shop_status', JSON.stringify(next))
+      return next
     },
 
     /** Forgets the secret, the URL and the visiting cats (the till was revoked or forgotten). */

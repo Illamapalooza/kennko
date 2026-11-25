@@ -2,12 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { CatToon } from '@kennko/cats'
+import { nextOpeningText } from '@kennko/core'
 import { createScene } from '@/lib/cafe/scene/scene.mjs'
 import { boardView, deliveryView, itemsLabel, type WallBoardOrder } from '@/lib/cafe/scene/logic.mjs'
 
 type WallPayload = {
   now: number
   baristas: number
+  openNow?: boolean
+  isOpen?: boolean
+  closingTime?: string | null
   orders: WallBoardOrder[]
   visitors: Array<{ key: string; name: string; look: { coat: string }; endsAt: number }>
   offline?: boolean
@@ -74,7 +78,7 @@ export function LiveCafeWall({ initial }: { initial: WallPayload }) {
     sceneRef.current?.sync(snap.orders, snap.baristas, false, snap.visitors)
   }, [snap])
 
-  const closed = snap.baristas === 0
+  const closed = snap.openNow === false || snap.baristas === 0
   const view = boardView(snap.orders, BOARD_CAP)
   const deliveries = deliveryView(snap.orders)
 
@@ -82,42 +86,52 @@ export function LiveCafeWall({ initial }: { initial: WallPayload }) {
     <div className="cafe-shell">
       <div className="cafe-status-bar">
         <span className={`cafe-pill${closed ? ' is-closed' : ''}`}>
-          {snap.offline ? 'Live feed unavailable' : closed ? 'Shop closed · Cat nap' : 'Live from Kennko Butuan'}
+          {snap.offline ? 'Live feed unavailable' : closed ? 'Kennko is closed' : 'Live from Kennko Butuan'}
         </span>
-        <span className="cafe-meta">Updates every {POLL_MS / 1000} seconds · {snap.visitors.length} visiting cat{snap.visitors.length === 1 ? '' : 's'}</span>
+        <span className="cafe-meta">
+          {closed
+            ? nextOpeningText(snap.now || Date.now())
+            : `Updates every ${POLL_MS / 1000} seconds · ${snap.visitors.length} visiting cat${snap.visitors.length === 1 ? '' : 's'}`}
+        </span>
       </div>
 
-      {deliveries.length > 0 ? (
-        <section className="cafe-deliveries" aria-label="Online deliveries">
-          <h2>Online deliveries</h2>
-          <ul>
-            {deliveries.slice(0, 6).map((o) => (
-              <li key={o.id}>
-                <strong>{shownNumber(o)}</strong>
-                <em>{DELIVERY_STAGE[o.prepStatus ?? ''] ?? 'Preparing'}</em>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <div className="cafe-grid">
-        <section className="cafe-stage">
-          <div className="cafe-frame">
-            <canvas ref={canvasRef} width={288} height={152} role="img" aria-label="Live Kennko cat cafe" />
+      {closed ? (
+        <section className="cafe-closed-hero" aria-live="polite">
+          <div className="cafe-frame cafe-frame-closed">
+            <canvas ref={canvasRef} width={288} height={152} role="img" aria-label="Kennko cat cafe closed for the night" />
             <div ref={tagsRef} className="cafe-tags" aria-hidden="true" />
+            <div className="cafe-closed-overlay">
+              <CatToon coat="calico" pose="nap" className="cafe-closed-cat" />
+              <h1>Kennko is closed. See you tomorrow!</h1>
+              <p>{nextOpeningText(snap.now || Date.now())}</p>
+            </div>
           </div>
         </section>
+      ) : (
+        <>
+          {deliveries.length > 0 ? (
+            <section className="cafe-deliveries" aria-label="Online deliveries">
+              <h2>Online deliveries</h2>
+              <ul>
+                {deliveries.slice(0, 6).map((o) => (
+                  <li key={o.id}>
+                    <strong>{shownNumber(o)}</strong>
+                    <em>{DELIVERY_STAGE[o.prepStatus ?? ''] ?? 'Preparing'}</em>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
-        <aside className={`cafe-board${closed ? ' is-closed' : ''}`} aria-live="polite">
-          {closed ? (
-            <div className="cafe-closed">
-              <CatToon coat="calico" pose="nap" className="cafe-closed-cat" />
-              <h2>Cat nap</h2>
-              <p>Our baristas are resting. Check back during shop hours!</p>
-            </div>
-          ) : (
-            <>
+          <div className="cafe-grid">
+            <section className="cafe-stage">
+              <div className="cafe-frame">
+                <canvas ref={canvasRef} width={288} height={152} role="img" aria-label="Live Kennko cat cafe" />
+                <div ref={tagsRef} className="cafe-tags" aria-hidden="true" />
+              </div>
+            </section>
+
+            <aside className="cafe-board" aria-live="polite">
               <section className="cafe-col">
                 <h2>Now preparing</h2>
                 <ol className="cafe-rows">
@@ -154,10 +168,10 @@ export function LiveCafeWall({ initial }: { initial: WallPayload }) {
                   {view.queued.more > 0 ? <span>+{view.queued.more}</span> : null}
                 </p>
               </section>
-            </>
-          )}
-        </aside>
-      </div>
+            </aside>
+          </div>
+        </>
+      )}
     </div>
   )
 }

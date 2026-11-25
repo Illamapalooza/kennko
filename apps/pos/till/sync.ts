@@ -286,6 +286,9 @@ export function createSync(opts: {
       // No key = an API from before Plan 8: keep the secret and the visiting cats the till has (Ruling 9).
       if (state.checkin !== undefined) store.setCheckin(state.checkin === null ? null : { secret: state.checkin.secret, url: state.checkin.url })
       if (state.visitors !== undefined) store.replaceVisitors(state.visitors)
+      if (state.shopStatus !== undefined && state.shopStatus.updatedAt >= store.shopStatus().updatedAt) {
+        store.setShopStatus(state.shopStatus)
+      }
     }
 
     if (failure) {

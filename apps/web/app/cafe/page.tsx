@@ -9,13 +9,13 @@ export const dynamic = 'force-dynamic'
 
 async function loadInitialWall() {
   const base = apiBase()
-  if (!base) return { now: Date.now(), baristas: 0, orders: [], visitors: [], offline: true }
+  if (!base) return { now: Date.now(), baristas: 0, openNow: false, isOpen: false, closingTime: '23:00', orders: [], visitors: [], offline: true }
   try {
     const res = await fetch(`${base}/v1/wall`, { cache: 'no-store', signal: AbortSignal.timeout(5000) })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return await res.json()
   } catch {
-    return { now: Date.now(), baristas: 0, orders: [], visitors: [], offline: true }
+    return { now: Date.now(), baristas: 0, openNow: false, isOpen: false, closingTime: '23:00', orders: [], visitors: [], offline: true }
   }
 }
 

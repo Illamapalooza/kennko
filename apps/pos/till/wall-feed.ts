@@ -1,4 +1,4 @@
-import { findVisitor, manilaDay, sameLook, type CatLook, type Menu, type OnlineQueueOrder, type Order, type OrderStatus, type PrepStatus } from '@kennko/core'
+import { DEFAULT_SHOP_STATUS, findVisitor, isShopOpenNow, manilaDay, sameLook, type CatLook, type Menu, type OnlineQueueOrder, type Order, type OrderStatus, type PrepStatus } from '@kennko/core'
 import { storedSkew, type WallCheckin } from './checkin.ts'
 import type { Store } from './store.ts'
 
@@ -120,8 +120,10 @@ export function wallSnapshot(store: Store, menu: Menu, now: number, checkin: Wal
     look: wallLook(v.look),
     endsAt: Date.parse(v.endsAt) - skew,
   }))
+  const openNow = isShopOpenNow(store.shopStatus?.() ?? DEFAULT_SHOP_STATUS, now)
   return {
     now, day: manilaDay(now),
+    baristas: openNow ? 2 : 0,
     menu: wallMenu(menu),
     orders: [
       ...wallOrders([...store.activeOrders(), ...store.recentlyFinished(since)], (code) => {

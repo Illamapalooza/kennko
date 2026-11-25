@@ -1,4 +1,4 @@
-import { OrderError, manilaDay, type Menu, type PrepStatus } from '@kennko/core'
+import { OrderError, isShopOpenNow, manilaDay, parseClosingTime, type Menu, type PrepStatus } from '@kennko/core'
 import { currentCheckin, msToNextMinute, storedSkew } from './checkin.ts'
 import { checkPinFresh, createPinRefresh, forgetConnection, loadDevice, pairWithApi, saveDevice } from './device.ts'
 import type { TillHost, TillRequest, TillResponse } from './host.ts'
@@ -252,6 +252,10 @@ export function createTill(host: TillHost) {
         return { status: 200, body: store.ordersForDay(isDay(day) ? day : manilaDay(t)) }
       }
       if (route === '/api/visitors') return { status: 200, body: store.visitorsAt(t) }
+      if (route === '/api/shop') {
+        const s = store.shopStatus()
+        return { status: 200, body: { ...s, openNow: isShopOpenNow(s, t) } }
+      }
       if (route === '/api/till') {
         const shift = store.openShift()
         return {
@@ -401,7 +405,41 @@ export function createTill(host: TillHost) {
       return { status: 200, body: { ok: true } }
     }
 
-    if (route === '/api/till/open') return done(store.startShift(body.floatCentavos, t, by))
+    if (route === '/api/shop') {
+      const cur = store.shopStatus()
+      const next = store.setShopStatus({
+        isOpen: typeof body.isOpen === 'boolean' ? body.isOpen : cur.isOpen,
+        closingTime: body.closingTime === undefined ? cur.closingTime : body.closingTime === null ? null : parseClosingTime(body.closingTime),
+        updatedAt: t,
+      })
+      const device = loadDevice(files)
+      if (device && device.revokedAt === null && config.apiUrl) {
+        fetchFn(`${config.apiUrl.replace(/\/+$/, '')}/v1/sync/shop`, {
+          method: 'PATCH',
+          headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ isOpen: next.isOpen, closingTime: next.closingTime }),
+        }).catch(() => {})
+      }
+      broadcast()
+      return { status: 200, body: { ...next, openNow: isShopOpenNow(next, t) } }
+    }
+
+    if (route === '/api/till/open') {
+      const opened = store.startShift(body.floatCentavos, t, by)
+      const cur = store.shopStatus()
+      if (!isShopOpenNow(cur, t)) {
+        const next = store.setShopStatus({ ...cur, isOpen: true, updatedAt: t })
+        const device = loadDevice(files)
+        if (device && device.revokedAt === null && config.apiUrl) {
+          fetchFn(`${config.apiUrl.replace(/\/+$/, '')}/v1/sync/shop`, {
+            method: 'PATCH',
+            headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ isOpen: true }),
+          }).catch(() => {})
+        }
+      }
+      return done(opened)
+    }
     if (route === '/api/till/cash') {
       const credited = body.kind === 'out' ? (await checkPin(req.client, body.managerPin, 'manager')).staffId : by
       return done(store.cashMove(body.kind, body.amountCentavos, body.reason, t, credited))
@@ -409,6 +447,16 @@ export function createTill(host: TillHost) {
     if (route === '/api/till/close') {
       const manager = await checkPin(req.client, body.managerPin, 'manager')
       const closed = store.endShift(body.countedCentavos, body.note, t, manager.staffId)
+      const cur = store.shopStatus()
+      const next = store.setShopStatus({ ...cur, isOpen: false, updatedAt: t })
+      const device = loadDevice(files)
+      if (device && device.revokedAt === null && config.apiUrl) {
+        fetchFn(`${config.apiUrl.replace(/\/+$/, '')}/v1/sync/shop`, {
+          method: 'PATCH',
+          headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ isOpen: false }),
+        }).catch(() => {})
+      }
       runBackup()
       return done(closed)
     }

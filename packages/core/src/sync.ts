@@ -6,6 +6,7 @@ import type { MenuSnapshot } from './snapshot.ts'
 import type { WallVisitor } from './cats.ts'
 import { formatPublicCode, normalisePublicCode, type StampMode } from './loyalty.ts'
 import type { CatLook } from './cats.ts'
+import type { ShopStatus } from './shop-hours.ts'
 
 export const MAX_PUSH_EVENTS = 50
 export const IMPORT_CHUNK_MAX = 100
@@ -157,6 +158,8 @@ export type PullState = {
   checkin?: { secret: string; url: string } | null
   /** Cats visiting now (no real names or ids). Absent = an API from before the cats plan: keep the cache. */
   visitors?: WallVisitor[]
+  /** Open/close flag and closing time (Manila). Absent = older API. */
+  shopStatus?: ShopStatus
 }
 
 export type ImportShift = {

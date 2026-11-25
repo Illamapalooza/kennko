@@ -5,6 +5,7 @@ import { tillCustomer } from '../loyalty/customers.js'
 import { checkinSecret, readVisitors } from '../loyalty/visits.js'
 import { readMenuVersion } from '../menu/read.js'
 import { readPinRoster } from '../staff/pin-roster.js'
+import { readShopStatus } from '../shop/status.js'
 import { readOnlineQueue, readPendingPayments } from './online-orders.js'
 
 /** At most this many recent customers per pull. */
@@ -90,5 +91,6 @@ export async function readPullState(
     shop: { name: shop?.display_name ?? 'Kennko Coffee', address: shop?.address ?? '', phone: shop?.phone ?? null },
     checkin: { secret: await checkinSecret(sql, now), url: CHECKIN_URL },
     visitors: await readVisitors(sql, now),
+    shopStatus: await readShopStatus(sql),
   }
 }

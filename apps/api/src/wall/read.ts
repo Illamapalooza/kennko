@@ -1,6 +1,7 @@
-import { parseLook, type CatLook, type PrepStatus, type WallVisitor } from '@kennko/core'
+import { isShopOpenNow, parseLook, type CatLook, type PrepStatus, type WallVisitor } from '@kennko/core'
 import type postgres from 'postgres'
 import { readVisitors } from '../loyalty/visits.js'
+import { readShopStatus } from '../shop/status.js'
 
 const WALL_LINGER_MS = 2 * 60 * 60 * 1000
 
@@ -22,6 +23,9 @@ export type PublicWallOrder = {
 export type PublicWallSnapshot = {
   now: number
   baristas: number
+  openNow: boolean
+  isOpen: boolean
+  closingTime: string | null
   orders: PublicWallOrder[]
   visitors: WallVisitor[]
 }
@@ -53,7 +57,9 @@ type OrderRow = {
 export async function readPublicWall(sql: postgres.Sql, now: Date): Promise<PublicWallSnapshot> {
   const since = new Date(now.getTime() - WALL_LINGER_MS)
   const [openShift] = await sql<{ id: string }[]>`select id from shifts where closed_at is null limit 1`
-  const baristas = openShift ? 2 : 0
+  const shopStatus = await readShopStatus(sql)
+  const openNow = isShopOpenNow(shopStatus, now.getTime())
+  const baristas = openNow && openShift ? 2 : 0
 
   const rows = await sql<OrderRow[]>`
     select o.id, o.channel, o.ticket_number, o.fulfilment, o.prep_status, o.created_at, o.updated_at,
@@ -113,5 +119,13 @@ export async function readPublicWall(sql: postgres.Sql, now: Date): Promise<Publ
   }
 
   const visitors = await readVisitors(sql, now)
-  return { now: now.getTime(), baristas, orders, visitors }
+  return {
+    now: now.getTime(),
+    baristas,
+    openNow,
+    isOpen: shopStatus.isOpen,
+    closingTime: shopStatus.closingTime,
+    orders,
+    visitors,
+  }
 }
