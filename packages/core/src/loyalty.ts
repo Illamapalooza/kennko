@@ -3,6 +3,10 @@ export const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'
 export const STAMPS_PER_CARD = 8
 /** One point per ₱10 spent. */
 export const CENTAVOS_PER_POINT = 1000
+/** Daily bonus points: walking your cat in via wall QR, scanning your card at counter, and F2F-verified story/post. */
+export const POINTS_PER_CHECKIN = 15
+export const POINTS_PER_CARD_SCAN = 10
+export const POINTS_PER_SOCIAL_SHARE = 25
 /** How long a customer linked through a till stays in that till's pull. */
 export const LINKED_RECENT_MS = 1_800_000
 export const LOOKUPS_PER_MINUTE = 30

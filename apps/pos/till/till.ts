@@ -2,7 +2,7 @@ import { OrderError, isShopOpenNow, manilaDay, parseClosingTime, type Menu, type
 import { currentCheckin, msToNextMinute, storedSkew } from './checkin.ts'
 import { checkPinFresh, createPinRefresh, forgetConnection, loadDevice, pairWithApi, saveDevice } from './device.ts'
 import type { TillHost, TillRequest, TillResponse } from './host.ts'
-import { chargeWithFreeDrink, lookupCustomer } from './kennko-api.ts'
+import { awardCustomerBonus, chargeWithFreeDrink, lookupCustomer } from './kennko-api.ts'
 import { fetchApiMenu, loadSnapshot, saveSnapshot, splitSoldOut, tillDiscounts, tillMenu } from './menu.ts'
 import { createPinDirectory } from './pins.ts'
 import { reportCsv } from './report.ts'
@@ -379,6 +379,15 @@ export function createTill(host: TillHost) {
       removeOnDuty(body.staffId)
       broadcast()
       return { status: 200, body: { onDuty: store.onDutyBaristas() } }
+    }
+
+    const bonusRoute = /^\/api\/customers\/([^/]{1,120})\/bonus$/.exec(route)
+    if (bonusRoute) {
+      let code = ''
+      try { code = decodeURIComponent(bonusRoute[1]!) } catch { /* refused below */ }
+      if (body.kind !== 'social_share') throw new OrderError('Unknown bonus type.')
+      const out = await awardCustomerBonus(files, config.apiUrl, code, 'social_share', by, fetchFn)
+      return { status: 200, body: out }
     }
 
     if (route === '/api/orders') {

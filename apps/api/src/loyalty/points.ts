@@ -1,6 +1,8 @@
-import { orderPoints } from '@kennko/core'
+import { manilaDay, orderPoints } from '@kennko/core'
 import type postgres from 'postgres'
 import { lockCustomer } from './customers.js'
+
+export type BonusReason = 'checkin' | 'card_scan' | 'social_share'
 
 type Tx = postgres.TransactionSql
 
@@ -69,6 +71,25 @@ export async function adjustPoints(tx: Tx, a: Adjustment): Promise<void> {
   await tx`
     insert into points_ledger (customer_id, delta, reason, note, created_by_staff, created_at)
     values (${a.customerId}, ${a.delta}, 'adjustment', ${a.note}, ${a.staffId}, ${a.now})`
+}
+
+/**
+ * Credits a daily bonus (walk-in cat check-in, counter card scan, or F2F-verified social story/post) at most once
+ * per Manila day per customer and bonus reason. Safe to call repeatedly.
+ */
+export async function creditDailyBonus(
+  tx: Tx,
+  o: { customerId: string; reason: BonusReason; delta: number; note: string; staffId?: string | null; now: Date },
+): Promise<{ awarded: number; alreadyAwarded: boolean }> {
+  if (o.delta <= 0) return { awarded: 0, alreadyAwarded: false }
+  await mustLock(tx, o.customerId)
+  const day = manilaDay(o.now.getTime())
+  const written = await tx`
+    insert into points_ledger (customer_id, delta, reason, note, created_by_staff, bonus_day, created_at)
+    values (${o.customerId}, ${o.delta}, ${o.reason}, ${o.note}, ${o.staffId ?? null}, ${day}, ${o.now})
+    on conflict (customer_id, reason, bonus_day) where bonus_day is not null do nothing
+    returning id`
+  return written.length > 0 ? { awarded: o.delta, alreadyAwarded: false } : { awarded: 0, alreadyAwarded: true }
 }
 
 export async function balance(tx: Tx, customerId: string): Promise<number> {

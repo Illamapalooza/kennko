@@ -748,7 +748,7 @@ describe('every route as kennko_api', () => {
     await asSuper(() => db.sql`delete from cats where customer_id = ${scanner}`)
     const code = await wallCode(row!.checkin_secret, wallMinute(NOW.getTime()))
     const end = new Date(NOW.getTime() + 90 * 60_000).toISOString()
-    expect(await ok('POST', '/v1/checkin', jwt, { code })).toEqual({ endsAt: end, onWall: true })
+    expect(await ok('POST', '/v1/checkin', jwt, { code })).toEqual({ endsAt: end, onWall: true, pointsAwarded: 15 })
     const [visit] = await asSuper(() => db.sql<{ visit_key: string }[]>`select visit_key from visits where customer_id = ${scanner}`)
     const state = await ok('GET', '/v1/sync/pull', deviceToken)
     expect((state.visitors as { key: string; endsAt: string }[]).find((v) => v.key === visit!.visit_key)?.endsAt).toBe(end)

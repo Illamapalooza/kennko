@@ -14,7 +14,7 @@ export function hereNextPath(code: string): string {
 
 export type CheckinReason = 'BAD_WALL_CODE' | 'RATE_LIMITED' | 'NOT_JOINED' | 'NO_CODE' | 'SIGNED_OUT' | 'FAILED'
 export type CheckinResult =
-  | { status: 'ok'; onWall: boolean; endsAt: string }
+  | { status: 'ok'; onWall: boolean; endsAt: string; pointsAwarded?: number }
   | { status: 'error'; reason: CheckinReason }
 
 export type CheckinMessage = {
@@ -29,7 +29,8 @@ const timeFormat = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', h
 /** What the customer reads after tapping "Walk my cat in". `hidden`: Kennko has paused this cat, so "Show me on the wall" would not help. */
 export function checkinMessage(result: CheckinResult, catName: string, code?: string, hidden = false): CheckinMessage {
   if (result.status === 'ok') {
-    const until = `Your visit lasts until ${timeFormat.format(new Date(result.endsAt))}.`
+    const pts = result.pointsAwarded && result.pointsAwarded > 0 ? ` +${result.pointsAwarded} pts earned!` : ''
+    const until = `Your visit lasts until ${timeFormat.format(new Date(result.endsAt))}.${pts}`
     if (result.onWall) return { tone: 'good', title: `${catName} is walking in. Look at the wall!`, detail: until }
     if (hidden) return { tone: 'good', title: 'Checked in. Kennko has paused your cat on the wall for now.', detail: until }
     return {

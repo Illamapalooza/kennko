@@ -141,7 +141,7 @@ describe('POST /v1/checkin and the visitors in the pull', () => {
       now = T
       const p = await person()
       const first = await checkin(p.jwt, await codeFor(T))
-      expect(first.body).toEqual({ endsAt: at(90 * MIN).toISOString(), onWall: true })
+      expect(first.body).toEqual({ endsAt: at(90 * MIN).toISOString(), onWall: true, pointsAwarded: 15 })
       const v1 = (await visitOf(p.id))!
       expect(v1.started_at).toEqual(T)
       expect(v1.ends_at).toEqual(at(90 * MIN))
@@ -149,7 +149,7 @@ describe('POST /v1/checkin and the visitors in the pull', () => {
 
       now = at(30 * MIN)
       const second = await checkin(p.jwt, await codeFor(now))
-      expect(second.body).toEqual({ endsAt: at(120 * MIN).toISOString(), onWall: true })
+      expect(second.body).toEqual({ endsAt: at(120 * MIN).toISOString(), onWall: true, pointsAwarded: 0 })
       const v2 = (await visitOf(p.id))!
       expect(v2.ends_at).toEqual(at(120 * MIN))
       expect(v2.visit_key).toBe(v1.visit_key)

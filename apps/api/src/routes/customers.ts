@@ -1,4 +1,4 @@
-import { LOOKUPS_PER_MINUTE, normalisePublicCode, type TillCustomer } from '@kennko/core'
+import { LOOKUPS_PER_MINUTE, normalisePublicCode, POINTS_PER_CARD_SCAN, POINTS_PER_SOCIAL_SHARE, type TillCustomer } from '@kennko/core'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 import { requireDevice, requireStaff, type AppEnv } from '../auth.js'
@@ -16,6 +16,7 @@ import {
 } from '../loyalty/admin.js'
 import { claimFreeDrink, sweepStrandedClaims, sweepStrandedClaimsQuietly, unclaim } from '../loyalty/cards.js'
 import { customerByCode, lockCustomer, tillCustomer } from '../loyalty/customers.js'
+import { balance, creditDailyBonus } from '../loyalty/points.js'
 import { hit } from '../rate-limit.js'
 
 /** Longer than any way of writing a code (`KC-XXX-XXX-XXX` with spaces), short enough to refuse junk early. */
@@ -70,14 +71,51 @@ export function customerRoutes(deps: AppDeps): Hono<AppEnv> {
     const bare = normalisePublicCode(c.req.param('code'))
     if (bare === null) throw badCode()
     const [known] = await deps.sql<{ id: string }[]>`select id from customers where public_code = ${bare}`
-    if (known) await sweepStrandedClaimsQuietly(deps.sql, deps.now(), 'lookup', [known.id])
+    const now = deps.now()
+    if (known) await sweepStrandedClaimsQuietly(deps.sql, now, 'lookup', [known.id])
     const found = await deps.sql.begin(async (tx) => {
       const customer = await customerByCode(tx, bare)
-      return customer ? await tillCustomer(tx, customer.id) : null
+      if (!customer) return null
+      await creditDailyBonus(tx, {
+        customerId: customer.id,
+        reason: 'card_scan',
+        delta: POINTS_PER_CARD_SCAN,
+        note: 'Scanned Kennko card at counter',
+        now,
+      })
+      return await tillCustomer(tx, customer.id)
     })
     if (!found) throw unknownCustomer()
     c.header('Cache-Control', 'no-store')
     return c.json(found as TillCustomer)
+  })
+
+  app.post('/by-code/:code/bonus', requireDevice(deps), async (c) => {
+    const bare = normalisePublicCode(c.req.param('code'))
+    if (bare === null) throw badCode()
+    const raw = (await body(c)) as { kind?: unknown; staffId?: unknown } | null
+    if (!raw || raw.kind !== 'social_share') {
+      return invalid('Send kind: "social_share".')
+    }
+    const staffId = typeof raw.staffId === 'string' && UUID.test(raw.staffId) ? raw.staffId : null
+    const now = deps.now()
+    const out = await deps.sql.begin(async (tx) => {
+      const customer = await customerByCode(tx, bare)
+      if (!customer) return null
+      const res = await creditDailyBonus(tx, {
+        customerId: customer.id,
+        reason: 'social_share',
+        delta: POINTS_PER_SOCIAL_SHARE,
+        note: 'Shared a Kennko story/post (verified at counter)',
+        staffId,
+        now,
+      })
+      const total = await balance(tx, customer.id)
+      return { ...res, balance: total }
+    })
+    if (!out) throw unknownCustomer()
+    c.header('Cache-Control', 'no-store')
+    return c.json(out)
   })
 
   // Admin (Ruling 17): lookup, detail and card mode for owners and managers; point adjustments for the owner.

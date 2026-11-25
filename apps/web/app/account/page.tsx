@@ -87,6 +87,12 @@ export default async function AccountPage({
         <div className="qr" role="img" aria-label={`QR code for ${card.publicCode}`} dangerouslySetInnerHTML={{ __html: svg }} />
         <p className="kcode" aria-label="Your code">{card.publicCode}</p>
         <p className="account-guest">Show this at the counter, or read the code out.</p>
+        <ul className="account-guest" style={{ textAlign: 'left', margin: '10px 0 0', paddingLeft: 18, lineHeight: 1.5 }}>
+          <li><strong>+1 pt</strong> per ₱10 spent on orders</li>
+          <li><strong>+15 pts</strong> walk your cat in via the wall QR (daily)</li>
+          <li><strong>+10 pts</strong> scan your Kennko card at the counter (daily)</li>
+          <li><strong>+25 pts</strong> share a Kennko story/post &amp; show your barista (daily)</li>
+        </ul>
       </div>
 
       <div className="area-stamps">

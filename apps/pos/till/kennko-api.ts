@@ -90,6 +90,40 @@ export async function lookupCustomer(store: Store, files: TillFiles, apiUrl: str
   return { customer: null, code, note: OFFLINE_NOTE }
 }
 
+/** `POST /api/customers/:code/bonus`: awards a F2F-confirmed daily bonus (e.g. Kennko story/post share). */
+export async function awardCustomerBonus(
+  files: TillFiles,
+  apiUrl: string,
+  input: string,
+  kind: 'social_share',
+  staffId: string | null,
+  fetchFn: typeof fetch = fetch,
+): Promise<{ awarded: number; alreadyAwarded: boolean; balance: number }> {
+  const bare = normalisePublicCode(input)
+  if (!bare) throw new OrderError(TYPO_MESSAGE)
+  const a = await deviceCall(
+    files,
+    apiUrl,
+    `/v1/customers/by-code/${bare}/bonus`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind, staffId }),
+    },
+    LOOKUP_WAIT_MS,
+    fetchFn,
+  )
+  if (a.kind === 'ok' && typeof a.body?.awarded === 'number') {
+    return {
+      awarded: a.body.awarded,
+      alreadyAwarded: Boolean(a.body.alreadyAwarded),
+      balance: typeof a.body.balance === 'number' ? a.body.balance : 0,
+    }
+  }
+  if (a.kind === 'refused') throw new OrderError(a.message ?? 'Could not award bonus points.')
+  throw new OrderError('Bonus points need the internet. Try again when online.')
+}
+
 /** The till's words for a refused claim. */
 function claimRefusal(a: Extract<DeviceAnswer, { kind: 'refused' }>): string {
   if (a.code === 'NO_FREE_DRINK') return 'No free drink waiting on this card.'

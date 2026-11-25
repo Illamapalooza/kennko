@@ -95,6 +95,8 @@ export const api = {
   undo: (id: number) => call<Order>('POST', `/api/orders/${id}/undo`, {}),
   /** A Kennko card by code. `customer` is null (with a `note`) when the till could not ask Kennko just now. */
   customer: (code: string, signal?: AbortSignal) => call<{ customer: TillCustomer | null; code: string; note?: string }>('GET', `/api/customers/${encodeURIComponent(code)}`, undefined, signal),
+  awardCustomerBonus: (code: string, kind: 'social_share') =>
+    call<{ awarded: number; alreadyAwarded: boolean; balance: number }>('POST', `/api/customers/${encodeURIComponent(code)}/bonus`, { kind }),
   linkCustomer: (id: number, code: string) => call<Order>('POST', `/api/orders/${id}/customer`, { code }),
   unlinkCustomer: (id: number) => call<Order>('POST', `/api/orders/${id}/customer/remove`, {}),
   /** With `visitorKey` the order is tied to that walking cat; the till takes its look and name from the visit. */

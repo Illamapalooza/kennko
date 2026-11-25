@@ -1,10 +1,11 @@
-import { CHECKINS_PER_MINUTE } from '@kennko/core'
+import { CHECKINS_PER_MINUTE, POINTS_PER_CHECKIN } from '@kennko/core'
 import { Hono } from 'hono'
 import { requireUser, type AppEnv } from '../auth.js'
 import type { AppDeps } from '../create-app.js'
 import { apiError } from '../http.js'
 import { ensureCat, NOT_JOINED } from '../loyalty/cats.js'
 import { lockCustomer } from '../loyalty/customers.js'
+import { creditDailyBonus } from '../loyalty/points.js'
 import { checkinSecret, codeMatches, startOrExtendVisit } from '../loyalty/visits.js'
 import { hit } from '../rate-limit.js'
 
@@ -32,9 +33,20 @@ export function checkinRoutes(deps: AppDeps): Hono<AppEnv> {
       if (!(await lockCustomer(tx, userId))) return null
       await ensureCat(tx, userId, now)
       const endsAt = await startOrExtendVisit(tx, userId, now)
+      const bonus = await creditDailyBonus(tx, {
+        customerId: userId,
+        reason: 'checkin',
+        delta: POINTS_PER_CHECKIN,
+        note: 'Walked cat into Kennko',
+        now,
+      })
       const [cat] = await tx<{ show_on_wall: boolean; hidden_by_admin: boolean }[]>`
         select show_on_wall, hidden_by_admin from cats where customer_id = ${userId}`
-      return { endsAt: endsAt.toISOString(), onWall: cat!.show_on_wall && !cat!.hidden_by_admin }
+      return {
+        endsAt: endsAt.toISOString(),
+        onWall: cat!.show_on_wall && !cat!.hidden_by_admin,
+        pointsAwarded: bonus.awarded,
+      }
     })
     if (!out) throw apiError(NOT_JOINED.status, NOT_JOINED.code, NOT_JOINED.message)
     c.header('cache-control', 'no-store')

@@ -199,6 +199,20 @@ export function Sell({ boot, menu, live, cart, setCart, notify, goTill }: Props)
       {customer ? (
         <div className="customer-chip">
           <span><b>{customer.info ? customerLine(customer.info) : `Card ${maskCode(customer.code)} · ${customerLine(null, customer.note)}`}</b></span>
+          <button
+            type="button"
+            className="pill pill-amber"
+            onClick={async () => {
+              try {
+                const res = await api.awardCustomerBonus(customer.code, 'social_share')
+                notify(res.alreadyAwarded ? 'Story/post bonus already awarded today.' : `+${res.awarded} pts awarded for Kennko story/post!`)
+              } catch (err) {
+                notify(err instanceof Error ? err.message : 'Could not award story bonus.')
+              }
+            }}
+          >
+            +25 pts Story
+          </button>
           <button type="button" className="link" onClick={() => setCustomer(null)}>Remove</button>
         </div>
       ) : (
