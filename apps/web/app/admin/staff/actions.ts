@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import type { CatLook } from '@kennko/core'
 import { requireOwner } from '@/lib/auth/session'
 import { callApi, callApiWithCode } from '@/lib/api/call'
 import type { StaffRole } from '@/lib/auth/types'
@@ -39,7 +40,7 @@ export async function addStaff(formData: FormData): Promise<Result> {
 
 export async function updateStaff(
   id: string,
-  patch: { fullName?: string; role?: StaffRole; isActive?: boolean },
+  patch: { fullName?: string; role?: StaffRole; isActive?: boolean; catLook?: CatLook | null },
 ): Promise<Result> {
   await requireOwner()
   const result = await callApi(`/v1/staff/${encodeURIComponent(id)}`, 'PATCH', patch, STAFF_MESSAGES)

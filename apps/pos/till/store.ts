@@ -85,7 +85,8 @@ const SCHEMA = `
     id text primary key,
     full_name text not null,
     role text not null check (role in ('owner', 'manager', 'barista')),
-    pin_hash text not null
+    pin_hash text not null,
+    cat_look text
   );
   create table if not exists outbox (
     seq integer primary key autoincrement,
@@ -128,6 +129,7 @@ const ADDED_COLUMNS: [table: string, column: string, decl: string][] = [
   ['cash_moves', 'uid', 'text'],
   ['cash_moves', 'staff_id', 'text'],
   ['cash_moves', 'needs_import', 'integer not null default 0'],
+  ['staff_cache', 'cat_look', 'text'],
 ]
 const UNIQUE_INDEXES = `
   create unique index if not exists shifts_uid_key on shifts (uid);
@@ -550,16 +552,67 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
     /** The people the till lets in, as last fetched from the Kennko API (device.ts). Read on every PIN check. */
     staffCache(): CachedStaff[] {
       return db.prepare('select * from staff_cache order by full_name, id').all()
-        .map((r: any) => ({ id: r.id, fullName: r.full_name, role: r.role, pinHash: r.pin_hash }))
+        .map((r: any) => {
+          let catLook: CatLook | null = null
+          if (typeof r.cat_look === 'string') {
+            try { catLook = JSON.parse(r.cat_look) } catch { catLook = null }
+          }
+          return {
+            id: r.id,
+            fullName: r.full_name,
+            role: r.role,
+            pinHash: r.pin_hash,
+            ...(catLook ? { catLook } : {}),
+          }
+        })
     },
 
     /** Swaps the whole cache in one transaction, so a PIN check never sees half of it. */
     replaceStaffCache(rows: CachedStaff[]): void {
       tx(() => {
         db.prepare('delete from staff_cache').run()
-        const add = db.prepare('insert into staff_cache (id, full_name, role, pin_hash) values (?, ?, ?, ?)')
-        for (const r of rows) add.run(r.id, r.fullName, r.role, r.pinHash)
+        const add = db.prepare('insert into staff_cache (id, full_name, role, pin_hash, cat_look) values (?, ?, ?, ?, ?)')
+        for (const r of rows) add.run(r.id, r.fullName, r.role, r.pinHash, r.catLook ? JSON.stringify(r.catLook) : null)
       })
+    },
+
+    /** Baristas currently clocked in on the bar (up to 3), enriched with their latest custom cat look from staff_cache. */
+    onDutyBaristas(): { staffId: string; name: string; role: 'owner' | 'manager' | 'barista'; catLook: CatLook | null }[] {
+      const raw = (db.prepare('select value from kv where key = ?').get('on_duty_baristas') as any)?.value
+      if (typeof raw !== 'string') return []
+      let list: { staffId: string; name: string; role: 'owner' | 'manager' | 'barista'; catLook?: CatLook | null }[] = []
+      try { list = JSON.parse(raw) } catch { return [] }
+      if (!Array.isArray(list)) return []
+      const byId = new Map(
+        (db.prepare('select id, full_name, role, cat_look from staff_cache').all() as any[]).map((r) => {
+          let look: CatLook | null = null
+          if (typeof r.cat_look === 'string') { try { look = JSON.parse(r.cat_look) } catch { look = null } }
+          return [r.id as string, { fullName: r.full_name as string, role: r.role as 'owner' | 'manager' | 'barista', catLook: look }]
+        }),
+      )
+      return list
+        .filter((b) => b && typeof b.staffId === 'string' && typeof b.name === 'string')
+        .slice(0, 3)
+        .map((b) => {
+          const fresh = byId.get(b.staffId)
+          return {
+            staffId: b.staffId,
+            name: fresh?.fullName ?? b.name,
+            role: fresh?.role ?? b.role ?? 'barista',
+            catLook: fresh?.catLook ?? b.catLook ?? null,
+          }
+        })
+    },
+
+    setOnDutyBaristas(list: { staffId: string; name: string; role: 'owner' | 'manager' | 'barista'; catLook?: CatLook | null }[]): void {
+      const clean = list.slice(0, 3).map((b) => ({
+        staffId: b.staffId,
+        name: b.name,
+        role: b.role,
+        catLook: b.catLook ?? null,
+      }))
+      db.prepare('insert into kv (key, value) values (?, ?) on conflict(key) do update set value = excluded.value')
+        .run('on_duty_baristas', JSON.stringify(clean))
     },
 
     soldOut(): string[] {

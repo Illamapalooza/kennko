@@ -11,7 +11,8 @@
     "seed": "tsx --env-file-if-exists=.env.local scripts/seed-menu.ts",
     "create-owner": "tsx --env-file-if-exists=.env.local scripts/create-owner.ts",
     "seed-zones": "tsx --env-file-if-exists=.env.local scripts/seed-zones.ts",
-    "seed:all": "npm run seed-zones && npm run seed",
+    "seed-staff": "tsx --env-file-if-exists=.env.local scripts/seed-staff.ts",
+    "seed:all": "npm run seed-zones && npm run seed && npm run seed-staff",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

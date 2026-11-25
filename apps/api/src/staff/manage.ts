@@ -1,4 +1,5 @@
 import type postgres from 'postgres'
+import { parseLook, type CatLook } from '@kennko/core'
 import { checkStaffPin, hashStaffPin, randomStaffPin } from '@kennko/core/staff-pin'
 import type { StaffRole } from '../auth.js'
 import { apiError } from '../http.js'
@@ -12,6 +13,7 @@ export type StaffView = {
   hasLogin: boolean
   pinSet: boolean
   pinUpdatedAt: string | null
+  catLook: CatLook | null
 }
 
 export type StaffRow = {
@@ -23,6 +25,7 @@ export type StaffRow = {
   user_id: string | null
   pin_hash: string | null
   pin_updated_at: Date | null
+  cat_look?: unknown
 }
 
 /** Never exposes `pin_hash` or `user_id`. */
@@ -36,6 +39,7 @@ export function toStaffView(r: StaffRow): StaffView {
     hasLogin: r.user_id !== null,
     pinSet: r.pin_hash !== null,
     pinUpdatedAt: r.pin_updated_at?.toISOString() ?? null,
+    catLook: r.cat_look ? parseLook(r.cat_look) : null,
   }
 }
 

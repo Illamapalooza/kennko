@@ -45,13 +45,28 @@ export function fromPosFeed(feed, baristas) {
     });
   }
   orders.sort((a, b) => a.id - b.id);
+  const baristaCats = cleanBaristas(feed.baristaCats);
   return {
     day: feed.day, seq: orders.reduce((max, o) => Math.max(max, o.id), 0),
     baristas: Number.isInteger(feed.baristas) ? feed.baristas : baristas,
+    ...(baristaCats.length > 0 ? { baristaCats } : {}),
     orders,
     visitors: cleanVisitors(feed.visitors), checkin: cleanCheckin(feed.checkin),
     tillNow: Number.isFinite(feed.now) ? feed.now : null,
   };
+}
+
+function cleanBaristas(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const b of raw) {
+    if (out.length >= 3) break;
+    if (!b || typeof b.name !== "string") continue;
+    const look = cleanLook(b.look);
+    if (!look) continue;
+    out.push({ name: [...b.name.trim()].slice(0, 16).join(""), look });
+  }
+  return out;
 }
 
 const MAX_VISITORS = 12;

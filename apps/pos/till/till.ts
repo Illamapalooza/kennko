@@ -146,6 +146,71 @@ export function createTill(host: TillHost) {
     throw new PinError(need === 'manager' ? 'Wrong manager PIN.' : 'Wrong PIN.', need === 'manager' ? 403 : 401)
   }
 
+  function pushBaristasToApi(): void {
+    const dev = loadDevice(files)
+    if (!dev || dev.revokedAt !== null || !config.apiUrl) return
+    const base = config.apiUrl.trim().replace(/\/+$/, '')
+    const baristas = store.onDutyBaristas().map((b, i) => ({
+      staffId: b.staffId,
+      name: b.name.trim().split(/\s+/)[0] || b.name,
+      look: b.catLook ?? { coat: (['tuxedo', 'ginger', 'tabby'] as const)[i % 3] },
+    }))
+    fetchFn(`${base}/v1/sync/baristas`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${dev.token}` },
+      body: JSON.stringify({ baristas }),
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => { /* best effort */ })
+  }
+
+  function addOnDuty(who: Who): void {
+    if (!who.staffId || !who.name) return
+    const cur = store.onDutyBaristas()
+    if (cur.some((b) => b.staffId === who.staffId)) return
+    const staffRow = store.staffCache().find((s) => s.id === who.staffId)
+    const next = [
+      ...cur,
+      {
+        staffId: who.staffId,
+        name: staffRow?.fullName ?? who.name,
+        role: staffRow?.role ?? (who.role === 'manager' ? 'manager' : 'barista'),
+        catLook: staffRow?.catLook ?? null,
+      },
+    ].slice(0, 3)
+    store.setOnDutyBaristas(next)
+    pushBaristasToApi()
+  }
+
+  function removeOnDuty(staffId: string): void {
+    const cur = store.onDutyBaristas()
+    const next = cur.filter((b) => b.staffId !== staffId)
+    if (next.length === cur.length) return
+    store.setOnDutyBaristas(next)
+    pushBaristasToApi()
+  }
+
+  async function resolveGatePin(client: string, given: unknown, chosenStaffId?: unknown): Promise<{ kind: 'ok'; who: Who } | { kind: 'choose'; choices: { id: string; name: string; role: string; catLook: any }[] }> {
+    if (pins.mode() === 'per-person' && typeof given === 'string') {
+      const matches = await pins.checkGateMatches(given)
+      if (matches.length > 1) {
+        if (typeof chosenStaffId === 'string') {
+          const picked = matches.find((m) => m.id === chosenStaffId)
+          if (picked) {
+            strikes.delete(client)
+            return { kind: 'ok', who: { staffId: picked.id, name: picked.fullName, role: picked.role === 'barista' ? 'staff' : 'manager' } }
+          }
+        }
+        strikes.delete(client)
+        return {
+          kind: 'choose',
+          choices: matches.map((m) => ({ id: m.id, name: m.fullName, role: m.role, catLook: m.catLook ?? null })),
+        }
+      }
+    }
+    const who = await checkPin(client, given, 'staff')
+    return { kind: 'ok', who }
+  }
+
   async function personalPin(client: string, given: unknown): Promise<Who> {
     if (typeof given !== 'string' || given === '') throw new PinError('Enter your own PIN to mark a drink sold out.', 403)
     try {
@@ -201,10 +266,16 @@ export function createTill(host: TillHost) {
         if (config.firstRun === 'connect' && loadDevice(files) === null) {
           return { status: 409, body: { error: 'Connect this till first.' } }
         }
-        const who = await checkPin(req.client, body.pin, 'staff')
+        const resolved = await resolveGatePin(req.client, body.pin, body.staffId)
+        if (resolved.kind === 'choose') {
+          return { status: 409, body: { needChoice: true, choices: resolved.choices, error: 'Pick your name.' } }
+        }
+        const who = resolved.who
         sessions.end(req.session)
         const token = sessions.start(who)
-        return { status: 200, body: { role: who.role, name: who.name }, session: token }
+        addOnDuty(who)
+        broadcast()
+        return { status: 200, body: { role: who.role, name: who.name, staffId: who.staffId }, session: token }
       }
       return { status: 405, body: { error: 'Method not allowed.' } }
     }
@@ -291,6 +362,23 @@ export function createTill(host: TillHost) {
       broadcast()
       sync.kick()
       return { status: 200, body: payload }
+    }
+
+    if (route === '/api/baristas/join') {
+      const resolved = await resolveGatePin(req.client, body.pin, body.staffId)
+      if (resolved.kind === 'choose') {
+        return { status: 409, body: { needChoice: true, choices: resolved.choices, error: 'Pick your name.' } }
+      }
+      addOnDuty(resolved.who)
+      broadcast()
+      return { status: 200, body: { onDuty: store.onDutyBaristas(), joined: resolved.who.name } }
+    }
+
+    if (route === '/api/baristas/leave') {
+      if (typeof body.staffId !== 'string' || !body.staffId) throw new OrderError('Pick a barista to clock out.')
+      removeOnDuty(body.staffId)
+      broadcast()
+      return { status: 200, body: { onDuty: store.onDutyBaristas() } }
     }
 
     if (route === '/api/orders') {

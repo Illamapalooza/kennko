@@ -149,7 +149,7 @@ function apply(state, visit) {
     if (kind !== "ready") sfx.play(kind);
   }
   prevScene = { orders: state.orders, visitors };
-  scene.sync(state.orders, state.baristas, known === null, visitors);
+  scene.sync(state.orders, state.baristas, known === null, visitors, state.baristaCats ?? []);
   setCheckin(boot.ambient ? null : visit?.checkin ?? null);
   known = new Map(state.orders.map((o) => [o.id, o.status]));
   if (!boot.ambient) renderBoard(state, fresh);

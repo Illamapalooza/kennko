@@ -9,6 +9,7 @@ import { boardView, deliveryView, itemsLabel, type WallBoardOrder } from '@/lib/
 type WallPayload = {
   now: number
   baristas: number
+  baristaCats?: Array<{ name: string; look: { coat: string; hat?: string; face?: string; neck?: string; held?: string } }>
   openNow?: boolean
   isOpen?: boolean
   closingTime?: string | null
@@ -67,7 +68,7 @@ export function LiveCafeWall({ initial }: { initial: WallPayload }) {
     if (!canvas || !tagLayer) return
     const scene = createScene(canvas, tagLayer, { clock: () => Date.now() + clockSkewRef.current })
     sceneRef.current = scene
-    scene.sync(initial.orders, initial.baristas, true, initial.visitors)
+    scene.sync(initial.orders, initial.baristas, true, initial.visitors, initial.baristaCats ?? [])
     return () => {
       scene.destroy()
       sceneRef.current = null
@@ -75,7 +76,7 @@ export function LiveCafeWall({ initial }: { initial: WallPayload }) {
   }, [initial])
 
   useEffect(() => {
-    sceneRef.current?.sync(snap.orders, snap.baristas, false, snap.visitors)
+    sceneRef.current?.sync(snap.orders, snap.baristas, false, snap.visitors, snap.baristaCats ?? [])
   }, [snap])
 
   const closed = snap.openNow === false || snap.baristas === 0

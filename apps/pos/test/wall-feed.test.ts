@@ -111,7 +111,7 @@ describe('loyalty never reaches the wall (Review Focus 3)', () => {
     const store = createStore(':memory:', openNodeSqlite)
     const menu = builtInMenu(0)
     const latte = menu.categories[0]!.items[0]!
-    const T = Date.UTC(2026, 10, 21, 2, 0)
+    const T = Date.UTC(2026, 10, 21, 8, 0)
     store.startShift(0, T, null)
     const code = makePublicCode(() => 5)
     const sold = store.createOrder(menu, {
@@ -131,7 +131,7 @@ describe('loyalty never reaches the wall (Review Focus 3)', () => {
 
 describe('nothing beyond the allowed fields sent to the wall (Plan 8 must-have)', () => {
   const SECRET = 'S3cr3t_'.repeat(6) + 'x'
-  const T = Date.UTC(2026, 10, 21, 2, 0, 30)
+  const T = Date.UTC(2026, 10, 21, 8, 0, 30)
   const SKEW = 90_000
 
   async function scene() {

@@ -1,4 +1,4 @@
-import { isShopOpenNow, parseLook, type CatLook, type PrepStatus, type WallVisitor } from '@kennko/core'
+import { isShopOpenNow, parseLook, type CatLook, type PrepStatus, type WallBarista, type WallVisitor } from '@kennko/core'
 import type postgres from 'postgres'
 import { readVisitors } from '../loyalty/visits.js'
 import { readShopStatus } from '../shop/status.js'
@@ -24,6 +24,7 @@ export type PublicWallOrder = {
 export type PublicWallSnapshot = {
   now: number
   baristas: number
+  baristaCats?: WallBarista[]
   openNow: boolean
   isOpen: boolean
   closingTime: string | null
@@ -59,9 +60,22 @@ export async function readPublicWall(sql: postgres.Sql, now: Date): Promise<Publ
   const since = new Date(now.getTime() - WALL_LINGER_MS)
   const activeSince = new Date(now.getTime() - WALL_ACTIVE_MAX_MS)
   const [openShift] = await sql<{ id: string }[]>`select id from shifts where closed_at is null limit 1`
+  const [settingsRow] = await sql<{ active_baristas: unknown }[]>`select active_baristas from shop_settings where id = 1`
   const shopStatus = await readShopStatus(sql)
   const openNow = isShopOpenNow(shopStatus, now.getTime())
-  const baristas = openNow && openShift ? 2 : 0
+  const baristaCats: WallBarista[] = Array.isArray(settingsRow?.active_baristas)
+    ? (settingsRow.active_baristas as unknown[])
+        .map((item) => {
+          if (!item || typeof item !== 'object') return null
+          const rec = item as Record<string, unknown>
+          const name = typeof rec.name === 'string' ? rec.name.trim().slice(0, 24) : ''
+          const look = parseLook(rec.look)
+          return name && look ? { name, look } : null
+        })
+        .filter((x): x is WallBarista => x !== null)
+        .slice(0, 3)
+    : []
+  const baristas = openNow ? (baristaCats.length > 0 ? baristaCats.length : openShift ? 2 : 0) : 0
 
   if (!openNow) {
     return {
@@ -136,6 +150,7 @@ export async function readPublicWall(sql: postgres.Sql, now: Date): Promise<Publ
   return {
     now: now.getTime(),
     baristas,
+    ...(baristaCats.length > 0 ? { baristaCats } : {}),
     openNow,
     isOpen: shopStatus.isOpen,
     closingTime: shopStatus.closingTime,

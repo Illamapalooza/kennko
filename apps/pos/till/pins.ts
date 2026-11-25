@@ -1,4 +1,5 @@
 import { sameBytes, sha256Hex } from '@kennko/core/portable-crypto'
+import type { CatLook } from '@kennko/core'
 import { checkStaffPin, isStaffPin } from '@kennko/core/staff-pin-check'
 import type { Who } from './sessions.ts'
 
@@ -10,7 +11,7 @@ import type { Who } from './sessions.ts'
 export type PinMode = 'off' | 'shared' | 'per-person'
 
 /** A person the till may let in, as cached from the Kennko API. */
-export type CachedStaff = { id: string; fullName: string; role: 'owner' | 'manager' | 'barista'; pinHash: string }
+export type CachedStaff = { id: string; fullName: string; role: 'owner' | 'manager' | 'barista'; pinHash: string; catLook?: CatLook | null }
 
 const enc = new TextEncoder()
 
@@ -29,11 +30,19 @@ export function createPinDirectory(opts: { staffPin: string; managerPin: string;
   const leads = (s: CachedStaff) => s.role === 'owner' || s.role === 'manager'
   const personWho = (s: CachedStaff): Who => ({ staffId: s.id, name: s.fullName, role: s.role === 'barista' ? 'staff' : 'manager' })
 
-  /** The first cached person whose hash matches. The API never issues one PIN to two active people (Ruling 5). */
+  /** The first cached person whose hash matches. */
   async function findPerson(pin: string, rows: CachedStaff[]): Promise<Who | null> {
     if (!isStaffPin(pin)) return null
     for (const s of rows) if (await checkStaffPin(pin, s.pinHash)) return personWho(s)
     return null
+  }
+
+  /** All cached people whose hash matches (supports shared starter PINs before everyone changes theirs). */
+  async function findPeople(pin: string, rows: CachedStaff[]): Promise<CachedStaff[]> {
+    if (!isStaffPin(pin)) return []
+    const matched: CachedStaff[] = []
+    for (const s of rows) if (await checkStaffPin(pin, s.pinHash)) matched.push(s)
+    return matched
   }
 
   const mode = (staff: CachedStaff[]): PinMode => (opts.perPersonOnly || staff.some(leads) ? 'per-person' : opts.staffPin ? 'shared' : 'off')
@@ -48,6 +57,13 @@ export function createPinDirectory(opts: { staffPin: string; managerPin: string;
       if (same(pin, opts.managerPin)) return sharedWho('manager')
       if (same(pin, opts.staffPin)) return sharedWho('staff')
       return null
+    },
+
+    /** All matching staff for a gate PIN in per-person mode (empty in shared/off mode). */
+    async checkGateMatches(pin: string): Promise<CachedStaff[]> {
+      const staff = opts.staff()
+      if (mode(staff) !== 'per-person') return []
+      return findPeople(pin, staff)
     },
 
     /** The PIN for voids, cash out, closing the till and updating the menu. */

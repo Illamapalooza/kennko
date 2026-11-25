@@ -14,6 +14,7 @@ export function tabletSnapshot(store: Store, o: { version: number; now: number; 
     .filter((order) => order.status === 'done' && order.type === 'dine_in')
   return {
     version: o.version, now: o.now, day: manilaDay(o.now), active: store.activeOrders(), seated, shift: store.openShift(),
+    onDuty: store.onDutyBaristas?.() ?? [],
     // Paid online orders being made or out for delivery (Plan 5), kept apart from the till's own tickets.
     online: store.activeOnlineOrders(),
     pendingPayments: store.pendingPayments(),

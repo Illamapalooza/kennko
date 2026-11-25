@@ -5,7 +5,7 @@ import { createStore, type NewOrder } from '../till/store.ts'
 import { openNodeSqlite } from '../server/node-sqlite.ts'
 import { wallSnapshot } from '../till/wall-feed.ts'
 
-const T = Date.UTC(2026, 10, 22, 2, 0)
+const T = Date.UTC(2026, 10, 22, 8, 0)
 const menu = builtInMenu(0)
 const latte = menu.categories[0]!.items.find((i) => i.name === 'Café Latte')!
 const MOCHI: CatLook = { coat: 'ginger', hat: 'beanie' }

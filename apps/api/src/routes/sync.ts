@@ -1,4 +1,4 @@
-import { IMPORT_CHUNK_MAX, MAX_PUSH_EVENTS } from '@kennko/core'
+import { IMPORT_CHUNK_MAX, MAX_PUSH_EVENTS, parseLook, type WallBarista } from '@kennko/core'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppDeps } from '../create-app.js'
@@ -79,6 +79,23 @@ export function syncRoutes(deps: AppDeps): Hono<AppEnv> {
     const status = await updateShopStatus(deps.sql, body.data, deps.now())
     c.header('Cache-Control', 'no-store')
     return c.json(withOpenNow(status, deps.now().getTime()))
+  })
+
+  app.post('/baristas', requireDevice(deps), async (c) => {
+    const raw = (await c.req.json().catch(() => null)) as { baristas?: unknown } | null
+    if (!raw || !Array.isArray(raw.baristas)) return invalid('Send a baristas array.')
+    const clean: WallBarista[] = []
+    for (const item of raw.baristas.slice(0, 3)) {
+      if (!item || typeof item !== 'object') continue
+      const rec = item as Record<string, unknown>
+      const name = typeof rec.name === 'string' ? rec.name.trim().slice(0, 24) : ''
+      const look = parseLook(rec.look)
+      if (!name || !look) continue
+      clean.push({ ...(typeof rec.staffId === 'string' ? { staffId: rec.staffId } : {}), name, look })
+    }
+    await deps.sql`update shop_settings set active_baristas = ${deps.sql.json(clean as any)} where id = 1`
+    c.header('Cache-Control', 'no-store')
+    return c.json({ ok: true, baristas: clean })
   })
 
   return app

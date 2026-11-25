@@ -14,6 +14,7 @@ import { bannerText, loadAlertMemory, nextOnlineAlerts, saveAlertMemory } from '
 import { playChime } from './chime.ts'
 import { clockWarning, offlineBadge, syncProblem } from './syncText.ts'
 import { UpdateBanner } from './app/UpdateBanner.tsx'
+import { BaristasModal } from './components/BaristasModal.tsx'
 
 export type CartLine = LineInput & { key: string }
 /** A Kennko card on the sale: the code (formatted) and what the lookup said, null when it could not be asked. */
@@ -54,6 +55,7 @@ export function App() {
   const [toast, setToast] = useState('')
   const [newCount, setNewCount] = useState(0)
   const [freshBanner, setFreshBanner] = useState<string[]>([])
+  const [showBaristas, setShowBaristas] = useState(false)
 
   const notify = useCallback((message: string) => setToast(message), [])
   useEffect(() => {
@@ -204,6 +206,17 @@ export function App() {
           </button>
         ))}
         <span className="rail-gap" />
+        {boot.pinMode !== 'off' ? (
+          <button
+            type="button"
+            className="rail-btn"
+            onClick={() => setShowBaristas(true)}
+            title="Manage baristas on bar"
+          >
+            <CupIcon />
+            <span>Bar ({live?.onDuty?.length ?? (who?.name ? 1 : 0)})</span>
+          </button>
+        ) : null}
         {who?.name ? <span className="rail-who">{who.name.trim().split(/\s+/)[0]}</span> : null}
         {boot.pinMode !== 'off' ? (
           <button type="button" className="rail-btn rail-lock" onClick={lock} title={who?.name ? `Signed in as ${who.name}` : undefined}>
@@ -223,6 +236,9 @@ export function App() {
         {live ? <SyncPills live={live} /> : null}
         {screen}
       </main>
+      {showBaristas ? (
+        <BaristasModal onDuty={live?.onDuty ?? []} notify={notify} onClose={() => setShowBaristas(false)} />
+      ) : null}
       {toast ? <div className="toast" role="alert" onClick={() => setToast('')}>{toast}</div> : null}
     </div>
   )

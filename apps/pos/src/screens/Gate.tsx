@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type Bootstrap, type Session } from '../api.ts'
+import { ApiError, api, type Bootstrap, type PinChoice, type Session } from '../api.ts'
 import { InstallNote } from '../components/InstallNote.tsx'
 import { Keypad } from '../components/Keypad.tsx'
 import { gateNote } from '../gateText.ts'
@@ -34,17 +34,25 @@ export function Gate({ onUnlock, secureUrl, pinMode, host, noLeads, onRefresh }:
   const [entry, setEntry] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [choices, setChoices] = useState<PinChoice[] | null>(null)
   // Shared mode keeps taking any length, as before; per-person sends from 4 digits so a 4-digit shared PIN still works.
   const ready = own ? entry.length >= 4 : entry.length > 0
 
-  const submit = async () => {
-    if (!ready || busy) return
+  const submit = async (staffId?: string) => {
+    if ((!staffId && !ready) || busy) return
     setBusy(true)
+    setError('')
     try {
-      onUnlock(await api.startSession(entry))
+      onUnlock(await api.startSession(entry, staffId))
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && Array.isArray(err.data?.choices)) {
+        setChoices(err.data.choices)
+        setBusy(false)
+        return
+      }
       setError(err instanceof Error ? err.message : 'Wrong PIN.')
       setEntry('')
+      setChoices(null)
       setBusy(false)
     }
   }
@@ -55,21 +63,40 @@ export function Gate({ onUnlock, secureUrl, pinMode, host, noLeads, onRefresh }:
       <div className="gate-card">
         <CatToon coat="ginger" pose="peek" className="perch perch-peek perch-left" />
         <CatToon coat="tuxedo" pose="wave" className="perch perch-sit perch-right" />
-        <h1>{own ? 'Enter your own 6-digit PIN' : 'Enter your PIN'}</h1>
-        {note ? (
-          <p className="muted center">
-            {note}{' '}
-            <button type="button" className="btn-link" onClick={onRefresh}>Try again</button>
-          </p>
-        ) : null}
-        <div className="pin-dots" aria-label={`${entry.length} digits entered`}>
-          {Array.from({ length: Math.max(own ? 6 : 4, entry.length) }, (_, i) => <i key={i} className={i < entry.length ? 'on' : ''} />)}
-        </div>
-        <p className="error center" role="alert">{error}</p>
-        <Keypad onKey={(k) => { setError(''); setEntry((p) => (p + k).slice(0, 8)) }} onBackspace={() => setEntry((p) => p.slice(0, -1))} />
-        <button type="button" className="btn btn-primary btn-block" disabled={!ready || busy} onClick={submit}>
-          {busy ? 'Checking…' : 'Open the till'}
-        </button>
+        {choices ? (
+          <>
+            <h1>Who&apos;s logging in?</h1>
+            <p className="muted center">Multiple staff share this starter PIN. Tap your name so your cat appears on the bar.</p>
+            <div className="choice-grid">
+              {choices.map((c) => (
+                <button key={c.id} type="button" className="btn btn-outline btn-block" disabled={busy} onClick={() => submit(c.id)}>
+                  {c.name} <small className="muted">({c.role})</small>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="btn btn-quiet btn-block" disabled={busy} onClick={() => { setChoices(null); setEntry('') }}>
+              Back
+            </button>
+          </>
+        ) : (
+          <>
+            <h1>{own ? 'Enter your own 6-digit PIN' : 'Enter your PIN'}</h1>
+            {note ? (
+              <p className="muted center">
+                {note}{' '}
+                <button type="button" className="btn-link" onClick={onRefresh}>Try again</button>
+              </p>
+            ) : null}
+            <div className="pin-dots" aria-label={`${entry.length} digits entered`}>
+              {Array.from({ length: Math.max(own ? 6 : 4, entry.length) }, (_, i) => <i key={i} className={i < entry.length ? 'on' : ''} />)}
+            </div>
+            <p className="error center" role="alert">{error}</p>
+            <Keypad onKey={(k) => { setError(''); setEntry((p) => (p + k).slice(0, 8)) }} onBackspace={() => setEntry((p) => p.slice(0, -1))} />
+            <button type="button" className="btn btn-primary btn-block" disabled={!ready || busy} onClick={() => submit()}>
+              {busy ? 'Checking…' : 'Open the till'}
+            </button>
+          </>
+        )}
       </div>
       <InstallNote secureUrl={secureUrl} />
     </div>

@@ -34,7 +34,9 @@ export type SyncStatus = {
   importing: number
 }
 
-export type Live = { version: number; now: number; day: string; active: Order[]; seated?: Order[]; online: OnlineQueueOrder[]; pendingPayments?: PendingPaymentOrder[]; shift: Shift | null; menuKey: string; sync: SyncStatus }
+export type OnDutyBarista = { staffId: string; name: string; role: 'owner' | 'manager' | 'barista'; catLook: CatLook | null }
+export type PinChoice = { id: string; name: string; role: string; catLook: CatLook | null }
+export type Live = { version: number; now: number; day: string; active: Order[]; seated?: Order[]; onDuty?: OnDutyBarista[]; online: OnlineQueueOrder[]; pendingPayments?: PendingPaymentOrder[]; shift: Shift | null; menuKey: string; sync: SyncStatus }
 
 export type TillState = {
   shift: Shift | null
@@ -44,7 +46,7 @@ export type TillState = {
 }
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) { super(message) }
+  constructor(message: string, readonly status: number, readonly data?: any) { super(message) }
 }
 
 /** Who opened the till in this browser. The session itself is an HttpOnly cookie the page never sees. */
@@ -70,14 +72,16 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown, sig
   if (status < 200 || status >= 300) {
     // 401 means the session is gone. A 429 lockout only stops PIN checks; sales go on with the session.
     if (status === 401) onLocked()
-    throw new ApiError(data?.error || "That didn't work. Try again.", status)
+    throw new ApiError(data?.error || "That didn't work. Try again.", status, data)
   }
   return data as T
 }
 
 export const api = {
   bootstrap: () => call<Bootstrap>('GET', '/api/bootstrap'),
-  startSession: (pin: string) => call<Session>('POST', '/api/session', { pin }),
+  startSession: (pin: string, staffId?: string) => call<Session>('POST', '/api/session', { pin, ...(staffId ? { staffId } : {}) }),
+  joinBarista: (pin: string, staffId?: string) => call<{ onDuty: OnDutyBarista[]; joined: string | null }>('POST', '/api/baristas/join', { pin, ...(staffId ? { staffId } : {}) }),
+  leaveBarista: (staffId: string) => call<{ onDuty: OnDutyBarista[] }>('POST', '/api/baristas/leave', { staffId }),
   session: () => call<Session>('GET', '/api/session'),
   endSession: () => call<{ ok: true }>('POST', '/api/session/end', {}),
   menu: () => call<Menu>('GET', '/api/menu'),

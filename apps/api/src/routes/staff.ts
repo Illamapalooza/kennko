@@ -1,3 +1,4 @@
+import { parseLook } from '@kennko/core'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppDeps } from '../create-app.js'
@@ -16,10 +17,15 @@ const createSchema = z.object({
   email: z.email().optional(),
 })
 const patchSchema = z
-  .object({ fullName: fullName.optional(), role: role.optional(), isActive: z.boolean().optional() })
-  .refine((b) => b.fullName !== undefined || b.role !== undefined || b.isActive !== undefined)
+  .object({
+    fullName: fullName.optional(),
+    role: role.optional(),
+    isActive: z.boolean().optional(),
+    catLook: z.union([z.record(z.string(), z.unknown()), z.null()]).optional(),
+  })
+  .refine((b) => b.fullName !== undefined || b.role !== undefined || b.isActive !== undefined || b.catLook !== undefined)
 
-const COLUMNS = 'id, full_name, email, role, is_active, user_id, pin_hash, pin_updated_at'
+const COLUMNS = 'id, full_name, email, role, is_active, user_id, pin_hash, pin_updated_at, cat_look'
 
 /** A login the API invited is taken back on a failed insert, except on these (Ruling 15). */
 const KEEP_LOGIN = new Set(['ALREADY_STAFF', 'EMAIL_TAKEN'])
@@ -135,6 +141,16 @@ export function staffRoutes(deps: AppDeps): Hono<AppEnv> {
 
       // Reactivating clears the PIN so one issued to someone else meanwhile cannot collide (Ruling 6).
       const reactivated = !cur.is_active && nextActive
+      let nextLook: unknown = cur.cat_look ?? null
+      if (body.data.catLook !== undefined) {
+        if (body.data.catLook === null) {
+          nextLook = null
+        } else {
+          const parsed = parseLook(body.data.catLook)
+          if (!parsed) throw apiError(400, 'INVALID', 'Invalid cat look.')
+          nextLook = parsed
+        }
+      }
       const [row] = await tx<StaffRow[]>`
         update staff set
           full_name = ${body.data.fullName ?? cur.full_name},
@@ -142,6 +158,7 @@ export function staffRoutes(deps: AppDeps): Hono<AppEnv> {
           is_active = ${nextActive},
           pin_hash = ${reactivated ? null : cur.pin_hash},
           pin_updated_at = ${reactivated ? null : cur.pin_updated_at},
+          cat_look = ${nextLook === null ? null : tx.json(nextLook as any)},
           updated_at = ${now}
         where id = ${id}
         returning ${tx.unsafe(COLUMNS)}`

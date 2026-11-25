@@ -83,7 +83,8 @@ export type SyncEvent = { id: string; seq: number; occurredAt: string; staffId: 
 export type PushResult = 'applied' | 'flagged' | 'held' | 'duplicate'
 export type PushResponse = { results: { id: string; result: PushResult; reason: string | null; flags: string[] }[]; held: number }
 
-export type PulledStaff = { id: string; fullName: string; role: 'owner' | 'manager' | 'barista'; pinHash: string }
+export type WallBarista = { staffId?: string | null; name: string; look: CatLook }
+export type PulledStaff = { id: string; fullName: string; role: 'owner' | 'manager' | 'barista'; pinHash: string; catLook?: CatLook | null }
 export type OnlineQueueLine = {
   name: string
   size: string

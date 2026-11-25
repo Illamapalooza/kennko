@@ -1,8 +1,10 @@
 'use client'
 
 import { useTransition, useState } from 'react'
+import type { CatLook } from '@kennko/core'
 import { updateStaff, issuePin } from '@/app/admin/staff/actions'
 import type { StaffRole } from '@/lib/auth/types'
+import { StaffCatCustomizer } from './StaffCatCustomizer'
 
 export type StaffView = {
   id: string
@@ -13,6 +15,7 @@ export type StaffView = {
   hasLogin: boolean
   pinSet: boolean
   pinUpdatedAt: string | null
+  catLook?: CatLook | null
 }
 
 function pinStatus(member: StaffView): string {
@@ -45,6 +48,7 @@ export function StaffRow({
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [shownPin, setShownPin] = useState<string | null>(null)
+  const [editingCat, setEditingCat] = useState(false)
 
   const run = (fn: () => Promise<{ ok: boolean; message?: string }>) =>
     startTransition(async () => {
@@ -78,6 +82,26 @@ export function StaffRow({
         <button type="button" className="btn btn-secondary" disabled={pending} onClick={makePin}>
           {member.pinSet ? 'New PIN' : 'Set PIN'}
         </button>
+      ) : null}
+
+      <button type="button" className="btn btn-secondary" disabled={pending} onClick={() => setEditingCat(true)}>
+        Cat sprite
+      </button>
+
+      {editingCat ? (
+        <StaffCatCustomizer
+          staffName={member.fullName}
+          initialLook={member.catLook ?? null}
+          pending={pending}
+          onClose={() => setEditingCat(false)}
+          onSave={(catLook) =>
+            run(async () => {
+              const res = await updateStaff(member.id, { catLook })
+              if (res.ok) setEditingCat(false)
+              return res
+            })
+          }
+        />
       ) : null}
 
       <button

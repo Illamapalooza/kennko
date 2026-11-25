@@ -125,9 +125,17 @@ export function wallSnapshot(store: Store, menu: Menu, now: number, checkin: Wal
         endsAt: Date.parse(v.endsAt) - skew,
       }))
     : []
+  const onDuty = store.onDutyBaristas?.() ?? []
+  const baristaCats = openNow
+    ? onDuty.map((b, i) => ({
+        name: b.name.trim().split(/\s+/)[0] || b.name,
+        look: b.catLook ? wallLook(b.catLook) : { coat: (['tuxedo', 'ginger', 'tabby'] as const)[i % 3] },
+      }))
+    : []
   return {
     now, day: manilaDay(now),
-    baristas: openNow ? 2 : 0,
+    baristas: openNow ? (baristaCats.length > 0 ? baristaCats.length : 2) : 0,
+    baristaCats,
     menu: wallMenu(menu),
     orders: openNow
       ? [

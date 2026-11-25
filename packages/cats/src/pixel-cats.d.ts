@@ -35,6 +35,7 @@ export const COAT_COLOURS: Record<string, Record<string, string>>
 export const COAT_KEYS: string[]
 export const SLOTS: CatSlot[]
 export const COSMETICS: Record<string, Cosmetic>
+export const BARISTA_COSMETICS: Record<string, Cosmetic>
 
 export function isKnownKey(slot: string, key: string): boolean
 export function drawCat(

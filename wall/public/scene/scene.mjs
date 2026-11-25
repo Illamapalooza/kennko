@@ -230,7 +230,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
   }
 
   /** Bring the cats in line with the orders. `initial` places them without walking in. */
-  function sync(nextOrders, count, initial = false, nextVisitors = []) {
+  function sync(nextOrders, count, initial = false, nextVisitors = [], nextBaristas = []) {
     orders = nextOrders;
     baristaCount = count;
     lastVisitors = nextVisitors ?? [];
@@ -320,11 +320,19 @@ export function createScene(canvas, tagLayer, opts = {}) {
     }
     for (const c of custs.values()) if (!seen.has(c.id) && c.phase !== "leave") leave(c);
 
-    while (baristas.length < count) {
+    const profiles = Array.isArray(nextBaristas) ? nextBaristas : [];
+    const targetCount = count > 0 && profiles.length > 0 ? Math.min(3, profiles.length) : count;
+    baristaCount = targetCount;
+    while (baristas.length < targetCount) {
       const i = baristas.length;
-      baristas.push({ x: STATIONS[i], tx: STATIONS[i], nextMove: t + rand(2, 6), coat: BARISTA_COATS[i % BARISTA_COATS.length] });
+      baristas.push({ x: STATIONS[i], tx: STATIONS[i], nextMove: t + rand(2, 6), coat: BARISTA_COATS[i % BARISTA_COATS.length], look: null, name: "" });
     }
-    baristas.length = Math.min(baristas.length, count);
+    baristas.length = Math.min(baristas.length, targetCount);
+    baristas.forEach((b, i) => {
+      const prof = profiles[i];
+      b.look = prof?.look ?? null;
+      b.name = typeof prof?.name === "string" ? prof.name : "";
+    });
     // A cat that is at a seat for its order is not also standing on a visiting spot.
     syncVisitors(ambient ? [] : freeVisitors(), initial);
   }
@@ -1011,7 +1019,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
       const choreActive = !working && !b.moving && b.chore != null;
       const bob = (working || choreActive) ? Math.floor(t * 6 + i) % 2 : b.moving ? Math.floor(t * 7 + i) % 2 : 0;
       const x = Math.round(b.x) - 7;
-      drawCat(ctx, x, BARISTA_TOP - bob, b.coat, { apron: true, flip: b.flip, blink: blink(100 + i) });
+      drawCat(ctx, x, BARISTA_TOP - bob, b.look ?? b.coat, { apron: true, flip: b.flip, blink: blink(100 + i) });
       if (working) drawCup(ctx, x + CAT_W - 3, BARISTA_TOP + 6 + (Math.floor(t * 3 + i) % 2));
       else if (b.chore === "fridge" && b.choreStage === 1) {
         // carrying milk carton from fridge to pitcher
@@ -1178,10 +1186,13 @@ export function createScene(canvas, tagLayer, opts = {}) {
     }
     baristas.forEach((b, i) => {
       const o = byId.get(assignment[i]);
-      if (!o) return;
-      const items = o.items?.length ? o.items : [{ name: "", qty: 1 }];
-      const drink = itemsLabel([items[Math.floor(t / 2.5) % items.length]]);
-      tag(`b${i}`, "tag bubble", ambient ? drink : `${o.label ?? o.id} · ${drink}`, b.x, BARISTA_TOP - 3 - (i % 2) * 9);
+      if (o) {
+        const items = o.items?.length ? o.items : [{ name: "", qty: 1 }];
+        const drink = itemsLabel([items[Math.floor(t / 2.5) % items.length]]);
+        tag(`b${i}`, "tag bubble", ambient ? drink : `${o.label ?? o.id} · ${drink}`, b.x, BARISTA_TOP - 3 - (i % 2) * 9);
+      } else if (b.name) {
+        tag(`bn${i}`, "tag visitor", b.name, b.x, BARISTA_TOP + Math.min(0, catBounds(b.look ?? b.coat).y0) - 2);
+      }
     });
     for (const [key, el] of tags) if (!el.dataset.live) { el.remove(); tags.delete(key); }
   }

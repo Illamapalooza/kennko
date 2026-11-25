@@ -81,18 +81,48 @@ export const COSMETICS = {
     rows: [".oooo.oo", "oellllo.", ".oooo.oo"] },
 };
 
+// Exclusive barista & owner cosmetics (not sold in the customer shop; usable by staff behind the counter).
+export const BARISTA_COSMETICS = {
+  // hats
+  "barista-cap": { slot: "hat", dx: 1, dy: -1, colours: { o: INK, b: BLUE, a: AMBER, d: "#003fc0" },
+    rows: ["...oooooo...", "..obbbbbbo..", ".obbbaabbbo.", "oodddddddddo"] },
+  "chef-beret": { slot: "hat", dx: 1, dy: -2, colours: { o: INK, c: "#6b4226", l: "#8c5a37" },
+    rows: ["....oooo....", "..ooclllco..", ".occcccccco.", "..oooooooo.."] },
+  "owner-crown": { slot: "hat", dx: 2, dy: -2, colours: { o: INK, a: AMBER, b: BLUE, d: "#c77d00" },
+    rows: ["a...aa...a", "aa.abba.aa", "aaabbbbaaa", "dddbbbbddd", "oooooooooo"] },
+  // face
+  "barista-shades": { slot: "face", dx: 2, dy: 5, colours: { o: INK, a: AMBER, w: WHITE },
+    rows: ["owaaoowaao", ".aaa..aaa."] },
+  headset: { slot: "face", dx: 0, dy: 4, colours: { o: INK, b: BLUE, s: "#cfd8eb" },
+    rows: ["oo...........", "ob...........", "oo...........", ".osss........"] },
+  // neck
+  "gold-apron": { slot: "neck", dx: 3, dy: 9, colours: { a: AMBER, b: BLUE, w: WHITE, d: "#c77d00" },
+    rows: ["a.....a", "abbbbba", "abbwbba", "abbbbba", "adbbbda", "aaaaaaa"] },
+  "coffee-pin": { slot: "neck", dx: 2, dy: 9, colours: { o: INK, c: "#5c341d", a: AMBER },
+    rows: ["occcccccco", "..oocaoo..", "....oo...."] },
+  // held
+  portafilter: { slot: "held", dx: 10, dy: 9, colours: { o: INK, s: "#cfd8eb", c: "#6b4226" },
+    rows: ["oooo...", "osso...", "ooooocc", "..oo..c"] },
+  "milk-pitcher": { slot: "held", dx: 10, dy: 9, colours: { o: INK, s: "#e4ebf7", w: WHITE },
+    rows: [".ooo..", "oswwoo", "osssso", "osssso", ".oooo."] },
+  tamper: { slot: "held", dx: 10, dy: 9, colours: { o: INK, a: AMBER, c: "#6b4226" },
+    rows: [".oo..", "occo.", ".oo..", "oaaao", "ooooo"] },
+};
+
 const own = (o, k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
+const lookupCosmetic = (k) => (own(COSMETICS, k) ? COSMETICS[k] : own(BARISTA_COSMETICS, k) ? BARISTA_COSMETICS[k] : null);
 
 /** Is `key` a cosmetic (or, for the coat slot, a coat) this module can draw in that slot? */
 export function isKnownKey(slot, key) {
   if (slot === "coat") return own(COAT_COLOURS, key);
-  return own(COSMETICS, key) && COSMETICS[key].slot === slot;
+  const cos = lookupCosmetic(key);
+  return cos !== null && cos.slot === slot;
 }
 
 const normalise = (look) => (typeof look === "string" ? { coat: look } : look ?? {});
 // Overlays in draw order, skipping unknown keys (a newer catalogue on an older wall draws the cat without them).
 const overlaysOf = (look) =>
-  ["neck", "face", "hat", "held"].filter((s) => isKnownKey(s, look[s])).map((s) => COSMETICS[look[s]]);
+  ["neck", "face", "hat", "held"].filter((s) => isKnownKey(s, look[s])).map((s) => lookupCosmetic(look[s]));
 
 /**
  * Draw a standing cat with its top-left at (x, y).

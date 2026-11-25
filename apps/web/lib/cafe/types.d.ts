@@ -4,7 +4,7 @@ declare module '@/lib/cafe/scene/scene.mjs' {
     tagLayer: HTMLElement,
     options?: { manilaHour?: () => number; clock?: () => number },
   ): {
-    sync(orders: unknown[], baristas: number, initial?: boolean, visitors?: unknown[]): void
+    sync(orders: unknown[], baristas: number, initial?: boolean, visitors?: unknown[], baristaCats?: unknown[]): void
     setAmbient(on: boolean): void
     destroy(): void
   }
