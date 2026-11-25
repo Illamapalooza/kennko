@@ -14,8 +14,8 @@ const DOOR = { x: 298, y: 112 };
 const STATIONS = [62, 104, 132];
 const BARISTA_TOP = 63;
 const BARISTA_COATS = ["tuxedo", "ginger", "tabby"];
-const TRAY = { x: 160, y: 116 }; // where the server collects drinks
-const SERVER_HOME = { x: 176, y: 102 };
+const TRAY = { x: 126, y: 108 }; // where the server collects drinks (clear of the red sofa)
+const SERVER_HOME = { x: 18, y: 108 }; // beside the left end of the counter, clear of tables & sofa
 const WALK = 30; // px per second
 const MAX_TICKETS = 6;
 const RAIL_END = 154; // the ticket rail runs from x 58 to here
@@ -132,7 +132,11 @@ function paintCounter(g) {
   R("#b37943", 27, 76, 150, 4); R("#8a572a", 27, 80, 150, 1);
   R("#9ec2ff", 27, 81, 150, 1);
   R(BLUE, 27, 82, 150, 17); R("#0041c4", 27, 99, 150, 2);
-  for (const x of [52, 76, 126, 150]) R("#0047d9", x, 84, 1, 13);
+  for (const x of [50, 72, 130, 152]) R("#0047d9", x, 84, 1, 13);
+  // crisp pixel-art KENNKO lettering centered on the blue counter (always behind floor cats)
+  const kx = 101 - Math.floor(textWidth("KENNKO", 2) / 2);
+  drawText(g, "KENNKO", kx + 1, 87, "#0035a3", 2);
+  drawText(g, "KENNKO", kx, 86, "#ffffff", 2);
   // espresso machine
   R(INK, 34, 57, 29, 20); R("#2a3040", 35, 58, 27, 18); R("#40485e", 35, 58, 27, 3); R(BLUE, 35, 63, 27, 2);
   R(INK, 40, 67, 5, 3); R(INK, 51, 67, 5, 3); R("#8d97b3", 37, 74, 23, 2); R(AMBER, 57, 59, 2, 1);
@@ -172,7 +176,7 @@ export function createScene(canvas, tagLayer, opts = {}) {
   let waitSlots = new Map();
   const seatOf = new Map(); // order id -> seat index
   const baristas = [];
-  const server = { x: SERVER_HOME.x, y: SERVER_HOME.y, tx: SERVER_HOME.x, ty: SERVER_HOME.y, state: "idle", job: null, carrying: false, flip: true, moving: false };
+  const server = { x: SERVER_HOME.x, y: SERVER_HOME.y, tx: SERVER_HOME.x, ty: SERVER_HOME.y, route: [], state: "idle", job: null, carrying: false, flip: false, moving: false };
   const steam = [];
   /** @type {Map<string, any>} visiting cats by their per-visit key */ const visitors = new Map();
   const campCats = [
@@ -362,47 +366,138 @@ export function createScene(canvas, tagLayer, opts = {}) {
   /** Where the server stands to hand a drink to this customer. */
   function besideOf(c) {
     const seat = SEATS[seatOf.get(c.id)];
-    return seat ? { x: seat.table.x, y: seat.table.y + 9 } : { x: c.tx + 13, y: c.ty };
+    if (!seat) return { x: Math.min(126, c.tx + 13), y: c.ty };
+    return { x: seat.table.x, y: seat.table.y + 7 };
+  }
+
+  /** Obstacle-free waypoint routing for the server cat so it never walks over sofas, tables, or the stage. */
+  function buildServerRoute(from, to) {
+    const pts = [];
+    const push = (x, y) => {
+      const prev = pts[pts.length - 1] ?? from;
+      if (Math.hypot(x - prev.x, y - prev.y) > 2) pts.push({ x, y });
+    };
+    const fromOut = from.x >= 184;
+    const toOut = to.x >= 184;
+    const IN_AISLE = 135; // front indoor aisle, clear of all 3 indoor tables and the red sofa
+    const IN_TOP = 110;   // upper indoor lane (left of the sofa, x <= 128)
+    const OUT_MID = 109;  // horizontal grass lane between Out 1/2 (y=94) and Out 3/4 (y=124)
+
+    const leaveIndoorToDoor = () => {
+      if (from.y < 126 && from.x <= 128) { push(from.x, IN_TOP); push(128, IN_TOP); push(128, IN_AISLE); }
+      else push(from.x, IN_AISLE);
+      push(178, IN_AISLE);
+      push(178, 114);
+      push(192, OUT_MID);
+    };
+    const leaveOutdoorToDoor = () => {
+      if (from.y < 98) { push(from.x < 224 ? 192 : from.x > 250 ? 280 : 236, from.y); push(from.x < 224 ? 192 : from.x > 250 ? 280 : 236, OUT_MID); }
+      else if (from.y > 116) { push(from.x < 224 ? 192 : from.x > 250 ? 280 : 236, OUT_MID); }
+      push(192, OUT_MID);
+      push(178, 114);
+      push(178, IN_AISLE);
+    };
+
+    if (!fromOut && !toOut) {
+      if (from.x <= 128 && to.x <= 128 && from.y <= 116 && to.y <= 116) {
+        push(to.x, to.y);
+      } else {
+        if (from.y <= 116 && from.x <= 128) { push(from.x, IN_TOP); push(Math.min(128, Math.max(18, from.x)), IN_AISLE); }
+        else if (from.y < IN_AISLE) push(from.x, IN_AISLE);
+        if (to.y <= 116 && to.x <= 128) { push(128, IN_AISLE); push(128, IN_TOP); push(to.x, to.y); }
+        else { push(to.x, IN_AISLE); push(to.x, to.y); }
+      }
+    } else if (!fromOut && toOut) {
+      leaveIndoorToDoor();
+      if (to.y < 98) {
+        const laneX = to.x < 204 ? 192 : to.x > 268 ? 280 : 236;
+        push(laneX, OUT_MID); push(laneX, to.y); push(to.x, to.y);
+      } else if (to.y > 116) {
+        const laneX = to.x < 224 ? 192 : to.x > 250 ? 280 : 236;
+        push(laneX, OUT_MID); push(laneX, to.y); push(to.x, to.y);
+      } else {
+        push(to.x, OUT_MID); push(to.x, to.y);
+      }
+    } else if (fromOut && !toOut) {
+      leaveOutdoorToDoor();
+      if (to.y <= 116 && to.x <= 128) { push(128, IN_AISLE); push(128, IN_TOP); push(to.x, to.y); }
+      else { push(to.x, IN_AISLE); push(to.x, to.y); }
+    } else {
+      // outdoor -> outdoor along open lanes
+      if (from.y < 98 || from.y > 116) {
+        const exitX = from.x < 204 ? 192 : from.x > 268 ? 280 : 236;
+        push(exitX, from.y); push(exitX, OUT_MID);
+      }
+      if (to.y < 98 || to.y > 116) {
+        const enterX = to.x < 204 ? 192 : to.x > 268 ? 280 : 236;
+        push(enterX, OUT_MID); push(enterX, to.y); push(to.x, to.y);
+      } else {
+        push(to.x, OUT_MID); push(to.x, to.y);
+      }
+    }
+    if (!pts.length) pts.push({ x: to.x, y: to.y });
+    return pts;
+  }
+
+  function goServer(to) {
+    server.route = buildServerRoute({ x: server.x, y: server.y }, to);
+    const first = server.route.shift();
+    if (first) go(server, first);
+  }
+
+  function walkServer(dt) {
+    if (!walk(server, dt)) return false;
+    if (server.route.length > 0) {
+      const next = server.route.shift();
+      go(server, next);
+      return false;
+    }
+    return true;
   }
 
   const sendHome = () => {
     server.job = null; server.carrying = false; server.chore = null; server.choreStage = 0; server.choreUntil = 0;
-    server.state = "return"; go(server, SERVER_HOME);
+    server.state = "return"; goServer(SERVER_HOME);
   };
+
+  const SWEEP_SPOTS = [
+    { x: 32, y: 110 }, { x: 64, y: 110 }, { x: 96, y: 110 }, { x: 122, y: 110 },
+    { x: 75, y: 135 }, { x: 128, y: 135 },
+    { x: 194, y: 109 }, { x: 236, y: 109 }, { x: 236, y: 90 }, { x: 236, y: 126 },
+  ];
 
   function pickServerChore() {
     const r = Math.random();
-    if (r < 0.30) {
-      // clean the floor (indoors or al fresco)
-      const outdoor = Math.random() < 0.45;
-      const spot = outdoor ? { x: Math.round(rand(196, 266)), y: Math.round(rand(84, 118)) } : { x: Math.round(rand(28, 162)), y: Math.round(rand(108, 128)) };
+    if (r < 0.32) {
+      // sweep open floor walkways only (never over tables, sofa, or stage)
+      const spot = SWEEP_SPOTS[Math.floor(Math.random() * SWEEP_SPOTS.length)];
       server.chore = "sweep"; server.choreStage = 0; server.state = "chore";
-      go(server, spot);
-    } else if (r < 0.62) {
-      // wipe a table
+      goServer(spot);
+    } else if (r < 0.64) {
+      // wipe a table from the front edge (never overlapping the table or sofa)
       const tb = TABLES[Math.floor(Math.random() * TABLES.length)];
       server.chore = "wipe_table"; server.choreStage = 0; server.state = "chore";
-      go(server, { x: tb.x, y: tb.y + 7 });
+      goServer({ x: tb.x, y: tb.y + 7 });
     } else if (r < 0.84) {
-      // take out trash from behind/beside counter out the al fresco door
+      // take out trash from beside the counter out through the glass door to the outdoor gate
       server.chore = "trash"; server.choreStage = 0; server.state = "chore";
-      go(server, { x: 34, y: 106 });
+      goServer({ x: 24, y: 108 });
     } else {
-      // water the patio bushes
-      const bush = Math.random() < 0.5 ? { x: 198, y: 69 } : { x: 272, y: 69 };
+      // water the patio bushes beside the fence
+      const bush = Math.random() < 0.5 ? { x: 194, y: 74 } : { x: 279, y: 74 };
       server.chore = "water_plants"; server.choreStage = 0; server.state = "chore";
-      go(server, bush);
+      goServer(bush);
     }
   }
 
   function stepServer(dt) {
-    const arrived = walk(server, dt);
+    const arrived = walkServer(dt);
     if (server.state === "idle" || server.state === "chore") {
       const next = orders.filter((o) => o.status === "serving").sort((a, b) => a.updatedAt - b.updatedAt)
         .map((o) => custs.get(o.id)).find((c) => c && c.phase === "in" && !c.cup && !c.moving);
       if (next) {
         server.chore = null; server.choreStage = 0;
-        server.job = next.id; server.state = "toTray"; go(server, TRAY);
+        server.job = next.id; server.state = "toTray"; goServer(TRAY);
         return;
       }
       if (server.state === "idle") {
@@ -413,8 +508,8 @@ export function createScene(canvas, tagLayer, opts = {}) {
       // execute chore stages
       if (server.chore === "trash") {
         if (server.choreStage === 0 && arrived) {
-          server.choreStage = 1; // picked up bag, walk out the glass door to the outdoor gate
-          go(server, { x: 282, y: 112 });
+          server.choreStage = 1; // picked up bag, walk cleanly through the glass door to the outdoor edge
+          goServer({ x: 280, y: 109 });
         } else if (server.choreStage === 1 && arrived) {
           server.choreStage = 2; server.choreUntil = t + 0.9; // drop bag outside
         } else if (server.choreStage === 2 && t > server.choreUntil) {
@@ -428,9 +523,10 @@ export function createScene(canvas, tagLayer, opts = {}) {
         server.choreUntil = t + rand(3.2, 5.5);
       } else if (server.choreStage === 1 && t > server.choreUntil) {
         if (server.chore === "sweep" && Math.random() < 0.45) {
-          // sweep a second nearby spot before heading back
+          // sweep a second safe open-floor spot before heading back
           server.choreStage = 0;
-          go(server, { x: Math.max(24, Math.min(268, Math.round(server.x + rand(-28, 28)))), y: Math.max(82, Math.min(126, Math.round(server.y + rand(-10, 10)))) });
+          const nextSpot = SWEEP_SPOTS[Math.floor(Math.random() * SWEEP_SPOTS.length)];
+          goServer(nextSpot);
         } else {
           server.nextChore = t + rand(4, 9);
           sendHome();
@@ -439,16 +535,15 @@ export function createScene(canvas, tagLayer, opts = {}) {
       return;
     }
     if (server.state === "return") {
-      if (arrived) { server.state = "idle"; server.flip = true; }
+      if (arrived) { server.state = "idle"; server.flip = false; }
       return;
     }
     const target = custs.get(server.job);
     if (!target || target.phase !== "in" || target.cup) return sendHome(); // the order was undone, cancelled or finished
     if (server.state === "toTray") {
-      if (arrived) { server.carrying = true; server.state = "toCust"; go(server, besideOf(target)); }
+      if (arrived) { server.carrying = true; server.state = "toCust"; goServer(besideOf(target)); }
       return;
     }
-    go(server, besideOf(target));
     if (arrived && !target.moving) { target.cup = true; sendHome(); }
   }
 
@@ -644,59 +739,57 @@ export function createScene(canvas, tagLayer, opts = {}) {
     }
   }
 
-  /** 3-piece acoustic cat band on the al fresco wooden stage: guitarist, vocalist on mic, and cajón percussionist. */
+  /** Solo acoustic cat performing on the al fresco wooden stage, or resting instruments on stage when closed. */
   function drawAcousticBand() {
     const R = (c, x, y, w, h) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+    const cx = 236, cy = 68;
+    const mx = cx + 7;
+
+    if (baristaCount === 0) {
+      // Shop closed: band rests, leaving their guitar & mic stand on the stage
+      R("rgba(26,35,64,.16)", cx - 5, cy - 1, 7, 2);
+      R(INK, cx - 2, cy - 10, 2, 4); R("#8a572a", cx - 2, cy - 9, 1, 3); // guitar neck leaning
+      R(INK, cx - 4, cy - 6, 6, 5);
+      R("#d99b52", cx - 3, cy - 5, 4, 3);
+      R("#2a1d15", cx - 2, cy - 4, 2, 1); // soundhole
+      // mic stand left on stage
+      R(INK, mx - 2, cy - 1, 5, 1);
+      R("#3b4459", mx, cy - 10, 1, 9);
+      R(INK, mx - 2, cy - 11, 3, 2);
+      R("#cfd8eb", mx - 1, cy - 11, 1, 1);
+      return;
+    }
+
     const beat = t * 3.4; // ~102 BPM cozy acoustic groove
-    const bobA = Math.floor(beat) % 2;
-    const bobB = Math.floor(beat + 0.5) % 2;
+    const bob = Math.floor(beat) % 2;
     const strum = Math.floor(beat * 2) % 2;
 
-    // 1. Left: Ginger cat on acoustic guitar (feet at x=221, y=68)
-    const gx = 221, gy = 68;
-    R("rgba(26,35,64,.2)", gx - 5, gy - 1, 11, 2);
-    drawCat(ctx, gx - 7, gy - CAT_H - bobA, "ginger", { flip: false, blink: blink(501) });
-    // acoustic guitar slung across chest
-    const gTop = gy - CAT_H - bobA + 9;
-    R(INK, gx - 4, gTop, 6, 5);
-    R("#d99b52", gx - 3, gTop + 1, 4, 3);
-    R("#2a1d15", gx - 2, gTop + 2, 2, 1); // soundhole
-    R(INK, gx + 2, gTop - 2, 4, 2);
-    R("#8a572a", gx + 2, gTop - 1, 3, 1); // guitar neck
-    R("#f7d7b5", gx - 1 + strum, gTop + 2, 2, 1); // strumming paw
-
-    // 2. Center: Tuxedo lead vocalist at microphone stand (feet at x=236, y=67)
-    const vx = 236, vy = 67;
-    R("rgba(26,35,64,.2)", vx - 5, vy - 1, 11, 2);
-    const vTop = vy - CAT_H - bobB;
-    drawCat(ctx, vx - 7, vTop, "tuxedo", { flip: false, blink: blink(502) });
+    // Centered ginger cat playing acoustic guitar & singing at the mic (feet at x=236, y=68)
+    const cTop = cy - CAT_H - bob;
+    R("rgba(26,35,64,.2)", cx - 5, cy - 1, 11, 2);
+    drawCat(ctx, cx - 7, cTop, "ginger", { flip: false, blink: blink(501) });
     if (Math.floor(beat * 1.5) % 2 === 0) {
-      // singing mouth
-      R("#ff8fab", vx - 1, vTop + 7, 2, 1);
+      R("#ff8fab", cx - 1, cTop + 7, 2, 1); // singing mouth
     }
-    // mic stand in front of singer
-    R(INK, vx - 2, vy - 1, 5, 1);
-    R("#3b4459", vx, vy - 10, 1, 9);
-    R(INK, vx - 1, vy - 11, 3, 2);
-    R("#cfd8eb", vx, vy - 11, 1, 1);
+    // acoustic guitar slung across chest
+    const gTop = cTop + 9;
+    R(INK, cx - 4, gTop, 6, 5);
+    R("#d99b52", cx - 3, gTop + 1, 4, 3);
+    R("#2a1d15", cx - 2, gTop + 2, 2, 1); // soundhole
+    R(INK, cx + 2, gTop - 2, 4, 2);
+    R("#8a572a", cx + 2, gTop - 1, 3, 1); // guitar neck
+    R("#f7d7b5", cx - 1 + strum, gTop + 2, 2, 1); // strumming paw
 
-    // 3. Right: Calico percussionist playing a wooden cajón (feet at x=253, y=68)
-    const cx = 253, cy = 68;
-    R("rgba(26,35,64,.2)", cx - 7, cy - 1, 13, 2);
-    const cTop = cy - CAT_H - bobA;
-    drawCat(ctx, cx - 7, cTop, "calico", { flip: true, blink: blink(503) });
-    // wooden cajón box in front of cat
-    R(INK, cx - 8, cy - 7, 6, 7);
-    R("#c99052", cx - 7, cy - 6, 4, 5);
-    R("#8a572a", cx - 7, cy - 3, 4, 1);
-    // alternating tapping paws on top of cajón
-    R("#ffffff", cx - 7 + strum * 2, cy - 7 - (1 - strum), 2, 1);
+    // mic stand slightly to the right in front of the singer
+    R(INK, mx - 2, cy - 1, 5, 1);
+    R("#3b4459", mx, cy - 10, 1, 9);
+    R(INK, mx - 2, cy - 11, 3, 2);
+    R("#cfd8eb", mx - 1, cy - 11, 1, 1);
 
-    // floating pixel musical notes drifting up from the band
+    // floating pixel musical notes drifting up from the solo performance
     const notes = [
-      { ox: 221, oy: 49, phase: 0.0, col: "#fff7d6", dbl: false },
-      { ox: 236, oy: 47, phase: 0.33, col: AMBER, dbl: true },
-      { ox: 251, oy: 49, phase: 0.66, col: "#9ec2ff", dbl: false },
+      { ox: 231, oy: 48, phase: 0.0, col: "#fff7d6", dbl: false },
+      { ox: 241, oy: 46, phase: 0.5, col: AMBER, dbl: true },
     ];
     for (const n of notes) {
       const p = (t * 0.45 + n.phase) % 1;
