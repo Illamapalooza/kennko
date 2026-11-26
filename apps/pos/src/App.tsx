@@ -15,6 +15,7 @@ import { playChime } from './chime.ts'
 import { clockWarning, offlineBadge, syncProblem } from './syncText.ts'
 import { UpdateBanner } from './app/UpdateBanner.tsx'
 import { BaristasModal } from './components/BaristasModal.tsx'
+import { openProjectorWall } from './app/wall-control.ts'
 
 export type CartLine = LineInput & { key: string }
 /** A Kennko card on the sale: the code (formatted) and what the lookup said, null when it could not be asked. */
@@ -206,6 +207,21 @@ export function App() {
           </button>
         ))}
         <span className="rail-gap" />
+        {boot.host === 'android' ? (
+          <button
+            type="button"
+            className="rail-btn"
+            onClick={() => openProjectorWall().then((res) => notify(res.message))}
+            title="Open Kennko Wall on projector"
+          >
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="4" width="20" height="14" rx="2" />
+              <path d="M8 20h8" />
+              <path d="M12 18v2" />
+            </svg>
+            <span>Wall</span>
+          </button>
+        ) : null}
         {boot.pinMode !== 'off' ? (
           <button
             type="button"

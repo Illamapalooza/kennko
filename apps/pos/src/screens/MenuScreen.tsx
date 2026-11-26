@@ -4,6 +4,7 @@ import { api, type Bootstrap, type Live } from '../api.ts'
 import { PinPrompt } from '../components/PinPrompt.tsx'
 import { menuLine } from '../syncText.ts'
 import { ConnectTill } from '../components/ConnectTill.tsx'
+import { loadProjectorHost, openProjectorWall, saveProjectorHost } from '../app/wall-control.ts'
 
 type Props = {
   boot: Bootstrap
@@ -21,6 +22,8 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
   const [syncing, setSyncing] = useState(false)
   const [checking, setChecking] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const [projectorHost, setProjectorHost] = useState(() => loadProjectorHost())
+  const [openingWall, setOpeningWall] = useState(false)
   // Per-person mode: the drink waiting for the person's own PIN, so the change is credited to them.
   const [needPin, setNeedPin] = useState<{ itemId: string; available: boolean } | null>(null)
   const device = boot.device
@@ -61,11 +64,41 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
           <button type="button" className="btn btn-outline" onClick={() => setConnecting(true)}>Connect this till</button>
         ) : null}
         {boot.host === 'android' ? (
-          <div style={{ marginTop: 12 }}>
-            <button type="button" className="btn btn-outline" onClick={() => api.exportBackup().catch((err) => notify(err.message))}>
-              Export backup
-            </button>
-            <p className="muted" style={{ marginTop: 6 }}>Keep it private: it has staff PINs (scrambled) and sales.</p>
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={openingWall}
+                onClick={async () => {
+                  setOpeningWall(true)
+                  try {
+                    saveProjectorHost(projectorHost)
+                    const res = await openProjectorWall(projectorHost)
+                    notify(res.message)
+                  } finally {
+                    setOpeningWall(false)
+                  }
+                }}
+              >
+                {openingWall ? 'Opening Wall…' : 'Open Wall on Projector'}
+              </button>
+              <input
+                type="text"
+                aria-label="Projector IP"
+                value={projectorHost}
+                onChange={(e) => setProjectorHost(e.target.value)}
+                onBlur={() => saveProjectorHost(projectorHost)}
+                placeholder="192.168.1.21"
+                style={{ width: 150, padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}
+              />
+            </div>
+            <div>
+              <button type="button" className="btn btn-outline" onClick={() => api.exportBackup().catch((err) => notify(err.message))}>
+                Export backup
+              </button>
+              <p className="muted" style={{ marginTop: 6 }}>Keep it private: it has staff PINs (scrambled) and sales.</p>
+            </div>
           </div>
         ) : null}
       </section>

@@ -14,6 +14,7 @@ class MainActivity : BridgeActivity() {
         registerPlugin(FindPlugin::class.java)
         registerPlugin(UpdatePlugin::class.java)
         super.onCreate(savedInstanceState)
+        WallWakeService.ensureStarted(this)
         Kiosk.keepScreenOn(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {

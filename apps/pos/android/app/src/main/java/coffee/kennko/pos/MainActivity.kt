@@ -6,6 +6,7 @@ import coffee.kennko.kit.Kiosk
 import coffee.kennko.kit.KioskPlugin
 import coffee.kennko.kit.SqlitePlugin
 import coffee.kennko.kit.UpdatePlugin
+import coffee.kennko.kit.WallControlPlugin
 import com.getcapacitor.BridgeActivity
 
 class MainActivity : BridgeActivity() {
@@ -14,6 +15,7 @@ class MainActivity : BridgeActivity() {
         registerPlugin(KioskPlugin::class.java)
         registerPlugin(FeedPlugin::class.java)
         registerPlugin(UpdatePlugin::class.java)
+        registerPlugin(WallControlPlugin::class.java)
         super.onCreate(savedInstanceState)
         Kiosk.keepScreenOn(this)
         bridge?.webView?.settings?.mediaPlaybackRequiresUserGesture = false
