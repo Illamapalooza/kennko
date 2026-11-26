@@ -456,7 +456,7 @@ export function createTill(host: TillHost) {
       if (!staffId) throw new OrderError('Sign in with a staff PIN to confirm online payments.')
       let r: Response
       try {
-        r = await fetchFn(`${config.apiUrl.replace(/\/+$/, '')}/sync/online-payment`, {
+        r = await fetchFn(`${config.apiUrl.replace(/\/+$/, '')}/v1/sync/online-payment`, {
           method: 'POST',
           headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
           body: JSON.stringify({ paymentId: paymentAction[1], decision: paymentAction[2], staffId }),
@@ -493,7 +493,7 @@ export function createTill(host: TillHost) {
       if (currentPin === newPin) throw new OrderError('Pick a new 6-digit PIN different from your current one.')
       let r: Response
       try {
-        r = await fetchFn(`${config.apiUrl.replace(/\/+$/, '')}/sync/staff/pin`, {
+        r = await fetchFn(`${config.apiUrl.replace(/\/+$/, '')}/v1/sync/staff/pin`, {
           method: 'POST',
           headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
           body: JSON.stringify({ staffId: by, currentPin, newPin }),

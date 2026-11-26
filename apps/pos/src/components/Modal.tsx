@@ -11,13 +11,17 @@ type Props = {
 
 export function Modal({ title, onClose, children, size = 'normal', footer }: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current() }
     document.addEventListener('keydown', onKey)
-    ref.current?.focus()
+    if (!ref.current?.contains(document.activeElement)) {
+      ref.current?.focus()
+    }
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [])
 
   return (
     <div className="overlay" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
