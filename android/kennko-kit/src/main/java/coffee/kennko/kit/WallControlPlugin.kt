@@ -31,7 +31,7 @@ class WallControlPlugin : Plugin() {
     companion object {
         const val SERVICE_TYPE = "_kennko-wall._tcp."
         const val SERVICE_NAME = "Kennko Wall"
-        const val DEFAULT_FALLBACK_HOST = "192.168.1.21"
+        const val DEFAULT_FALLBACK_HOST = "192.168.1.51"
         const val DEFAULT_PORT = WallWakeServer.DEFAULT_PORT
     }
 

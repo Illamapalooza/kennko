@@ -34,8 +34,8 @@ it and `GEMINI.md` is a symlink to it. **Edit rules here, nowhere else.**
   For release APKs, pass `-- --release` (requires `~/.kennko/keystore.properties`; see `docs/android-release.md`).
 - **Shop devices & ADB:**
   - `adb devices -l` to list attached devices.
-  - **Samsung tablet (`SM_X210`, `coffee.kennko.pos`):** Wireless Debugging (pair once with `adb pair <ip>:<pair-port>`, connect with `adb connect <ip>:<port>`).
-  - **Wanbo WPD24 projector (`TV_Stick`, `coffee.kennko.wall`):** `adb connect 192.168.1.21:5555`.
+  - **Samsung tablet (`SM_X210`, `coffee.kennko.pos`, static IP `192.168.1.50`):** Wireless Debugging (`adb connect 192.168.1.50:<port>`, pair once with `adb pair 192.168.1.50:<pair-port>`).
+  - **Wanbo WPD24 projector (`TV_Stick`, `coffee.kennko.wall`, static IP `192.168.1.51`):** `adb connect 192.168.1.51:5555`.
   - **Router (`HG8145X6-10`):** AP/client isolation must remain off so NSD (`_kennko-pos._tcp.`) and ADB work across Mac, tablet, and projector.
 - **Reinstall & launch:**
   ```bash

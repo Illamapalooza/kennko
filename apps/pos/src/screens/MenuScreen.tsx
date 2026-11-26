@@ -114,7 +114,7 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
                 value={projectorHost}
                 onChange={(e) => setProjectorHost(e.target.value)}
                 onBlur={() => saveProjectorHost(projectorHost)}
-                placeholder="192.168.1.21"
+                placeholder="192.168.1.51"
                 style={{ width: 150, padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}
               />
             </div>

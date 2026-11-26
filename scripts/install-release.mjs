@@ -52,17 +52,19 @@ function installApp(label, serial, pkg, apkPath) {
 }
 
 const devices = detectDevices()
-const tablet = argValue('--tablet') ?? devices.find((d) => d.line.includes('SM_X210'))?.serial
-const projector = argValue('--projector') ?? devices.find((d) => d.line.includes('TV_Stick') || d.line.startsWith('192.168.1.21:'))?.serial
+const tablet = argValue('--tablet') ?? devices.find((d) => d.line.includes('SM_X210') || d.serial.startsWith('192.168.1.50:'))?.serial
+const projector = argValue('--projector') ?? devices.find((d) => d.line.includes('TV_Stick') || d.serial.startsWith('192.168.1.51:'))?.serial
 
 if (!tablet && !projector) {
-  console.error('No tablet (SM_X210) or projector (TV_Stick) found via `adb devices -l`.')
-  console.error('Connect devices over wireless ADB first, or pass --tablet <serial> / --projector <serial>.')
+  console.error('No tablet (SM_X210 / 192.168.1.50) or projector (TV_Stick / 192.168.1.51) found via `adb devices -l`.')
+  console.error('Connect devices over wireless ADB first (`adb connect 192.168.1.51:5555`), or pass --tablet <serial> / --projector <serial>.')
   process.exit(1)
 }
 
 if (tablet) installApp('Kennko POS', tablet, 'coffee.kennko.pos', POS_APK)
 else console.log('\nSkipping Kennko POS: tablet not connected (pass --tablet <serial> to specify).')
 
-if (projector) installApp('Kennko Wall', projector, 'coffee.kennko.wall', WALL_APK)
-else console.log('\nSkipping Kennko Wall: projector not connected (pass --projector <serial> to specify).')
+if (projector) {
+  installApp('Kennko Wall', projector, 'coffee.kennko.wall', WALL_APK)
+  adb(projector, ['shell', 'appops', 'set', 'coffee.kennko.wall', 'SYSTEM_ALERT_WINDOW', 'allow'], true)
+} else console.log('\nSkipping Kennko Wall: projector not connected (pass --projector <serial> to specify).')

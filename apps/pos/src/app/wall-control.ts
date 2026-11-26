@@ -1,5 +1,5 @@
 const PROJECTOR_HOST_KEY = 'kennko-projector-host'
-export const DEFAULT_PROJECTOR_HOST = '192.168.1.21'
+export const DEFAULT_PROJECTOR_HOST = '192.168.1.51'
 
 type WallControlPlugin = {
   openProjector(opts?: { host?: string }): Promise<{ ok: boolean; host?: string; port?: number; error?: string }>

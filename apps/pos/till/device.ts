@@ -1,3 +1,4 @@
+import { parseLook } from '@kennko/core'
 import type { TillFiles } from './files.ts'
 import type { CachedStaff, PinDirectory } from './pins.ts'
 import type { Sessions } from './sessions.ts'
@@ -95,7 +96,8 @@ export function cleanStaff(list: unknown[]): CachedStaff[] {
   for (const s of list) {
     if (!isCachedStaff(s) || seen.has(s.id)) continue
     seen.add(s.id)
-    staff.push({ id: s.id, fullName: s.fullName, role: s.role, pinHash: s.pinHash })
+    const catLook = (s as any).catLook ? parseLook((s as any).catLook) : null
+    staff.push({ id: s.id, fullName: s.fullName, role: s.role, pinHash: s.pinHash, ...(catLook ? { catLook } : {}) })
   }
   return staff
 }
