@@ -79,7 +79,7 @@ export function LiveCafeWall({ initial }: { initial: WallPayload }) {
     sceneRef.current?.sync(snap.orders, snap.baristas, false, snap.visitors, snap.baristaCats ?? [])
   }, [snap])
 
-  const closed = snap.openNow === false || snap.baristas === 0
+  const closed = snap.openNow === false
   const view = boardView(snap.orders, BOARD_CAP)
   const deliveries = deliveryView(snap.orders)
 

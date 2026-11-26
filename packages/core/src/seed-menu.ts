@@ -1,4 +1,4 @@
-export type SeedPrice = { M: number; L: number; XL: number | null; HOT: number | null }
+export type SeedPrice = { M: number | null; L: number | null; XL: number | null; HOT: number | null }
 
 export type SeedItem = {
   name: string
@@ -12,9 +12,9 @@ export type SeedCategory = {
   items: SeedItem[]
 }
 
-const p = (m: number, l: number, xl: number | null, hot: number | null): SeedPrice => ({
-  M: m * 100,
-  L: l * 100,
+const p = (m: number | null, l: number | null, xl: number | null, hot: number | null): SeedPrice => ({
+  M: m === null ? null : m * 100,
+  L: l === null ? null : l * 100,
   XL: xl === null ? null : xl * 100,
   HOT: hot === null ? null : hot * 100,
 })
@@ -24,45 +24,47 @@ export const SEED_CATEGORIES: SeedCategory[] = [
     name: 'Premium Classics',
     sortOrder: 0,
     items: [
-      { name: 'Americano',         isBestseller: false, prices: p(80, 90, 100, 95) },
+      { name: 'Americano',         isBestseller: false, prices: p(80, 90, 105, 95) },
       { name: 'Café Latte',        isBestseller: false, prices: p(100, 115, 130, 125) },
       { name: 'Vanilla Latte',     isBestseller: false, prices: p(105, 125, 135, 135) },
       { name: 'Hazelnut Latte',    isBestseller: false, prices: p(105, 125, 135, 135) },
       { name: 'Spanish Latte',     isBestseller: true,  prices: p(105, 125, 135, 135) },
-      { name: 'White Café Mocha',  isBestseller: true,  prices: p(110, 130, 140, 135) },
-      { name: 'Dark Café Mocha',   isBestseller: false, prices: p(110, 130, 140, 135) },
-      { name: 'Caramel Macchiato', isBestseller: true,  prices: p(110, 130, 140, 135) },
+      { name: 'White Café Mocha',  isBestseller: true,  prices: p(110, 130, 145, 135) },
+      { name: 'Dark Café Mocha',   isBestseller: false, prices: p(110, 130, 145, 135) },
+      { name: 'Caramel Macchiato', isBestseller: true,  prices: p(110, 130, 145, 135) },
     ],
   },
   {
     name: "Barista's Choice",
     sortOrder: 1,
     items: [
-      { name: 'Vietnamese Coffee',    isBestseller: false, prices: p(110, 130, 140, 135) },
-      { name: 'Egg Coffee',           isBestseller: true,  prices: p(125, 145, 165, 155) },
-      { name: 'Coconut Coffee',       isBestseller: false, prices: p(125, 145, 160, 155) },
-      { name: 'Sea Salt Caramel Oat', isBestseller: true,  prices: p(130, 150, 170, 160) },
-      { name: 'Honey Oat Latte',      isBestseller: false, prices: p(130, 150, 170, 160) },
+      { name: 'Vietnamese Coffee',    isBestseller: true,  prices: p(110, 130, 145, 135) },
+      { name: 'Egg Coffee',           isBestseller: true,  prices: p(125, 145, 170, 155) },
+      { name: 'Coconut Coffee',       isBestseller: false, prices: p(125, 145, 170, 155) },
+      { name: 'Sea Salt Caramel Oat', isBestseller: true,  prices: p(130, 150, 175, 160) },
+      { name: 'Honey Oat Latte',      isBestseller: false, prices: p(130, 150, 175, 160) },
     ],
   },
   {
     name: 'Sweet Sips',
     sortOrder: 2,
     items: [
-      { name: 'Strawberry Milk',   isBestseller: true,  prices: p(105, 125, 135, null) },
-      { name: 'Strawberry Matcha', isBestseller: true,  prices: p(125, 145, 155, null) },
-      { name: 'Signature Choco',   isBestseller: true,  prices: p(105, 125, 135, 135) },
-      { name: 'Choco-Coconut',     isBestseller: true,  prices: p(125, 145, 155, null) },
-      { name: 'Vanilla Milk',      isBestseller: false, prices: p(105, 125, 135, 135) },
+      { name: 'Strawberry Milk',   isBestseller: true,  prices: p(105, 125, 140, null) },
+      { name: 'Strawberry Matcha', isBestseller: true,  prices: p(125, 145, 160, null) },
+      { name: 'Signature Choco',   isBestseller: true,  prices: p(105, 125, 140, 135) },
+      { name: 'Choco-Coconut',     isBestseller: true,  prices: p(125, 145, 160, null) },
+      { name: 'Vanilla Milk',      isBestseller: false, prices: p(105, 125, 140, 135) },
+      { name: 'Honey Citron Tea',  isBestseller: true,  prices: p(null, 95, null, 100) },
+      { name: 'Flamed Chocolate',  isBestseller: true,  prices: p(120, 140, 165, null) },
     ],
   },
   {
     name: 'Matcha Series',
     sortOrder: 3,
     items: [
-      { name: 'Matcha',       isBestseller: true,  prices: p(115, 135, 145, 145) },
-      { name: 'Matcha Coco',  isBestseller: false, prices: p(135, 155, 175, 165) },
-      { name: 'Dirty Matcha', isBestseller: false, prices: p(140, 160, 180, 170) },
+      { name: 'Matcha',       isBestseller: true,  prices: p(115, 135, 150, 145) },
+      { name: 'Matcha Coco',  isBestseller: false, prices: p(135, 155, 180, 165) },
+      { name: 'Dirty Matcha', isBestseller: false, prices: p(140, 160, 185, 170) },
       { name: 'Hojicha',      isBestseller: true,  prices: p(140, 160, null, 160) },
     ],
   },

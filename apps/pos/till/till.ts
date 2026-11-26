@@ -623,6 +623,17 @@ export function createTill(host: TillHost) {
       if (backupTimer !== null) { timers.clear(backupTimer); backupTimer = null }
       if (wallTimer !== null) { timers.clear(wallTimer); wallTimer = null }
       if (minuteTimer !== null) { timers.clear(minuteTimer); minuteTimer = null }
+      store.checkpoint()
+    },
+    /** Flushes pending outbox events, takes a backup, and checkpoints SQLite before an in-place APK update. */
+    async prepareForUpdate(): Promise<void> {
+      try {
+        await sync.runOnce()
+      } catch {
+        /* offline or unreachable — still back up and checkpoint locally */
+      }
+      runBackup()
+      store.checkpoint()
     },
     resume(): void {
       sync.runOnce()

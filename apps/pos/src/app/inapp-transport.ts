@@ -6,6 +6,7 @@ export function inAppTransport(
   opts: {
     shareText?: (filename: string, text: string) => Promise<void>
     exportBackup?: () => Promise<void>
+    prepareUpdate?: () => Promise<void>
   } = {},
 ): Transport {
   let sessionToken: string | undefined
@@ -48,5 +49,6 @@ export function inAppTransport(
     },
 
     exportBackup: opts.exportBackup,
+    prepareUpdate: opts.prepareUpdate,
   }
 }

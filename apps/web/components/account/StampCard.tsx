@@ -28,7 +28,9 @@ export function StampCard({ customer }: { customer: Customer }) {
       <p className="stamp-help">
         {freeDrinkReady
           ? 'Show your code at the counter to use it.'
-          : 'Every 8 stamps is a free drink. Show your code when you order.'}
+          : stamped >= 4
+            ? 'Free upsize unlocked at 4 stamps! 8 stamps gets you a free drink. Show your code at the counter.'
+            : '4 stamps = free upsize · 8 stamps = free drink. Show your code when you order.'}
       </p>
     </section>
   )

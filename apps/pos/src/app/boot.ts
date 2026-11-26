@@ -64,6 +64,7 @@ export async function bootApp(): Promise<void> {
       till.store.snapshot(path)
       await shareFile(path, 'Kennko POS backup')
     },
+    prepareUpdate: () => till.prepareForUpdate(),
   })
 
   setTransport({

@@ -64,7 +64,7 @@ export default async function AccountPage({
         <div className="panel account-card">
           <h1>Get my Kennko card</h1>
           <p className="checkout-sub">
-            Earn a stamp on every drink: 8 stamps is a free drink. Collect points on what you spend, too.
+            Earn a stamp on every drink: 4 stamps for a free upsize, 8 stamps for a free drink. Collect points on what you spend, too.
             Show your code at the counter and we do the rest.
           </p>
           <JoinForm />

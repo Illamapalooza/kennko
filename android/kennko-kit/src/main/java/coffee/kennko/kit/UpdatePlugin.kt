@@ -25,7 +25,7 @@ class UpdatePlugin : Plugin() {
   private val executor = Executors.newSingleThreadExecutor()
 
   companion object {
-    private const val DEFAULT_UPDATES_URL = "https://kennko.vercel.app/apps/updates.json"
+    private const val DEFAULT_UPDATES_URL = "https://kennkokape.com/apps/updates.json"
     private const val TIMEOUT_MS = 5000
     private const val DOWNLOAD_TIMEOUT_MS = 15000
     private const val INSTALL_FAILED_MSG = "The update did not install. Try again, or ask Julius."

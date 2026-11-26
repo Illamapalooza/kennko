@@ -493,6 +493,14 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
     /** The open database, for the till's sessions (sessions.ts). */
     db,
     close: () => db.close(),
+    /** Flushes the SQLite WAL cleanly into the main database file before an app pause or OTA update. */
+    checkpoint() {
+      try {
+        db.exec('pragma wal_checkpoint(truncate)')
+      } catch {
+        /* ignore on :memory: or busy handles */
+      }
+    },
     /**
      * Writes a complete, consistent copy of the database to a new file. Safe while the till is in use. The copy keeps
      * no online orders: they carry customer phones and addresses (Ruling P5-3), and the next pull fetches them again.

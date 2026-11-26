@@ -24,6 +24,10 @@ export function Perks() {
             <p>One stamp per drink. Ask the barista for a perks card on your next visit.</p>
             <div className="perk-steps">
               <div className="step">
+                <strong>4</strong>
+                stamps get you a free upsize.
+              </div>
+              <div className="step">
                 <strong>8</strong>
                 stamps get you a free drink.
               </div>
@@ -32,7 +36,7 @@ export function Perks() {
 
           <div className="perks-card-wrap">
             <CatToon coat="cream" pose="sit" className="perch perch-sit perch-right" />
-            <PerksCard slots={DEMO} label="Kennko perks card: eight stamps to a free drink, three collected" />
+            <PerksCard slots={DEMO} label="Kennko perks card: four stamps for a free upsize, eight stamps for a free drink, three collected" />
           </div>
         </div>
       </div>

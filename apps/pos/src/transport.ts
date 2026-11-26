@@ -3,6 +3,7 @@ export type Transport = {
   follow(onLive: (json: string) => void, onDown: (closed: boolean) => void): () => void
   download(path: string, filename: string): Promise<void>
   exportBackup?: () => Promise<void>
+  prepareUpdate?: () => Promise<void>
 }
 
 export const httpTransport: Transport = {

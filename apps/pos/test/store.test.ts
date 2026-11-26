@@ -21,7 +21,7 @@ const order = (over: Partial<NewOrder> = {}): NewOrder => ({
 describe('built-in menu', () => {
   it('carries the whole printed menu with prices', () => {
     expect(menu.categories.map((c) => c.name)).toEqual(['Premium Classics', "Barista's Choice", 'Sweet Sips', 'Matcha Series', 'Food'])
-    expect(menu.categories.filter((c) => c.kind !== 'food').flatMap((c) => c.items)).toHaveLength(22)
+    expect(menu.categories.filter((c) => c.kind !== 'food').flatMap((c) => c.items)).toHaveLength(24)
     expect(menu.categories[4].items.map((i) => [i.name, i.prices])).toEqual([
       ['Cookies', [{ size: 'REG', priceCentavos: 6000 }]],
       ['Empanada', [{ size: 'REG', priceCentavos: 4500 }]],
@@ -30,6 +30,8 @@ describe('built-in menu', () => {
     expect(latte.prices).toEqual([{ size: 'M', priceCentavos: 10000 }, { size: 'L', priceCentavos: 11500 }, { size: 'XL', priceCentavos: 13000 }, { size: 'HOT', priceCentavos: 12500 }])
     const hojicha = menu.categories[3].items.find((i) => i.name === 'Hojicha')!
     expect(hojicha.prices.map((p) => p.size)).toEqual(['M', 'L', 'HOT'])
+    const citron = menu.categories[2].items.find((i) => i.name === 'Honey Citron Tea')!
+    expect(citron.prices).toEqual([{ size: 'L', priceCentavos: 9500 }, { size: 'HOT', priceCentavos: 10000 }])
     const ids = menu.categories.flatMap((c) => c.items.map((i) => i.id))
     expect(new Set(ids).size).toBe(ids.length)
   })

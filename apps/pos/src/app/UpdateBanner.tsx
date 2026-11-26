@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getTransport } from '../transport.ts'
 
 type UpdateCheckResult = {
   available: boolean
@@ -43,6 +44,7 @@ export function UpdateBanner({ notify }: { notify: (msg: string) => void }) {
     if (!plugin || busy) return
     setBusy(true)
     try {
+      await getTransport().prepareUpdate?.()
       const res = await plugin.install()
       if (res.error) notify(res.error)
     } catch {
