@@ -12,6 +12,13 @@ import { pushEvents } from '../sync/push.js'
 import { pushBodySchema } from '../sync/schema.js'
 import { shopStatusPatchSchema } from './shop.js'
 import { updateShopStatus, withOpenNow } from '../shop/status.js'
+import { changeOwnPin } from '../staff/manage.js'
+
+const changePinSchema = z.object({
+  staffId: z.string().uuid(),
+  currentPin: z.string().regex(/^\d{6}$/, 'Current PIN must be 6 digits.'),
+  newPin: z.string().regex(/^\d{6}$/, 'New PIN must be 6 digits.'),
+})
 
 const onlinePaymentSchema = z.object({
   paymentId: z.string().uuid(),
@@ -96,6 +103,14 @@ export function syncRoutes(deps: AppDeps): Hono<AppEnv> {
     await deps.sql`update shop_settings set active_baristas = ${deps.sql.json(clean as any)} where id = 1`
     c.header('Cache-Control', 'no-store')
     return c.json({ ok: true, baristas: clean })
+  })
+
+  app.post('/staff/pin', requireDevice(deps), async (c) => {
+    const body = changePinSchema.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return invalid(body.error.issues[0]?.message ?? 'Send staffId, currentPin, and newPin (6 digits).')
+    const { pinHash } = await changeOwnPin(deps.sql, { ...body.data, now: deps.now() })
+    c.header('Cache-Control', 'no-store')
+    return c.json({ ok: true, pinHash })
   })
 
   return app

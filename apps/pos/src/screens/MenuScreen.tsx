@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { formatPesos, sizeTag, type Menu } from '@kennko/core'
 import { api, type Bootstrap, type Live } from '../api.ts'
 import { PinPrompt } from '../components/PinPrompt.tsx'
+import { Modal } from '../components/Modal.tsx'
 import { menuLine } from '../syncText.ts'
 import { ConnectTill } from '../components/ConnectTill.tsx'
 import { loadProjectorHost, openProjectorWall, saveProjectorHost } from '../app/wall-control.ts'
@@ -22,6 +23,12 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
   const [syncing, setSyncing] = useState(false)
   const [checking, setChecking] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const [changingPin, setChangingPin] = useState(false)
+  const [curPin, setCurPin] = useState('')
+  const [nextPin, setNextPin] = useState('')
+  const [confirmPin, setConfirmPin] = useState('')
+  const [pinBusy, setPinBusy] = useState(false)
+  const [pinErr, setPinErr] = useState('')
   const [projectorHost, setProjectorHost] = useState(() => loadProjectorHost())
   const [openingWall, setOpeningWall] = useState(false)
   // Per-person mode: the drink waiting for the person's own PIN, so the change is credited to them.
@@ -62,6 +69,23 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
         {device?.revoked ? <p className="note-amber" role="status">Disconnected in admin. Connect again with a new code.</p> : null}
         {!device || device.revoked ? (
           <button type="button" className="btn btn-outline" onClick={() => setConnecting(true)}>Connect this till</button>
+        ) : null}
+        {boot.pinMode === 'per-person' && device && !device.revoked ? (
+          <div style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => {
+                setCurPin('')
+                setNextPin('')
+                setConfirmPin('')
+                setPinErr('')
+                setChangingPin(true)
+              }}
+            >
+              Change my PIN
+            </button>
+          </div>
         ) : null}
         {boot.host === 'android' ? (
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -142,6 +166,86 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
             setSyncing(false)
           }}
         />
+      ) : null}
+      {changingPin ? (
+        <Modal title="Change my PIN" onClose={() => !pinBusy && setChangingPin(false)}>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              setPinErr('')
+              if (!/^\d{6}$/.test(curPin) || !/^\d{6}$/.test(nextPin)) {
+                setPinErr('Both PINs must be 6 digits.')
+                return
+              }
+              if (nextPin !== confirmPin) {
+                setPinErr('New PIN and confirmation do not match.')
+                return
+              }
+              if (curPin === nextPin) {
+                setPinErr('Pick a new PIN different from your current one.')
+                return
+              }
+              setPinBusy(true)
+              try {
+                await api.changePin(curPin, nextPin)
+                setChangingPin(false)
+                notify('PIN updated. Use your new PIN next time you log in.')
+              } catch (err) {
+                setPinErr(err instanceof Error ? err.message : 'Could not change PIN.')
+              } finally {
+                setPinBusy(false)
+              }
+            }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
+            <p className="muted" style={{ margin: 0 }}>Enter your current 6-digit PIN and pick a new one you can remember.</p>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontWeight: 700 }}>
+              Current PIN
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                autoComplete="off"
+                value={curPin}
+                onChange={(e) => setCurPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="6 digits"
+                style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 18, letterSpacing: '0.2em' }}
+                autoFocus
+              />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontWeight: 700 }}>
+              New PIN
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                autoComplete="off"
+                value={nextPin}
+                onChange={(e) => setNextPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="6 digits"
+                style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 18, letterSpacing: '0.2em' }}
+              />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontWeight: 700 }}>
+              Confirm new PIN
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                autoComplete="off"
+                value={confirmPin}
+                onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="6 digits"
+                style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 18, letterSpacing: '0.2em' }}
+              />
+            </label>
+            {pinErr ? <p className="note-amber" role="alert" style={{ margin: 0 }}>{pinErr}</p> : null}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button type="button" className="btn btn-outline" disabled={pinBusy} onClick={() => setChangingPin(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={pinBusy}>{pinBusy ? 'Saving…' : 'Save PIN'}</button>
+            </div>
+          </form>
+        </Modal>
       ) : null}
       {connecting ? (
         <ConnectTill

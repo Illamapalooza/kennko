@@ -584,6 +584,10 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       })
     },
 
+    updateStaffPinHash(staffId: string, pinHash: string): void {
+      db.prepare('update staff_cache set pin_hash = ? where id = ?').run(pinHash, staffId)
+    },
+
     /** Baristas currently clocked in on the bar (up to 3), enriched with their latest custom cat look from staff_cache. */
     onDutyBaristas(): { staffId: string; name: string; role: 'owner' | 'manager' | 'barista'; catLook: CatLook | null }[] {
       const raw = (db.prepare('select value from kv where key = ?').get('on_duty_baristas') as any)?.value

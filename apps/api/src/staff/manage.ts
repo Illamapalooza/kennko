@@ -1,6 +1,6 @@
 import type postgres from 'postgres'
 import { parseLook, type CatLook } from '@kennko/core'
-import { checkStaffPin, hashStaffPin, randomStaffPin } from '@kennko/core/staff-pin'
+import { checkStaffPin, hashStaffPin, isStaffPin, randomStaffPin } from '@kennko/core/staff-pin'
 import type { StaffRole } from '../auth.js'
 import { apiError } from '../http.js'
 
@@ -74,5 +74,46 @@ export async function issuePin(sql: postgres.Sql, staffId: string, now: Date = n
       return pin
     }
     throw apiError(503, 'PIN_BUSY', 'Could not make a PIN. Try again.')
+  })
+}
+
+/**
+ * Lets a signed-in staff member change their own 6-digit till PIN from a paired POS.
+ * Verifies the current PIN, ensures the new PIN is not already used by another active staff member,
+ * stores the new scrypt hash, and returns it so the till can update its local staff cache immediately.
+ */
+export async function changeOwnPin(
+  sql: postgres.Sql,
+  input: { staffId: string; currentPin: string; newPin: string; now?: Date },
+): Promise<{ pinHash: string }> {
+  const { staffId, currentPin, newPin } = input
+  const now = input.now ?? new Date()
+  if (!isStaffPin(currentPin) || !isStaffPin(newPin)) {
+    throw apiError(400, 'INVALID_PIN', 'PINs must be 6 digits.')
+  }
+  if (currentPin === newPin) {
+    throw apiError(400, 'SAME_PIN', 'Pick a new 6-digit PIN different from your current one.')
+  }
+  return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(${PIN_LOCK})`
+    const [target] = await tx<{ is_active: boolean; pin_hash: string | null }[]>`
+      select is_active, pin_hash from staff where id = ${staffId} for update`
+    if (!target) throw apiError(404, 'NOT_FOUND', 'Staff account not found.')
+    if (!target.is_active) throw apiError(409, 'INACTIVE', 'This staff account is inactive.')
+    if (!target.pin_hash || !(await checkStaffPin(currentPin, target.pin_hash))) {
+      throw apiError(401, 'WRONG_PIN', 'Current PIN is wrong.')
+    }
+
+    const others = await tx<{ pin_hash: string }[]>`
+      select pin_hash from staff where is_active and pin_hash is not null and id <> ${staffId}`
+    for (const o of others) {
+      if (await checkStaffPin(newPin, o.pin_hash)) {
+        throw apiError(409, 'PIN_TAKEN', 'That PIN is already in use. Pick a different 6-digit PIN.')
+      }
+    }
+
+    const pinHash = await hashStaffPin(newPin)
+    await tx`update staff set pin_hash = ${pinHash}, pin_updated_at = ${now}, updated_at = ${now} where id = ${staffId}`
+    return { pinHash }
   })
 }

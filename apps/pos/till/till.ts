@@ -466,6 +466,34 @@ export function createTill(host: TillHost) {
       return { status: 200, body: { ok: true } }
     }
 
+    if (route === '/api/staff/pin') {
+      const device = loadDevice(files)
+      if (!device || device.revokedAt !== null || !config.apiUrl) {
+        throw new OrderError('Connect this till to Kennko to change your PIN.')
+      }
+      if (!by) throw new OrderError('Sign in with your own PIN first to change it.')
+      const currentPin = typeof body.currentPin === 'string' ? body.currentPin.trim() : ''
+      const newPin = typeof body.newPin === 'string' ? body.newPin.trim() : ''
+      if (!/^\d{6}$/.test(currentPin) || !/^\d{6}$/.test(newPin)) {
+        throw new OrderError('PINs must be 6 digits.')
+      }
+      if (currentPin === newPin) throw new OrderError('Pick a new 6-digit PIN different from your current one.')
+      let r: Response
+      try {
+        r = await fetchFn(`${config.apiUrl.replace(/\/+$/, '')}/sync/staff/pin`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ staffId: by, currentPin, newPin }),
+        })
+      } catch {
+        throw new OrderError('Connect to the internet to change your PIN.')
+      }
+      const data: any = await r.json().catch(() => null)
+      if (!r.ok) throw new OrderError(data?.error || 'Could not change PIN.')
+      if (typeof data?.pinHash === 'string') store.updateStaffPinHash(by, data.pinHash)
+      return { status: 200, body: { ok: true } }
+    }
+
     if (route === '/api/menu/availability') {
       if (typeof body.itemId !== 'string' || !onMenu(body.itemId)) throw new OrderError('That drink is not on the menu.')
       const credited = pins.mode() === 'per-person' ? (await personalPin(req.client, body.pin)).staffId : by
