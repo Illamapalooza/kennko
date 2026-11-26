@@ -15,6 +15,7 @@ import { playChime } from './chime.ts'
 import { clockWarning, offlineBadge, syncProblem } from './syncText.ts'
 import { UpdateBanner } from './app/UpdateBanner.tsx'
 import { BaristasModal } from './components/BaristasModal.tsx'
+import { WalkCatModal } from './components/WalkCatModal.tsx'
 import { openProjectorWall } from './app/wall-control.ts'
 
 export type CartLine = LineInput & { key: string }
@@ -57,6 +58,7 @@ export function App() {
   const [newCount, setNewCount] = useState(0)
   const [freshBanner, setFreshBanner] = useState<string[]>([])
   const [showBaristas, setShowBaristas] = useState(false)
+  const [showCatQr, setShowCatQr] = useState(false)
 
   const notify = useCallback((message: string) => setToast(message), [])
   useEffect(() => {
@@ -207,6 +209,20 @@ export function App() {
           </button>
         ))}
         <span className="rail-gap" />
+        <button
+          type="button"
+          className="rail-btn"
+          onClick={() => setShowCatQr(true)}
+          title="Show Walk Your Cat In QR code"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <path d="M14 14h3v3h-3zM19 14h2v2h-2zM14 19h2v2h-2zM18 18h3v3h-3z" />
+          </svg>
+          <span>Cat QR</span>
+        </button>
         {boot.host === 'android' ? (
           <button
             type="button"
@@ -255,6 +271,7 @@ export function App() {
       {showBaristas ? (
         <BaristasModal onDuty={live?.onDuty ?? []} notify={notify} onClose={() => setShowBaristas(false)} />
       ) : null}
+      {showCatQr ? <WalkCatModal onClose={() => setShowCatQr(false)} /> : null}
       {toast ? <div className="toast" role="alert" onClick={() => setToast('')}>{toast}</div> : null}
     </div>
   )

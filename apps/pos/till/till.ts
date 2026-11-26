@@ -82,6 +82,7 @@ export function createTill(host: TillHost) {
     timers,
     onChange: ({ menu: menuChanged, staff, online, status }) => {
       if (menuChanged) loadedSnapshot = loadSnapshot(files)
+      if (staff) pushBaristasToApi()
       if (menuChanged || staff || online || status) broadcast()
     },
   })
@@ -326,6 +327,11 @@ export function createTill(host: TillHost) {
       if (route === '/api/shop') {
         const s = store.shopStatus()
         return { status: 200, body: { ...s, openNow: isShopOpenNow(s, t) } }
+      }
+      if (route === '/api/checkin-qr') {
+        let checkin = null
+        try { checkin = await currentCheckin(store, t) } catch { checkin = null }
+        return { status: 200, body: { checkin } }
       }
       if (route === '/api/till') {
         const shift = store.openShift()

@@ -117,6 +117,7 @@ export const api = {
   changePin: (currentPin: string, newPin: string) => call<{ ok: true }>('POST', '/api/staff/pin', { currentPin, newPin }),
   pairDevice: (code: string, managerPin: string) => call<{ name: string }>('POST', '/api/device/pair', { code, managerPin }),
   till: () => call<TillState>('GET', '/api/till'),
+  checkinQr: () => call<{ checkin: { url: string; modules: string[] } | null }>('GET', '/api/checkin-qr'),
   shopStatus: () => call<{ isOpen: boolean; closingTime: string | null; updatedAt: number; openNow: boolean }>('GET', '/api/shop'),
   setShopStatus: (patch: { isOpen?: boolean; closingTime?: string | null }) =>
     call<{ isOpen: boolean; closingTime: string | null; updatedAt: number; openNow: boolean }>('POST', '/api/shop', patch),
