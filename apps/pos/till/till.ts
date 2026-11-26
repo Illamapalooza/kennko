@@ -466,6 +466,13 @@ export function createTill(host: TillHost) {
       return { status: 200, body: { ok: true } }
     }
 
+    if (route === '/api/till/clear-local') {
+      await checkPin(req.client, body.managerPin, 'manager')
+      store.clearLocalTransactions()
+      broadcast()
+      return { status: 200, body: { ok: true } }
+    }
+
     if (route === '/api/staff/pin') {
       const device = loadDevice(files)
       if (!device || device.revokedAt !== null || !config.apiUrl) {

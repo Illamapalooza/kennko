@@ -23,6 +23,7 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
   const [syncing, setSyncing] = useState(false)
   const [checking, setChecking] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const [clearingData, setClearingData] = useState(false)
   const [changingPin, setChangingPin] = useState(false)
   const [curPin, setCurPin] = useState('')
   const [nextPin, setNextPin] = useState('')
@@ -117,12 +118,15 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
                 style={{ width: 150, padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}
               />
             </div>
-            <div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
               <button type="button" className="btn btn-outline" onClick={() => api.exportBackup().catch((err) => notify(err.message))}>
                 Export backup
               </button>
-              <p className="muted" style={{ marginTop: 6 }}>Keep it private: it has staff PINs (scrambled) and sales.</p>
+              <button type="button" className="btn btn-outline" style={{ color: '#b91c1c', borderColor: '#fca5a5' }} onClick={() => setClearingData(true)}>
+                Clear local test data
+              </button>
             </div>
+            <p className="muted" style={{ marginTop: 2 }}>Backup has staff PINs (scrambled) and sales. Clearing local data erases shifts &amp; orders on this tablet only (keeps pairing, menu, and staff).</p>
           </div>
         ) : null}
       </section>
@@ -164,6 +168,18 @@ export function MenuScreen({ boot, live, menu, setMenu, notify, onDeviceChange }
             setMenu(await api.syncMenu(pin))
             notify('The menu now matches the website.')
             setSyncing(false)
+          }}
+        />
+      ) : null}
+      {clearingData ? (
+        <PinPrompt
+          title="Manager PIN — Clear local data"
+          hint="Erases all local shifts, orders, cash moves, and unsent outbox events on this tablet. Keeps pairing, menu, and staff."
+          onClose={() => setClearingData(false)}
+          onSubmit={async (pin) => {
+            await api.clearLocalData(pin)
+            setClearingData(false)
+            notify('Local POS transactions cleared.')
           }}
         />
       ) : null}

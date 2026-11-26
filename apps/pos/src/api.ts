@@ -113,6 +113,7 @@ export const api = {
    * check is still running after 10 s ("Still checking — the menu updates by itself."): show it instead of "up to date".
    */
   syncMenu: (managerPin?: string) => call<Menu & { notice?: string }>('POST', '/api/menu/sync', { managerPin }),
+  clearLocalData: (managerPin: string) => call<{ ok: true }>('POST', '/api/till/clear-local', { managerPin }),
   changePin: (currentPin: string, newPin: string) => call<{ ok: true }>('POST', '/api/staff/pin', { currentPin, newPin }),
   pairDevice: (code: string, managerPin: string) => call<{ name: string }>('POST', '/api/device/pair', { code, managerPin }),
   till: () => call<TillState>('GET', '/api/till'),

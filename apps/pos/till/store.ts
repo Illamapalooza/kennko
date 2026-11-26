@@ -1075,6 +1075,32 @@ export function createStore(file: string | SqlDb, open: SqlOpen) {
       db.prepare('delete from customer_cache').run()
     },
 
+    /**
+     * Clears local shifts, orders, cash moves, outbox, and cached online/visitor state on this till
+     * while keeping device pairing, published menu, staff cache, active sessions, and sold-out flags.
+     */
+    clearLocalTransactions(): void {
+      tx(() => {
+        db.exec(`
+          delete from orders;
+          delete from cash_moves;
+          delete from shifts;
+          delete from outbox;
+          delete from online_orders;
+          delete from online_stamps;
+          delete from pending_releases;
+          delete from visitors;
+          delete from customer_cache;
+          delete from sqlite_sequence where name in ('orders', 'cash_moves', 'shifts', 'outbox');
+        `)
+      })
+      try {
+        db.exec('pragma wal_checkpoint(truncate)')
+      } catch {
+        /* ignore on :memory: */
+      }
+    },
+
     /** Orders still being made or served, oldest first, across days so nothing is stranded at midnight. */
     activeOrders(): Order[] {
       return db.prepare(`${ORDERS} where o.status in ('queued','preparing','serving') order by o.id`).all().map(toOrder)
