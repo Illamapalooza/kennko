@@ -267,7 +267,8 @@ export function createScene(canvas, tagLayer, opts = {}) {
       if (!c && isActive(o)) {
         // The visiting cat itself becomes the order's cat and walks from where it stands; anyone else comes in by the door.
         const walking = claim ? visitors.get(claim) : null;
-        c = { id: o.id, coat: o.look ?? walking?.look ?? coatFor(o.id), x: walking?.x ?? DOOR.x, y: walking?.y ?? DOOR.y, tx: DOOR.x, ty: DOOR.y, phase: "in", cup: false, flip: walking?.flip ?? false, leaveAt: 0, snap: initial && !walking, visitorKey: claim };
+        const catName = walking?.name || (claim ? visitingNow(claim)?.name : null) || o.name || "";
+        c = { id: o.id, coat: o.look ?? walking?.look ?? coatFor(o.id), x: walking?.x ?? DOOR.x, y: walking?.y ?? DOOR.y, tx: DOOR.x, ty: DOOR.y, phase: "in", cup: false, flip: walking?.flip ?? false, leaveAt: 0, snap: initial && !walking, visitorKey: claim, catName };
         if (walking) visitors.delete(claim);
         custs.set(o.id, c);
       } else if (c) {
@@ -277,12 +278,20 @@ export function createScene(canvas, tagLayer, opts = {}) {
             const walking = visitors.get(claim);
             if (walking) { c.x = walking.x; c.y = walking.y; c.flip = walking.flip; visitors.delete(claim); }
             c.visitorKey = claim;
+            c.catName = walking?.name || visitingNow(claim)?.name || c.catName || o.name || "";
           } else if (c.visitorKey && isActive(o)) {
             // The cat was taken off the order: it goes back to visiting and a plain cat keeps the seat.
             const info = visitingNow(c.visitorKey);
             if (info) visitors.set(info.key, { key: info.key, x: c.x, y: c.y, tx: c.x, ty: c.y, flip: c.flip, phase: "in", moving: false, seed: visitors.size + 1, name: info.name, look: info.look, endsAt: info.endsAt });
             c.visitorKey = null;
+            c.catName = o.name || "";
           }
+        }
+        if (c.visitorKey) {
+          const info = visitingNow(c.visitorKey);
+          if (info?.name) c.catName = info.name;
+        } else if (o.name && !c.catName) {
+          c.catName = o.name;
         }
         c.coat = o.look ?? (c.visitorKey ? c.coat : coatFor(o.id));
       }
@@ -1177,7 +1186,14 @@ export function createScene(canvas, tagLayer, opts = {}) {
     const byId = new Map(orders.map((o) => [o.id, o]));
     if (!ambient) {
       for (const c of custs.values()) {
-        if (c.phase === "in" && !c.cup) tag(`c${c.id}`, "tag", byId.get(c.id)?.label ?? String(c.id), c.x, c.y - CAT_H - 2);
+        const topY = c.y - CAT_H + Math.min(0, catBounds(c.coat).y0) - 2;
+        if (c.phase === "in" && !c.cup) {
+          const orderTag = byId.get(c.id)?.label ?? String(c.id);
+          const text = c.catName ? `${c.catName} · #${orderTag}` : orderTag;
+          tag(`c${c.id}`, "tag", text, c.x, topY);
+        } else if ((c.phase === "in" || c.phase === "finish") && c.cup && c.catName) {
+          tag(`c${c.id}`, "tag visitor", c.catName, c.x, topY);
+        }
       }
     }
     for (const v of visitors.values()) {

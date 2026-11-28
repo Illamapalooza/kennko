@@ -69,6 +69,7 @@ export function OrderClient({
   const [step, setStepState] = useState<Step>('menu')
 
   const [fulfilment, setFulfilment] = useState<Fulfilment>('pickup')
+  const [scheduled, setScheduled] = useState(false)
   const [form, setForm] = useState({
     // Prefilled for a signed-in customer, still editable: the account name is
     // not always the name they want on the cup.
@@ -111,10 +112,12 @@ export function OrderClient({
         const parsed = JSON.parse(savedCheckout) as {
           form?: Record<string, string>
           fulfilment?: Fulfilment
+          scheduled?: boolean
           pin?: SharedPin | null
         }
         if (parsed.form) setForm((f) => ({ ...f, ...parsed.form }))
         if (parsed.fulfilment) setFulfilment(parsed.fulfilment)
+        if (typeof parsed.scheduled === 'boolean') setScheduled(parsed.scheduled)
         if (parsed.pin) setPin(parsed.pin)
       }
     } catch {
@@ -155,11 +158,11 @@ export function OrderClient({
   useEffect(() => {
     if (!hydrated) return
     try {
-      localStorage.setItem(CHECKOUT_KEY, JSON.stringify({ form, fulfilment, pin }))
+      localStorage.setItem(CHECKOUT_KEY, JSON.stringify({ form, fulfilment, scheduled, pin }))
     } catch {
       // Same as the cart: persistence is a convenience, never a requirement.
     }
-  }, [form, fulfilment, pin, hydrated])
+  }, [form, fulfilment, scheduled, pin, hydrated])
 
   // Browser back and forward move between steps, not out of the order.
   useEffect(() => {
@@ -211,7 +214,41 @@ export function OrderClient({
       : 0
   const total = subtotal + fee
 
-  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }))
+  const set = (patch: Partial<typeof form>) => {
+    setForm((f) => ({ ...f, ...patch }))
+    setErrors([])
+  }
+
+  function asapManilaIso(): string {
+    const leadMs = fulfilment === 'delivery' ? 30 * 60_000 : 15 * 60_000
+    const target = new Date(Date.now() + leadMs + 8 * 3_600_000)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${target.getUTCFullYear()}-${pad(target.getUTCMonth() + 1)}-${pad(target.getUTCDate())}T${pad(target.getUTCHours())}:${pad(target.getUTCMinutes())}+08:00`
+  }
+
+  function validateBeforePayment(): string[] {
+    const effectiveFulfilAt = scheduled ? form.fulfilAt : asapManilaIso()
+    return validateCheckout({
+      name: form.name,
+      email: form.email,
+      phone: form.phone,
+      fulfilment,
+      address: form.address,
+      barangay: form.barangay,
+      fulfilAt: effectiveFulfilAt,
+      gcashReference: 'TEMP1234',
+    })
+  }
+
+  function continueToPayment() {
+    const problems = validateBeforePayment()
+    if (problems.length > 0) {
+      setErrors(problems)
+      return
+    }
+    setErrors([])
+    setStep('pay')
+  }
 
   function addLine(item: MenuItemWithPrices, result: SheetResult) {
     const price = item.prices.find((p) => p.size === result.size)
@@ -239,10 +276,11 @@ export function OrderClient({
   }
 
   async function submit() {
+    const effectiveFulfilAt = scheduled ? form.fulfilAt : asapManilaIso()
     const problems = validateCheckout({
       name: form.name, email: form.email, phone: form.phone,
       fulfilment, address: form.address, barangay: form.barangay,
-      fulfilAt: form.fulfilAt, gcashReference: form.gcashReference,
+      fulfilAt: effectiveFulfilAt, gcashReference: form.gcashReference,
     })
     if (!proof) problems.push('Upload your GCash receipt screenshot.')
     if (problems.length > 0) { setErrors(problems); return }
@@ -258,7 +296,7 @@ export function OrderClient({
     body.set('order', JSON.stringify({
       name: form.name, email: form.email, phone: form.phone,
       fulfilment, address: form.address, barangay: form.barangay,
-      fulfilAt: withManilaOffset(form.fulfilAt), gcashReference: form.gcashReference,
+      fulfilAt: scheduled ? withManilaOffset(form.fulfilAt) : effectiveFulfilAt, gcashReference: form.gcashReference,
       note: form.note,
       claimedTotalCentavos: total,
       pin: fulfilment === 'delivery' ? pin : null,
@@ -301,6 +339,7 @@ export function OrderClient({
             setOrderCode(null)
             setProof(null)
             setPin(null)
+            setScheduled(false)
             setForm((f) => ({ ...f, gcashReference: '', note: '', fulfilAt: '' }))
             setStep('menu')
           }}
@@ -313,7 +352,19 @@ export function OrderClient({
     <>
       <div className="order-main order-main-nav">
         <OrderNav place="menu" signedIn={Boolean(customer)} customerName={customer?.name} />
-        {step !== 'done' ? <StepBar current={step} onGo={(s) => setStep(s)} /> : null}
+        {step !== 'done' ? (
+          <StepBar
+            current={step}
+            onGo={(s) => {
+              if (s === 'pay' && step === 'checkout') {
+                continueToPayment()
+              } else {
+                setErrors([])
+                setStep(s)
+              }
+            }}
+          />
+        ) : null}
       </div>
 
       {step === 'menu' ? (
@@ -403,11 +454,12 @@ export function OrderClient({
         <div className="order-main">
         <CheckoutStep
           lines={lines} subtotal={subtotal} fee={fee} total={total}
-          fulfilment={fulfilment} setFulfilment={setFulfilment}
+          fulfilment={fulfilment} setFulfilment={(f) => { setFulfilment(f); setErrors([]) }}
+          scheduled={scheduled} setScheduled={(v) => { setScheduled(v); if (!v) set({ fulfilAt: '' }); setErrors([]) }}
           zones={zones} form={form} set={set} errors={errors}
           pin={pin} setPin={setPin} deliveryKm={deliveryKm}
-          onBack={() => setStep('menu')}
-          onNext={() => setStep('pay')}
+          onBack={() => { setErrors([]); setStep('menu') }}
+          onNext={continueToPayment}
           onRemove={(id) => setLines((c) => c.filter((l) => l.lineId !== id))}
         />
         </div>
@@ -448,13 +500,15 @@ export function OrderClient({
 }
 
 function CheckoutStep({
-  lines, subtotal, fee, total, fulfilment, setFulfilment, zones, form, set, errors,
+  lines, subtotal, fee, total, fulfilment, setFulfilment, scheduled, setScheduled, zones, form, set, errors,
   pin, setPin, deliveryKm, onBack, onNext, onRemove,
 }: {
   lines: CartLine[]
   subtotal: number; fee: number; total: number
   fulfilment: Fulfilment
   setFulfilment: (f: Fulfilment) => void
+  scheduled: boolean
+  setScheduled: (v: boolean) => void
   zones: Zone[]
   form: Record<string, string>
   set: (patch: Record<string, string>) => void
@@ -568,11 +622,31 @@ function CheckoutStep({
             <h2 className="panel-title">
               {fulfilment === 'delivery' ? 'When should it arrive?' : 'When are you collecting?'}
             </h2>
-            <label className="order-field">
-              <span>Date and time</span>
-              <input type="datetime-local" value={form.fulfilAt}
-                     onChange={(e) => set({ fulfilAt: e.target.value })} required />
-            </label>
+            <div className="chips chips-stacked" style={{ marginBottom: 12 }}>
+              <button
+                type="button"
+                aria-pressed={!scheduled}
+                onClick={() => setScheduled(false)}
+              >
+                <span>{fulfilment === 'delivery' ? 'Deliver now' : 'Pick up now'}</span>
+                <small>We prepare it as soon as your GCash payment is confirmed</small>
+              </button>
+              <button
+                type="button"
+                aria-pressed={scheduled}
+                onClick={() => setScheduled(true)}
+              >
+                <span>{fulfilment === 'delivery' ? 'Deliver at a specific date & time' : 'Pick up at a specific date & time'}</span>
+                <small>Schedule ahead for later today or another day</small>
+              </button>
+            </div>
+            {scheduled ? (
+              <label className="order-field">
+                <span>Date and time</span>
+                <input type="datetime-local" value={form.fulfilAt}
+                       onChange={(e) => set({ fulfilAt: e.target.value })} required />
+              </label>
+            ) : null}
             <label className="order-field">
               <span>Anything else about the order? (optional)</span>
               <textarea value={form.note} rows={2}
@@ -666,10 +740,6 @@ function PayStep({
 
       <div className="order-card">
         <img className="order-qr" src="/gcash-qr.png" alt="GCash QR code" />
-        <p className="order-note">
-          <strong>This is a sample QR, not a real one.</strong> Ordering is still
-          being set up — do not send money to this code.
-        </p>
         <p>Send exactly <strong>{formatPesos(total)}</strong>, then enter the reference number below.</p>
       </div>
 
