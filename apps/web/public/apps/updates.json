@@ -6,9 +6,9 @@
     "notes": "Barista custom cats, multi-barista login, bonus points, shop hours"
   },
   "wall": {
-    "versionCode": 3,
-    "versionName": "0.0.3",
-    "url": "https://github.com/Illamapalooza/kennko/releases/download/apk-20261125-192644/kennko-wall.apk",
-    "notes": "Barista custom cats, multi-barista login, bonus points, shop hours"
+    "versionCode": 5,
+    "versionName": "0.0.5",
+    "url": "https://github.com/Illamapalooza/kennko/releases/download/apk-20261128-110134/kennko-wall.apk",
+    "notes": "Show cat name alongside order number on wall"
   }
 }
